@@ -40,6 +40,7 @@ struct aout_stream
     HRESULT (*play)(aout_stream_t *, block_t *, vlc_tick_t);
     HRESULT (*pause)(aout_stream_t *, bool);
     HRESULT (*flush)(aout_stream_t *);
+    HRESULT (*getservice)(aout_stream_t *, REFIID riid, void **ppv);
 };
 
 struct aout_stream_owner
@@ -108,6 +109,12 @@ HRESULT aout_stream_owner_Flush(struct aout_stream_owner *owner)
     owner->last = &owner->chain;
 
     return owner->s.flush(&owner->s);
+}
+
+static inline HRESULT aout_stream_GetService(struct aout_stream_owner *owner,
+                                             REFIID riid, void **ppv)
+{
+    return owner->s.getservice(&owner->s, riid, ppv);
 }
 
 static inline
