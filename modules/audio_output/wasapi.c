@@ -364,6 +364,12 @@ static HRESULT Flush(aout_stream_t *s)
 }
 
 
+static HRESULT GetService(aout_stream_t *s, REFIID riid, void **ppv)
+{
+    aout_stream_sys_t *sys = s->sys;
+    return IAudioClient_GetService(sys->client, riid, ppv);
+}
+
 /*** Initialization / deinitialization **/
 static const uint32_t chans_out[] = {
     SPEAKER_FRONT_LEFT, SPEAKER_FRONT_RIGHT,
@@ -929,6 +935,7 @@ static HRESULT Start(aout_stream_t *s, audio_sample_format_t *restrict pfmt,
     s->play = Play;
     s->pause = Pause;
     s->flush = Flush;
+    s->getservice = GetService;
     s->stop = Stop;
     return S_OK;
 error:
