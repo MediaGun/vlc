@@ -83,7 +83,10 @@ if HAVE_JACK
 aout_LTLIBRARIES += libjack_plugin.la
 endif
 
-libmmdevice_plugin_la_SOURCES = audio_output/mmdevice.c audio_output/mmdevice.h
+libmmdevice_plugin_la_SOURCES = audio_output/mmdevice.c \
+	audio_output/mmdevice.h \
+	audio_output/mmdevice_volume_control.h \
+	audio_output/mmdevice_session_volume.c
 libmmdevice_plugin_la_LIBADD = $(LIBCOM) $(LIBM)
 libwinstore_plugin_la_SOURCES = audio_output/winstore.c audio_output/mmdevice.h
 libwinstore_plugin_la_LIBADD = $(LIBCOM) -lmmdevapi
