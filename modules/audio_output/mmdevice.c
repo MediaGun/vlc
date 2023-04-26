@@ -1087,7 +1087,11 @@ static int Open(vlc_object_t *obj)
     if (unlikely(sys->work_event == NULL))
         goto error;
 
-    sys->volume = createMMDeviceSessionVolumeControler(aout, sys->work_event);
+    if (var_InheritBool(aout, "mmdevice-session-volume"))
+        sys->volume = createMMDeviceSessionVolumeControler(aout, sys->work_event);
+    else
+        sys->volume = createMMDeviceTrackVolumeControler(aout, sys->work_event);
+
     if (unlikely(sys->volume == NULL))
         goto error;
 
@@ -1291,6 +1295,10 @@ static const char *const ppsz_mmdevice_passthrough_texts[] = {
 #define VOLUME_TEXT N_("Audio volume")
 #define VOLUME_LONGTEXT N_("Audio volume in hundredths of decibels (dB).")
 
+
+#define SESSION_VOLUME_TEXT N_("Use session volume")
+#define SESSION_VOLUME_LONGTEXT N_("Use session volume, or per track volume when disabled")
+
 vlc_module_begin()
     set_shortname("MMDevice")
     set_description(N_("Windows Multimedia Device output"))
@@ -1306,4 +1314,5 @@ vlc_module_begin()
     add_string("mmdevice-audio-device", NULL, DEVICE_TEXT, DEVICE_LONGTEXT)
     add_float("mmdevice-volume", 1.f, VOLUME_TEXT, VOLUME_LONGTEXT)
         change_float_range( 0.f, 1.25f )
+    add_bool("mmdevice-session-volume", true, SESSION_VOLUME_TEXT, SESSION_VOLUME_LONGTEXT)
 vlc_module_end()
