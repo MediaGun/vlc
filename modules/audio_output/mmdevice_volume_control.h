@@ -78,4 +78,6 @@ inline static void mmdevice_volume_controler_process(mmdevice_volume_controler_t
 
 mmdevice_volume_controler_t* createMMDeviceSessionVolumeControler(audio_output_t *aout, HANDLE work_event);
 
+mmdevice_volume_controler_t* createMMDeviceTrackVolumeControler(audio_output_t *aout, HANDLE work_event);
+
 #endif /* MMDEVICE_VOLUME_H */
