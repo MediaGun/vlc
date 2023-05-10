@@ -223,8 +223,11 @@ static void CleanupDevice_cb( void *opaque )
 }
 
 static void SetResize_cb( void *opaque,
-                          libvlc_video_output_resize_cb report_size_change,
-                          void *report_opaque )
+    libvlc_video_output_resize_cb report_size_change,
+    libvlc_video_output_mouse_move_cb report_mouse_move,
+    libvlc_video_output_mouse_press_cb report_mouse_press,
+    libvlc_video_output_mouse_release_cb report_mouse_release,
+    void *report_opaque )
 {
     struct render_context *ctx = opaque;
     EnterCriticalSection(&ctx->sizeLock);
