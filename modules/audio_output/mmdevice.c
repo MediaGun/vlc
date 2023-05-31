@@ -77,6 +77,12 @@ static void LeaveMTA(void)
 static wchar_t default_device[1] = L"";
 static char default_device_b[1] = "";
 
+enum initialisation_status_t {
+    INITIALISATION_PENDING,
+    INITIALISATION_FAILED,
+    INITIALISATION_SUCCEEDED,
+};
+
 typedef struct
 {
     struct aout_stream_owner *stream; /**< Underlying audio output stream */
@@ -97,6 +103,7 @@ typedef struct
     wchar_t *acquired_device; /**< Acquired device identifier, NULL if none */
     bool request_device_restart;
     HANDLE work_event;
+    enum initialisation_status_t initialisation_status;
     vlc_mutex_t lock;
     vlc_cond_t ready;
     vlc_thread_t thread; /**< Thread for audio session control */
@@ -703,6 +710,7 @@ static HRESULT MMSession(audio_output_t *aout, IMMDeviceEnumerator *it)
     }
 
     sys->requested_device = NULL;
+    sys->initialisation_status = INITIALISATION_SUCCEEDED;
     vlc_cond_signal(&sys->ready);
 
     if (SUCCEEDED(hr))
@@ -868,14 +876,27 @@ static void *MMThread(void *data)
 {
     audio_output_t *aout = data;
     aout_sys_t *sys = aout->sys;
-    IMMDeviceEnumerator *it = sys->it;
 
     vlc_thread_set_name("vlc-mmdevice");
 
-    EnterMTA();
+    /* Initialize MMDevice API */
+    if (TryEnterMTA(aout))
+        goto error;
+
+    IMMDeviceEnumerator *it;
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+                                  &IID_IMMDeviceEnumerator, &it);
+    if (FAILED(hr))
+    {
+        msg_Dbg(aout, "cannot create device enumerator (error 0x%lX)", hr);
+        goto error;
+    }
+
+    sys->it = it;
+
     IMMDeviceEnumerator_RegisterEndpointNotificationCallback(it,
                                                           &sys->device_events);
-    HRESULT hr = DevicesEnum(it, MMThread_DevicesEnum_Added, aout);
+    hr = DevicesEnum(it, MMThread_DevicesEnum_Added, aout);
     if (FAILED(hr))
         msg_Warn(aout, "cannot enumerate audio endpoints (error 0x%lX)", hr);
 
@@ -895,6 +916,14 @@ static void *MMThread(void *data)
     IMMDeviceEnumerator_UnregisterEndpointNotificationCallback(it,
                                                           &sys->device_events);
     IMMDeviceEnumerator_Release(it);
+    LeaveMTA();
+    return NULL;
+
+error:
+    vlc_mutex_lock(&sys->lock);
+    sys->initialisation_status = INITIALISATION_FAILED;
+    vlc_cond_signal(&sys->ready);
+    vlc_mutex_unlock(&sys->lock);
     LeaveMTA();
     return NULL;
 }
@@ -1116,33 +1145,20 @@ static int Open(vlc_object_t *obj)
         sys->requested_device = default_device;
     }
 
-    /* Initialize MMDevice API */
-    if (TryEnterMTA(aout))
-        goto error;
-
-    void *pv;
-    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-                                  &IID_IMMDeviceEnumerator, &pv);
-    if (FAILED(hr))
-    {
-        LeaveMTA();
-        msg_Dbg(aout, "cannot create device enumerator (error 0x%lX)", hr);
-        goto error;
-    }
-    sys->it = pv;
-
+    sys->initialisation_status = INITIALISATION_PENDING;
     if (vlc_clone(&sys->thread, MMThread, aout))
-    {
-        IMMDeviceEnumerator_Release(sys->it);
-        LeaveMTA();
         goto error;
-    }
 
     vlc_mutex_lock(&sys->lock);
-    while (sys->requested_device != NULL)
+    while (sys->initialisation_status == INITIALISATION_PENDING)
         vlc_cond_wait(&sys->ready, &sys->lock);
     vlc_mutex_unlock(&sys->lock);
-    LeaveMTA(); /* Leave MTA after thread has entered MTA */
+
+    if (sys->initialisation_status == INITIALISATION_FAILED)
+    {
+        vlc_join(sys->thread, NULL);
+        goto error;
+    }
 
     aout->start = Start;
     aout->stop = Stop;
