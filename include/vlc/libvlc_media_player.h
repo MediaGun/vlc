@@ -719,7 +719,7 @@ typedef enum libvlc_video_engine_t {
 /** Callback type that can be called to request a render size changes.
  *
  * libvlc will provide a callback of this type when calling \ref libvlc_video_output_set_window_cb.
- * 
+ *
  * \param report_opaque parameter passed to \ref libvlc_video_output_set_window_cb. [IN]
  * \param width new rendering width requested. [IN]
  * \param height new rendering height requested. [IN]
@@ -742,7 +742,8 @@ typedef enum libvlc_video_output_mouse_button_t {
  *
  * libvlc will provide a callback of this type when calling \ref libvlc_video_output_set_window_cb.
  *
- * the position 0,0 denotes the top left corner
+ * The position (0,0) denotes the top left corner, bottom right corner position
+ * is (width,height) as reported by \ref libvlc_video_output_resize_cb
  *
  * \param report_opaque parameter passed to \ref libvlc_video_output_set_window_cb. [IN]
  * \param x horizontal mouse positon in \ref libvlc_video_output_resize_cb coordinates. [IN]
@@ -754,7 +755,7 @@ typedef void (*libvlc_video_output_mouse_move_cb)(void *opaque, int x, int y);
  *
  * libvlc will provide a callback of this type when calling \ref libvlc_video_output_set_window_cb.
  *
- * the button event will be reported at the last position provided by \ref libvlc_video_output_mouse_move_cb
+ * The button event will be reported at the last position provided by \ref libvlc_video_output_mouse_move_cb
  *
  * \param report_opaque parameter passed to \ref libvlc_video_output_set_window_cb. [IN]
  * \param button represent the button pressed, see \ref libvlc_video_output_mouse_button_t for available buttons. [IN]
@@ -765,7 +766,7 @@ typedef void (*libvlc_video_output_mouse_press_cb)(void *opaque, libvlc_video_ou
  *
  * libvlc will provide a callback of this type when calling \ref libvlc_video_output_set_window_cb.
  *
- * the button event will be reported at the last position provided by \ref libvlc_video_output_mouse_move_cb
+ * The button event will be reported at the last position provided by \ref libvlc_video_output_mouse_move_cb
  *
  * \param report_opaque parameter passed to \ref libvlc_video_output_set_window_cb. [IN]
  * \param button represent the button released, see \ref libvlc_video_output_mouse_button_t for available buttons. [IN]
@@ -775,9 +776,12 @@ typedef void (*libvlc_video_output_mouse_release_cb)(void *opaque, libvlc_video_
 /** Set the callback to call when the host app resizes the rendering area.
  *
  * This allows text rendering and aspect ratio to be handled properly when the host
- * rendering size changes.
+ * rendering size changes and to provide mouse
  *
  * It may be called before the \ref libvlc_video_output_setup_cb callback.
+ *
+ * \warning Calling theses callbacks is not threadsafe, proper synchronisation should be
+ * implemented on the client side
  *
  * \param[in] opaque private pointer set on the opaque parameter of @a libvlc_video_output_setup_cb()
  * \param[in] report_size_change callback which must be called when the host size changes.

@@ -502,7 +502,7 @@ static void CleanupDevice_cb( void *opaque )
 }
 
 // receive the libvlc callback to call when we want to change the libvlc output size
-static void SetResize_cb( void *opaque,
+static void SetReport_cb( void *opaque,
                           libvlc_video_output_resize_cb report_size_change,
                           libvlc_video_output_mouse_move_cb report_mouse_move,
                           libvlc_video_output_mouse_press_cb report_mouse_press,
@@ -746,7 +746,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
     /* Tell VLC to render into our D3D11 environment */
     libvlc_video_set_output_callbacks( Context.p_mp, libvlc_video_engine_d3d11,
-                                       SetupDevice_cb, CleanupDevice_cb, SetResize_cb,
+                                       SetupDevice_cb, CleanupDevice_cb, SetReport_cb,
                                        UpdateOutput_cb, Swap_cb, StartRendering_cb,
                                        nullptr, nullptr, SelectPlane_cb,
                                        &Context );
