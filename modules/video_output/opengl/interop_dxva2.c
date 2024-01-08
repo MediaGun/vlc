@@ -197,6 +197,19 @@ GLConvAllocateTextures(const struct vlc_gl_interop *interop, uint32_t textures[]
 }
 
 static void
+GLConvDeallocateTextures(const struct vlc_gl_interop *interop, uint32_t textures[])
+{
+    struct glpriv *priv = interop->priv;
+
+    if (priv->gl_handle_d3d && priv->gl_render)
+    {
+        priv->vt.DXUnlockObjectsNV(priv->gl_handle_d3d, 1, &priv->gl_render);
+        priv->vt.DXUnregisterObjectNV(priv->gl_handle_d3d, priv->gl_render);
+        priv->gl_render = NULL;
+    }
+}
+
+static void
 GLConvClose(vlc_object_t *obj)
 {
     struct vlc_gl_interop *interop = container_of(obj, struct vlc_gl_interop, obj);
@@ -204,12 +217,6 @@ GLConvClose(vlc_object_t *obj)
 
     if (priv->gl_handle_d3d)
     {
-        if (priv->gl_render)
-        {
-            priv->vt.DXUnlockObjectsNV(priv->gl_handle_d3d, 1, &priv->gl_render);
-            priv->vt.DXUnregisterObjectNV(priv->gl_handle_d3d, priv->gl_render);
-        }
-
         priv->vt.DXCloseDeviceNV(priv->gl_handle_d3d);
     }
     if (priv->processor.proc)
@@ -535,6 +542,7 @@ GLConvOpen(vlc_object_t *obj)
 
     static const struct vlc_gl_interop_ops ops = {
         .allocate_textures = GLConvAllocateTextures,
+        .deallocate_textures = GLConvDeallocateTextures,
         .update_textures = GLConvUpdate,
     };
     interop->ops = &ops;
