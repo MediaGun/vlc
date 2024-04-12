@@ -32,6 +32,7 @@ OPTIONS:
    -c            Recompile contribs from sources
    -p            Build packages for all artifacts
    -i <n|u|z>    Create an installable package
+                     s: sdk
                      n: nightly
                      u: unsigned stripped release archive
                      z: zip
@@ -248,10 +249,10 @@ fi
 info "Running make -j$JOBS"
 make -j$JOBS
 
-info "Preparing VLC.app"
-make VLC.app
-
 if [ "$PACKAGETYPE" = "u" ]; then
+    info "Preparing VLC.app"
+    make VLC.app
+
     info "Copying app with debug symbols into VLC-debug.app and stripping"
     rm -rf VLC-debug.app
     cp -Rp VLC.app VLC-debug.app
@@ -277,7 +278,9 @@ if [ "$PACKAGETYPE" = "u" ]; then
 
     shasum -a 512 vlc-*-release.zip
     shasum -a 512 vlc-macos-sdk-*.tar.gz
-
+elif [ "$PACKAGETYPE" = "s" ]; then
+    info "Building VLC SDK package"
+    make package-macosx-sdk
 elif [ "$PACKAGETYPE" = "z" ]; then
     info "Packaging VLC zip archive"
     make package-macosx-zip
@@ -285,6 +288,9 @@ elif [ "$PACKAGETYPE" = "n" -o "$PACKAGE" = "yes" ]; then
     info "Building VLC dmg package"
     make package-macosx
     make package-macosx-sdk
+else
+    info "Preparing VLC.app"
+    make VLC.app
 fi
 
 if [ ! -z "$VLCBUILDDIR" ]; then
