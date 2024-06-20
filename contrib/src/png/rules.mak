@@ -45,7 +45,7 @@ else ifdef HAVE_ANDROID
 PNG_CONF += -DPNG_ARM_NEON=on
 else
 # Otherwise do runtime detection
-PNG_CONF += -DPNG_ARM_NEON=check
+PNG_CONF += -DPNG_ARM_NEON=off
 endif
 endif
 
