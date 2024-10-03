@@ -1,0 +1,109 @@
+name: CI Build Dev
+run-name: Build project by ${{ github.actor }}
+
+on:
+  push:
+    branches:
+      - master
+      - mg-ci
+      - mg-volume-win32
+      - feat/ci
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_linux:
+    name: Build for Linux
+    runs-on: [ ubuntu-24.04 ]
+    container:
+      image: 'registry.videolan.org/vlc-debian-unstable:20221213103803'
+      options: '--user root'
+
+    env:
+      install_prefix: '/vlc/install_dir_linux'
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Permissions
+        run: chown -R root:root .
+
+      - name: Bootstrap
+        run: ./bootstrap
+
+      - name: Configuration
+        run: |
+          ./configure --prefix=${{ env.install_prefix }} \
+          --disable-srt --disable-lua --enable-merge-ffmpeg \
+          --disable-shout --disable-qt --disable-nls --enable-pdb --disable-skins2
+
+      - name: Build
+        run: make -j2
+
+      - name: Install
+        run: make install
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-linux
+          path: ${{ env.install_prefix }}
+
+  build_windows:
+    name: Build for Windows
+    runs-on: [ ubuntu-24.04 ]
+    container:
+      image: 'registry.videolan.org/vlc-debian-llvm-msvcrt:20221214101739'
+      options: '--user root'
+
+    env:
+      CONFIGFLAGS: '--disable-vlm --disable-vlc --disable-chromecast --disable-goom --disable-libcddb --disable-shout --disable-sout'
+      CONTRIBFLAGS: '--disable-qt --disable-sout --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-aribb25 --disable-libplacebo'
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build
+        run: ./extras/package/win32/build.sh -a x86_64 -z -x -i u
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-windows
+          path: ./win64/vlc-4.0.0-dev
+
+  build_macos_arm:
+    name: Build for MacOS (ARM)
+    runs-on: [ macos-13 ]
+
+    env:
+      CONTRIBFLAGS: --disable-qt --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-x265 --disable-shout --disable-rav1e --disable-vpx --disable-x264 --disable-x262 --disable-aom --disable-twolame --disable-librist --disable-ncurses
+      VLC_CONFIGURE_ARGS: --disable-macosx --disable-sparkle --disable-osx-notifications  --disable-sout --disable-shout --disable-ncurses --disable-twolame --disable-vlm --disable-vlc --disable-nls --disable-chromecast --disable-dc1394 --disable-dc1394
+      VLC_PATH: /usr/local/bin
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build
+        run: ./extras/package/macosx/build.sh -a aarch64 -i s -c
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-macos-arm
+          path: ./vlc-macos-sdk-4.0.0-dev.tar.gz
