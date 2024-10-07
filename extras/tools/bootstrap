@@ -32,7 +32,7 @@ check_version() {
        [ "$needmajor" -eq "$gotmajor" -a "$needminor" -gt "$gotminor" ] ||
        [ "$needmajor" -eq "$gotmajor" -a "$needminor" -eq "$gotminor" -a "$needmicro" -gt "$gotmicro" ];
     then
-        echo "$1 too old"
+        echo "$1 too old ${gotver} => ${gotmajor}.${gotminor}.${gotmicro}"
         NEEDED="$NEEDED $1"
     else
         FOUND="$FOUND $1"
@@ -133,6 +133,11 @@ else
     fi
 fi
 }
+
+echo "tool/bootstrap->" $PATH
+which bison
+which m4
+which libtool
 
 check autoconf 2.69
 check automake 1.15
