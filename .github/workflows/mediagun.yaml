@@ -133,6 +133,17 @@ jobs:
       - name: Build
         run: |
           env
+
+          #gnu tools are not exported by homebrew by default
+          export BREW_PREFIX="$(brew --prefix)"
+          for bindir in "${BREW_PREFIX}/opt/"*"/libexec/gnubin"; do export PATH=$bindir:$PATH; done
+          for bindir in "${BREW_PREFIX}/opt/"*"/bin"; do export PATH=$bindir:$PATH; done
+
+          echo BREW_PREFIX: $BREW_PREFIX
+          echo PATH: $PATH
+          which bison
+          which libtool
+
           ./extras/package/macosx/build.sh -a x86_64 -i s -c
 
       - name: Publish
