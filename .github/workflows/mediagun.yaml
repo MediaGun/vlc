@@ -22,6 +22,7 @@ permissions:
 
 jobs:
   build_linux:
+    if: false #save some CPU for now
     name: Build for Linux
     runs-on: [ ubuntu-24.04 ]
     container:
@@ -62,6 +63,7 @@ jobs:
           path: ${{ env.install_prefix }}
 
   build_windows:
+    if: false #save some CPU for now
     name: Build for Windows
     runs-on: [ ubuntu-24.04 ]
     container:
@@ -92,7 +94,8 @@ jobs:
     runs-on: [ macos-13 ]
     strategy:
       matrix:
-        arch: [x86_64, aarch64]
+        arch: [x86_64]
+        #arch: [x86_64, aarch64] save some CPU for now
 
     env:
       CONTRIBFLAGS: --disable-qt --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-x265 --disable-shout --disable-rav1e --disable-vpx --disable-x264 --disable-x262 --disable-aom --disable-twolame --disable-librist --disable-ncurses --disable-fluid
@@ -111,6 +114,10 @@ jobs:
           export BREW_PREFIX="$(brew --prefix)"
           for bindir in "${BREW_PREFIX}/opt/"*"/libexec/gnubin"; do echo "$bindir" >> $GITHUB_PATH; done
           for bindir in "${BREW_PREFIX}/opt/"*"/bin"; do echo "$bindir" >> $GITHUB_PATH; done
+
+      - name: Check Path
+        shell: bash
+        run: .github/workflows/testpath.sh
 
       - name: Build
         shell: bash
