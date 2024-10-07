@@ -6,8 +6,11 @@ on:
     branches:
       - master
       - mg-ci
-      - mg-volume-win32
-      - feat/ci
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - master
+      - mg-ci
   workflow_dispatch:
 
 concurrency:
