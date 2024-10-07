@@ -126,6 +126,10 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: Install build tools
+        run: |
+          brew install help2man automake autoconf@2.72 libtool bison@3.8 nasm ragel meson ninja
+
       - name: Build
         run: |
           env
