@@ -110,27 +110,21 @@ jobs:
 
       - name: Install build tools
         run: |
-          brew install help2man automake autoconf@2.72 libtool bison@3.8 nasm ragel meson ninja
+          brew install help2man automake autoconf-archive libtool bison@3.8 nasm ragel meson ninja
           export BREW_PREFIX="$(brew --prefix)"
-          for bindir in "${BREW_PREFIX}/opt/"*"/libexec/gnubin"; do echo "$bindir" >> $GITHUB_PATH; done
-          for bindir in "${BREW_PREFIX}/opt/"*"/bin"; do echo "$bindir" >> $GITHUB_PATH; done
-
-      - name: Check Path
-        shell: bash
-        run: .github/workflows/testpath.sh
+          echo "${BREW_PREFIX}/opt/bison/bin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/libtool/libexec/gnubin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/m4/bin" >> $GITHUB_PATH
 
       - name: Build
         shell: bash
         run: |
-          env
+          for p in $(echo $PATH | tr ':' ' '); do
+             echo $p
+             ls $p || true
+          done
 
-          echo PATH: $PATH
-          which bison
-          bison --version || bison -version || true
-          which libtool
-          libtool --version || libtool -version || true
-
-          PATH="$PATH" ./extras/package/macosx/build.sh -a ${{matrix.arch}} -i s -c
+          ./extras/package/macosx/build.sh -a ${{matrix.arch}} -i s -c
 
       - name: Publish
         uses: actions/upload-artifact@v4
