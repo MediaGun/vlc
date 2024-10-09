@@ -1,0 +1,280 @@
+name: CI Build Dev
+run-name: Build project by ${{ github.actor }}
+
+on:
+  push:
+    branches:
+      - master
+      - mg-ci
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - master
+      - mg-ci
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_linux:
+    if: false #save some CPU for now
+    name: Build for Linux
+    runs-on: [ ubuntu-24.04 ]
+    container:
+      image: 'registry.videolan.org/vlc-debian-unstable:20221213103803'
+      options: '--user root'
+
+    env:
+      install_prefix: '/vlc/install_dir_linux'
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Permissions
+        run: chown -R root:root .
+
+      - name: Bootstrap
+        run: ./bootstrap
+
+      - name: Configuration
+        run: |
+          ./configure --prefix=${{ env.install_prefix }} \
+          --disable-srt --disable-lua --enable-merge-ffmpeg \
+          --disable-shout --disable-qt --disable-nls --enable-pdb --disable-skins2
+
+      - name: Build
+        run: make -j2
+
+      - name: Install
+        run: make install
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-linux
+          path: ${{ env.install_prefix }}
+
+  build_windows:
+    if: false #save some CPU for now
+    name: Build for Windows
+    runs-on: [ ubuntu-24.04 ]
+    container:
+      image: 'registry.videolan.org/vlc-debian-llvm-msvcrt:20221214101739'
+      options: '--user root'
+
+    env:
+      CONFIGFLAGS: '--disable-vlm --disable-vlc --disable-chromecast --disable-goom --disable-libcddb --disable-shout --disable-sout'
+      CONTRIBFLAGS: '--disable-qt --disable-sout --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-aribb25 --disable-libplacebo'
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build
+        run: ./extras/package/win32/build.sh -a x86_64 -z -x -i u
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-windows
+          path: ./win64/vlc-4.0.0-dev
+
+  build_macos:
+    name: Build for MacOS
+    runs-on: [ macos-13 ]
+    strategy:
+      matrix:
+        arch: [x86_64]
+        #arch: [x86_64, aarch64] save some CPU for now
+
+    env:
+      CONTRIBFLAGS: --disable-qt --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-x265 --disable-shout --disable-rav1e --disable-vpx --disable-x264 --disable-x262 --disable-aom --disable-twolame --disable-librist --disable-ncurses --disable-fluid
+      VLC_CONFIGURE_ARGS: --disable-macosx --disable-sparkle --disable-osx-notifications  --disable-sout --disable-shout --disable-ncurses --disable-twolame --disable-vlm --disable-vlc --disable-nls --disable-chromecast --disable-dc1394 --disable-dv1394
+      VLC_PATH: /usr/local/bin
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Install build tools
+        run: |
+          brew install help2man automake autoconf-archive libtool bison@3.8 nasm ragel meson ninja
+          export BREW_PREFIX="$(brew --prefix)"
+          echo "${BREW_PREFIX}/opt/bison/bin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/libtool/libexec/gnubin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/m4/bin" >> $GITHUB_PATH
+
+      - name: Build
+        shell: bash
+        run: |
+          for p in $(echo $PATH | tr ':' ' '); do
+             echo $p
+             ls $p || true
+          done
+
+          ./extras/package/macosx/build.sh -a ${{matrix.arch}} -i s -c
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-macos-${{matrix.arch}}
+          path: ./vlc-macos-sdk-4.0.0-dev.tar.gz
+
+  build_macos_universal:
+    name: Build for MacOS (universal)
+    runs-on: [ macos-13 ]
+    needs: [ build_macos ]
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Get Artifact (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-macos-aarch64
+          path: .
+
+      - name: Get Artifact (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-macos-x86_64
+          path: .
+
+      - name: Build
+        run: |
+          #!/bin/bash
+          set -ex
+
+          SCRIPTDIR=$(dirname "$0")
+
+          # Checks whether the file is an executable binary
+          is_binary() {
+
+          if [ -L "$1" ]; then
+              return 1
+          fi
+
+          type=$(file "$1")
+          if [[ "$type" == *"Mach-O"*  ]]; then
+              return 0
+          else
+              return 1
+          fi
+          }
+
+          # compares the hashes of both files and prints a warning if they do not match
+          hash_compare() {
+
+          if [ -L "$1" ]; then
+              return
+          fi
+
+          hash1=$(shasum "$1" | awk '{ print $1 }')
+          hash2=$(shasum "$2" | awk '{ print $1 }')
+
+          if [ "$hash1" != "$hash2" ]; then
+              echo "WARN: Hash differences: $1 ($hash1) versus $2 ($hash2)"
+          fi
+          }
+
+          extract_source() {
+          mkdir -p $1
+          pushd $1
+          tar -xvf ../src/$1/vlc-macos-sdk-4.0.0-dev.tar.gz
+          popd
+          }
+          # Main logic
+
+          INTELROOT="x86_64"
+          ARMROOT="aarch64"
+          OUTPUT="universal"
+
+          extract_source $INTELROOT
+          extract_source $ARMROOT
+
+          echo "Creating universal build in $OUTPUT"
+          rm -Rf "$OUTPUT"
+
+          # Generate directory structure
+          find "$INTELROOT" -type d -print0 | while IFS= read -r -d '' filePath; do
+          relativePath=${filePath#"$INTELROOT"}
+
+          targetFilePath="${OUTPUT}${relativePath}"
+          #echo "Create directory $targetFilePath"
+          install -d "$targetFilePath"
+          done
+
+          find "$ARMROOT" -type d -print0 | while IFS= read -r -d '' filePath; do
+          relativePath=${filePath#"$ARMROOT"}
+
+          targetFilePath="${OUTPUT}${relativePath}"
+
+          #echo "Create directory $targetFilePath"
+          install -d "$targetFilePath"
+          done
+
+          # Iterate over all files in INTELROOT directory
+          find "$INTELROOT" \( -type f -or -type l \) -print0 | while IFS= read -r -d '' filePath; do
+          relativePath=${filePath#"$INTELROOT"}
+
+          alternativeFilePath="${ARMROOT}/${relativePath}"
+          targetFilePath="${OUTPUT}${relativePath}"
+
+          #echo "Analyzing file $relativePath"
+
+          if [ ! -e "$alternativeFilePath" ]; then
+              echo "File only exists in first app, copying file $relativePath"
+              cp -a "$filePath" "$targetFilePath"
+              continue
+          fi
+
+          if is_binary "$filePath"; then
+              #echo "Create lipo at $targetFilePath"
+              lipo -create -output "$targetFilePath" "$filePath" "$alternativeFilePath"
+              continue
+          fi
+
+          #echo "Copying file $relativePath"
+          #hash_compare "$filePath" "$alternativeFilePath"
+          cp -a "$filePath" "$targetFilePath"
+          done
+
+
+          # Search for files only existing in ARMROOT
+          find "$ARMROOT" \( -type f -or -type l \) -print0 | while IFS= read -r -d '' filePath; do
+          relativePath=${filePath#"$ARMROOT"}
+
+          targetFilePath="${OUTPUT}${relativePath}"
+
+          if [ ! -e "$targetFilePath" ]; then
+              echo "File only exists in second app, copying file $relativePath"
+
+              cp -a "$filePath" "$targetFilePath"
+          fi
+
+          done
+
+          pushd $OUTPUT
+          tar -cvzf ../vlc-macos-sdk-4.0.0-universal-dev.tar.gz *
+          popd
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-macos-universal
+          path: ./vlc-macos-sdk-4.0.0-universal-dev.tar.gz

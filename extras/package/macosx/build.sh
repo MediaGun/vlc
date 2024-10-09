@@ -141,6 +141,10 @@ info "Building in \"$builddir\""
 #
 # vlc/extras/tools
 #
+echo "build.sh==================="
+echo $PATH
+env
+echo "build.sh==================="
 
 info "Building building tools"
 spushd "${vlcroot}/extras/tools"
