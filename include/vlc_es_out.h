@@ -23,8 +23,6 @@
 #ifndef VLC_ES_OUT_H
 #define VLC_ES_OUT_H 1
 
-#include <assert.h>
-
 #include <vlc_es.h>
 
 #include <vlc_tick.h>
@@ -74,7 +72,7 @@ enum es_out_query_e
     ES_OUT_SET_ES_FMT,         /* arg1= es_out_id_t* arg2=es_format_t* res=can fail */
 
     /* Allow preroll of data (data with dts/pts < i_pts for all ES will be decoded but not displayed */
-    ES_OUT_SET_NEXT_DISPLAY_TIME,       /* arg1=int64_t i_pts(microsecond) */
+    ES_OUT_SET_NEXT_DISPLAY_TIME,       /* arg1=vlc_tick_t i_pts(microsecond) */
     /* Set meta data for group (dynamic) (The vlc_meta_t is not modified nor released) */
     ES_OUT_SET_GROUP_META,  /* arg1=int i_group arg2=const vlc_meta_t */
     /* Set epg for group (dynamic) (The vlc_epg_t is not modified nor released) */
@@ -90,17 +88,13 @@ enum es_out_query_e
 
     /* Stop any buffering being done, and ask if es_out has no more data to
      * play.
-     * It will not block and so MUST be used carrefully. The only good reason
+     * It will not block and so MUST be used carefully. The only good reason
      * is for interactive playback (like for DVD menu).
      * XXX You SHALL call ES_OUT_RESET_PCR before any other es_out_Control/Send calls. */
     ES_OUT_GET_EMPTY,       /* arg1=bool*   res=cannot fail */
 
     /* Set global meta data (The vlc_meta_t is not modified nor released) */
     ES_OUT_SET_META, /* arg1=const vlc_meta_t * */
-
-    /* PCR system clock manipulation for external clock synchronization */
-    ES_OUT_GET_PCR_SYSTEM, /* arg1=vlc_tick_t *, arg2=vlc_tick_t * res=can fail */
-    ES_OUT_MODIFY_PCR_SYSTEM, /* arg1=int is_absolute, arg2=vlc_tick_t, res=can fail */
 
     ES_OUT_POST_SUBNODE, /* arg1=input_item_node_t *, res=can fail */
 
@@ -137,10 +131,6 @@ struct es_out_callbacks
     void         (*del)(es_out_t *, es_out_id_t *);
     int          (*control)(es_out_t *, input_source_t *in, int query, va_list);
     void         (*destroy)(es_out_t *);
-    /**
-     * Private control callback, must be NULL for es_out created from modules.
-     */
-    int          (*priv_control)(es_out_t *, int query, va_list);
 };
 
 struct es_out_t
@@ -267,20 +257,6 @@ VLC_USED static inline int es_out_SetMeta( es_out_t *out, const vlc_meta_t *meta
     return es_out_Control( out, ES_OUT_SET_META, meta );
 }
 #define es_out_ControlSetMeta es_out_SetMeta
-
-/* Get the PCR system clock manipulation for external clock synchronization */
-VLC_USED static inline int es_out_GetPcrSystem( es_out_t *out, vlc_tick_t *pi_system, vlc_tick_t *pi_delay )
-{
-    return es_out_Control( out, ES_OUT_GET_PCR_SYSTEM, pi_system, pi_delay );
-}
-#define es_out_ControlGetPcrSystem es_out_GetPcrSystem
-
-/* Modify the PCR system clock manipulation for external clock synchronization */
-VLC_USED static inline int es_out_ModifyPcrSystem( es_out_t *out, bool b_absolute, vlc_tick_t i_system )
-{
-    return es_out_Control( out, ES_OUT_MODIFY_PCR_SYSTEM, b_absolute, i_system );
-}
-#define es_out_ControlModifyPcrSystem es_out_ModifyPcrSystem
 
 /**
  * @}

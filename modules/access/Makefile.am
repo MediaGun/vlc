@@ -168,7 +168,6 @@ endif
 
 libdshow_plugin_la_SOURCES = access/dshow/dshow.cpp access/dshow/access.h \
 	access/dshow/filter.cpp access/dshow/filter.h access/dshow/crossbar.cpp ../src/win32/mta_holder.h
-libdshow_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DSTRSAFE_NO_DEPRECATE
 libdshow_plugin_la_CXXFLAGS = $(AM_CXXFLAGS) $(LIBCOMCXXFLAGS)
 libdshow_plugin_la_LIBADD = $(LIBCOM) -luuid -lstrmiids -lksuser
 if HAVE_WIN32_DESKTOP
@@ -203,10 +202,7 @@ endif
 libscreen_win_plugin_la_SOURCES = access/screen/screen.c access/screen/screen.h \
 	access/screen/dxgi.cpp
 libscreen_win_plugin_la_CXXFLAGS = $(AM_CXXFLAGS) $(LIBCOMCXXFLAGS)
-libscreen_win_plugin_la_LIBADD = libd3d11_common.la $(LIBCOM) -luuid
-if HAVE_WINSTORE
-libscreen_win_plugin_la_LIBADD += -ld3d11
-endif
+libscreen_win_plugin_la_LIBADD = libd3d11_common.la $(LIBCOM) -luuid -ld3d11
 if HAVE_WIN32_DESKTOP
 libscreen_win_plugin_la_SOURCES += access/screen/win32.c
 libscreen_win_plugin_la_LIBADD += -lgdi32
@@ -240,11 +236,11 @@ EXTRA_LTLIBRARIES += libvnc_plugin.la
 ### Optical media ###
 
 libcdda_plugin_la_SOURCES = access/cdda.c access/disc_helper.h access/vcd/cdrom.c access/vcd/cdrom.h \
-                            access/vcd/cdrom_internals.h misc/webservices/json.c misc/webservices/json.h \
+                            access/vcd/cdrom_internals.h \
                             misc/webservices/json_helper.h misc/webservices/musicbrainz.c \
                             misc/webservices/musicbrainz.h
 libcdda_plugin_la_CFLAGS = $(AM_CFLAGS) $(LIBCDDB_CFLAGS)
-libcdda_plugin_la_LIBADD = $(LIBCDDB_LIBS) $(LIBM)
+libcdda_plugin_la_LIBADD = libvlc_json.la $(LIBCDDB_LIBS) $(LIBM)
 libcdda_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(accessdir)'
 if HAVE_DARWIN
 libcdda_plugin_la_LIBADD += -liconv
@@ -319,7 +315,6 @@ libbda_la_LDFLAGS = -static
 libbda_la_LIBADD = -lstrmiids $(LIBCOM) -luuid
 noinst_LTLIBRARIES += libbda.la
 
-libdtv_plugin_la_DEPENDENCIES = libbda.la
 libdtv_plugin_la_LIBADD = libbda.la -lstdc++
 access_LTLIBRARIES += libdtv_plugin.la
 endif

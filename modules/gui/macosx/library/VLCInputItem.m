@@ -27,7 +27,10 @@
 #import "extensions/NSImage+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 
+#import "library/VLCLibraryController.h"
+
 #import <vlc_url.h>
+#import <vlc_preparser.h>
 
 NSString *VLCInputItemParsingSucceeded = @"VLCInputItemParsingSucceeded";
 NSString *VLCInputItemParsingFailed = @"VLCInputItemParsingFailed";
@@ -36,6 +39,7 @@ NSString *VLCInputItemPreparsingSkipped = @"VLCInputItemPreparsingSkipped";
 NSString *VLCInputItemPreparsingFailed = @"VLCInputItemPreparsingFailed";
 NSString *VLCInputItemPreparsingTimeOut = @"VLCInputItemPreparsingTimeOut";
 NSString *VLCInputItemPreparsingSucceeded = @"VLCInputItemPreparsingSucceeded";
+NSString * const VLCInputItemCommonDataDifferingFlagString = @"<differing>";
 
 @interface VLCInputItem()
 {
@@ -135,6 +139,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     FREENULL(psz_title);
     return returnValue;
 }
+
 -(void)setTitle:(NSString *)title
 {
     if (_vlcInputItem) {
@@ -159,7 +164,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     }
 }
 
-- (NSString *)albumName
+- (NSString *)album
 {
     if (!_vlcInputItem) {
         return nil;
@@ -169,7 +174,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     FREENULL(psz_album);
     return returnValue;
 }
-- (void)setAlbumName:(NSString *)albumName
+- (void)setAlbum:(NSString *)albumName
 {
     if (_vlcInputItem) {
         input_item_SetAlbum(_vlcInputItem, [albumName UTF8String]);
@@ -501,12 +506,27 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     return nil;
 }
 
+- (void)setArtworkURL:(NSURL *)artworkURL
+{
+    if (!_vlcInputItem) {
+        return;
+    }
+
+    if (artworkURL != nil) {
+        input_item_SetArtworkURL(_vlcInputItem, artworkURL.absoluteString.UTF8String);
+    } else {
+        input_item_SetArtworkURL(_vlcInputItem, NULL);
+    }
+}
+
 - (void)parseInputItem
 {
-    _p_parserID = input_item_Parse(_vlcInputItem,
-                                   VLC_OBJECT(getIntf()),
-                                   &parserCallbacks,
-                                   (__bridge void *) self);
+    const struct input_item_parser_cfg cfg = {
+        .cbs = &parserCallbacks,
+        .cbs_data = (__bridge void *) self,
+    };
+
+    _p_parserID = input_item_Parse(VLC_OBJECT(getIntf()), _vlcInputItem, &cfg);
 }
 
 - (void)cancelParsing
@@ -518,7 +538,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
 
 - (void)parsingEnded:(int)status
 {
-    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     if (status) {
         [notificationCenter postNotificationName:VLCInputItemParsingSucceeded object:self];
     } else {
@@ -546,7 +566,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
 
 - (void)preparsingEnded:(enum input_item_preparse_status)status
 {
-    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     switch (status) {
         case ITEM_PREPARSE_SKIPPED:
             [notificationCenter postNotificationName:VLCInputItemPreparsingSkipped object:self];
@@ -570,19 +590,22 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
         return VLC_ENOENT;
     }
 
-    return libvlc_MetadataRequest(vlc_object_instance(getIntf()),
-                                  _vlcInputItem,
-                                  META_REQUEST_OPTION_SCOPE_ANY |
-                                  META_REQUEST_OPTION_FETCH_LOCAL,
-                                  &preparseCallbacks,
-                                  (__bridge void *)self,
-                                  -1, NULL);
+    vlc_preparser_t *parser = libvlc_GetMainPreparser(vlc_object_instance(getIntf()));
+    if (unlikely(parser == NULL))
+        return VLC_ENOMEM;
+
+    return vlc_preparser_Push(parser, _vlcInputItem,
+                              META_REQUEST_OPTION_SCOPE_ANY |
+                              META_REQUEST_OPTION_FETCH_LOCAL |
+                              META_REQUEST_OPTION_PARSE_SUBITEMS,
+                              &preparseCallbacks,
+                              (__bridge void *)self, -1, NULL);
 }
 
 - (void)subTreeAdded:(input_item_node_t *)p_node
 {
     _subTree = p_node;
-    [[NSNotificationCenter defaultCenter] postNotificationName:VLCInputItemSubtreeAdded object:self];
+    [NSNotificationCenter.defaultCenter postNotificationName:VLCInputItemSubtreeAdded object:self];
 }
 
 - (int)writeMetadataToFile
@@ -593,32 +616,46 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     return input_item_WriteMeta(VLC_OBJECT(getIntf()), _vlcInputItem);
 }
 
-- (NSImage*)thumbnailWithSize:(NSSize)size
+- (void)thumbnailWithSize:(NSSize)size completionHandler:(void(^)(NSImage * image))completionHandler
 {
-    NSImage *image;
-    if (!self.isStream && _vlcInputItem != NULL) {
-        char *psz_url = input_item_GetURI(_vlcInputItem);
-        if (psz_url) {
-            char *psz_path = vlc_uri2path(psz_url);
-            if (psz_path) {
-                NSString *path = toNSStr(psz_path);
-                free(psz_path);
-                image = [NSImage quickLookPreviewForLocalPath:path
-                                                     withSize:size];
+    if (self.isStream || _vlcInputItem == NULL) {
+        completionHandler(nil);
+        return;
+    }
 
-                if (!image) {
-                    image = [[NSWorkspace sharedWorkspace] iconForFile:path];
-                    image.size = size;
-                }
-            }
-            free(psz_url);
+    char * const psz_url = input_item_GetURI(_vlcInputItem);
+    if (psz_url == NULL) {
+        completionHandler(nil);
+        return;
+    }
+
+    char * const psz_path = vlc_uri2path(psz_url);
+    free(psz_url);
+    if (psz_path == NULL) {
+        completionHandler(nil);
+        return;
+    }
+
+    NSString * const path = toNSStr(psz_path);
+    free(psz_path);
+
+    [NSImage quickLookPreviewForLocalPath:path 
+                                 withSize:size
+                        completionHandler:^(NSImage * image) {
+        if (image) {
+            completionHandler(image);
+            return;
         }
-    }
 
-    if (!image) {
-        image = [NSImage imageNamed: @"noart.png"];
-    }
-    return image;
+        NSImage * const workspaceImage = [NSWorkspace.sharedWorkspace iconForFile:path];
+        if (workspaceImage) {
+            image.size = size;
+            completionHandler(image);
+            return;
+        }
+
+        completionHandler(nil);
+    }];
 }
 
 - (void)moveToTrash
@@ -627,7 +664,7 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
         return;
     }
 
-    NSURL *pathUrl = [NSURL URLWithString:self.path];
+    NSURL * const pathUrl = [NSURL URLWithString:self.path];
     if (pathUrl == nil) {
         return;
     }
@@ -635,6 +672,9 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
     [NSFileManager.defaultManager trashItemAtURL:pathUrl
                                 resultingItemURL:nil
                                            error:nil];
+    
+    VLCLibraryController * const libraryController = VLCMain.sharedInstance.libraryController;
+    [libraryController reloadMediaLibraryFoldersForInputItems:@[self]];
 }
 
 - (void)revealInFinder
@@ -652,6 +692,86 @@ static const struct vlc_metadata_cbs preparseCallbacks = {
 }
 
 @end
+
+
+NSDictionary<NSString *, id> * const commonInputItemData(NSArray<VLCInputItem *> * const inputItems)
+{
+    if (inputItems.count == 0) {
+        return @{};
+    }
+
+    VLCInputItem * const firstInputItem = inputItems.firstObject;
+
+    if (inputItems.count == 1) {
+        return @{@"inputItem": firstInputItem};
+    }
+
+    NSMutableDictionary<NSString *, id> *const commonData = [[NSMutableDictionary alloc] init];
+
+#define PERFORM_ACTION_PER_INPUTITEM_NSSTRING_PROP(action)                                  \
+action(MRL);                                                                                \
+action(decodedMRL);                                                                         \
+action(title);                                                                              \
+action(artist);                                                                             \
+action(album);                                                                              \
+action(trackNumber);                                                                        \
+action(trackTotal);                                                                         \
+action(genre);                                                                              \
+action(date);                                                                               \
+action(episode);                                                                            \
+action(actors);                                                                             \
+action(director);                                                                           \
+action(showName);                                                                           \
+action(copyright);                                                                          \
+action(publisher);                                                                          \
+action(nowPlaying);                                                                         \
+action(language);                                                                           \
+action(contentDescription);                                                                 \
+action(encodedBy);
+
+#define PERFORM_ACTION_PER_INPUTITEM_PROP(action)                                           \
+PERFORM_ACTION_PER_INPUTITEM_NSSTRING_PROP(action)                                          \
+action(artworkURL);
+
+#define CREATE_DIFFER_BOOL(prop)                                                            \
+BOOL differing_##prop = NO;
+
+#define CREATE_PROP_VAR(prop)                                                               \
+NSString * const firstItem_##prop = firstInputItem.prop;
+
+#define UPDATE_IF_DIFFERING_BOOL(prop)                                                          \
+differing_##prop = differing_##prop || ![inputItem.prop isEqualToString:firstItem_##prop];
+
+#define ADD_PROP_TO_DICT(prop)                                                              \
+NSString * firstItemValue_##prop = firstItem_##prop == nil ? @"" : firstItem_##prop;        \
+NSString * const value_##prop =                                                             \
+    differing_##prop ? VLCInputItemCommonDataDifferingFlagString : firstItemValue_##prop;   \
+[commonData setObject:value_##prop forKey:[NSString stringWithUTF8String:#prop]];           \
+
+    PERFORM_ACTION_PER_INPUTITEM_PROP(CREATE_DIFFER_BOOL);
+    PERFORM_ACTION_PER_INPUTITEM_NSSTRING_PROP(CREATE_PROP_VAR);
+    // Since artworkURL is a URL, we have to handle it differently
+    NSString * const firstItem_artworkURL = firstInputItem.artworkURL.absoluteString;
+
+    // Skip first item
+    for (uint i = 1; i < inputItems.count; ++i) {
+        VLCInputItem * const inputItem = inputItems[i];
+
+        PERFORM_ACTION_PER_INPUTITEM_NSSTRING_PROP(UPDATE_IF_DIFFERING_BOOL);
+        NSString * const inputItem_artworkURL = inputItem.artworkURL.absoluteString;
+        differing_artworkURL |= ![inputItem_artworkURL isEqualToString:firstItem_artworkURL];
+    }
+
+    PERFORM_ACTION_PER_INPUTITEM_PROP(ADD_PROP_TO_DICT);
+
+#undef PERFORM_ACTION_PER_INPUTITEM_PROP
+#undef CREATE_DIFFER_BOOL
+#undef CREATE_PROP_VAR
+#undef SET_IF_DIFFERING
+#undef ADD_PROP_TO_DICT_IF_DIFFERING
+
+    return [commonData copy];
+}
 
 
 @implementation VLCInputNode

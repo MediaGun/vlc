@@ -7,7 +7,6 @@ OPTIONS="
       --enable-flac
       --enable-theora
       --enable-avcodec --enable-merge-ffmpeg
-      --enable-dca
       --enable-libass
       --enable-schroedinger
       --enable-live555
@@ -17,6 +16,7 @@ OPTIONS="
       --enable-libcddb
       --enable-zvbi --disable-telx
       --enable-nls
+      --disable-qt
 "
 
 sh "$(dirname $0)"/../../../configure ${OPTIONS}  "$@"

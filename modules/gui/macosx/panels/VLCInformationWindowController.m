@@ -23,13 +23,48 @@
 
 #import "VLCInformationWindowController.h"
 
+#import "extensions/NSImage+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
+
+#import "library/VLCInputItem.h"
+#import "library/VLCLibraryController.h"
+#import "library/VLCLibraryImageCache.h"
+#import "library/VLCLibraryModel.h"
+#import "library/VLCLibraryRepresentedItem.h"
+
 #import "main/VLCMain.h"
+
 #import "playlist/VLCPlaylistController.h"
 #import "playlist/VLCPlayerController.h"
-#import "windows/video/VLCVideoOutputProvider.h"
-#import "library/VLCInputItem.h"
+
 #import "views/VLCImageView.h"
+#import "views/VLCSettingTextField.h"
+
+#import "windows/video/VLCVideoOutputProvider.h"
+
+#define PERFORM_ACTION_READWRITE_TEXTFIELDS(actionCallback) \
+actionCallback(title);                                      \
+actionCallback(artist);                                     \
+actionCallback(album);                                      \
+actionCallback(genre);                                      \
+actionCallback(trackNumber);                                \
+actionCallback(date);                                       \
+actionCallback(actors);                                     \
+actionCallback(director);                                   \
+actionCallback(showName);                                   \
+actionCallback(copyright);                                  \
+actionCallback(publisher);                                  \
+actionCallback(language);                                   \
+actionCallback(contentDescription);
+
+#define PERFORM_ACTION_ALL_TEXTFIELDS(actionCallback)   \
+PERFORM_ACTION_READWRITE_TEXTFIELDS(actionCallback);    \
+actionCallback(decodedMRL);                             \
+actionCallback(trackTotal);                             \
+actionCallback(season);                                 \
+actionCallback(episode);                                \
+actionCallback(nowPlaying);                             \
+actionCallback(encodedBy);
 
 #pragma mark - data storage object
 
@@ -56,7 +91,8 @@
 @interface VLCInformationWindowController () <NSOutlineViewDataSource>
 {
     VLCCodecInformationTreeItem *_rootCodecInformationItem;
-
+    NSImage *_artwork;
+    NSURL *_newArtworkURL;
     BOOL _statisticsEnabled;
 }
 @end
@@ -71,23 +107,21 @@
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)awakeFromNib
 {
+    _statisticsEnabled = var_InheritBool(getIntf(), "stats");
+
     [self.window setExcludedFromWindowsMenu: YES];
     [self.window setCollectionBehavior: NSWindowCollectionBehaviorFullScreenAuxiliary];
-    [self.window setInitialFirstResponder: _uriLabel];
+    [self.window setInitialFirstResponder: _decodedMRLLabel];
 
-    _outlineView.dataSource = self;
+    self.outlineView.dataSource = self;
 
-    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
-    if (_mainMenuInstance) {
-        [notificationCenter addObserver:self
-                               selector:@selector(currentPlayingItemChanged:)
-                                   name:VLCPlayerCurrentMediaItemChanged
-                                 object:nil];
+    NSNotificationCenter * const notificationCenter = NSNotificationCenter.defaultCenter;
+    if (_mainMenuInstance && _statisticsEnabled) {
         [notificationCenter addObserver:self
                                selector:@selector(updateStatistics:)
                                    name:VLCPlayerStatisticsUpdated
@@ -106,17 +140,19 @@
                                name:VLCInputItemPreparsingSucceeded
                              object:nil];
 
-    [notificationCenter postNotificationName:VLCPlayerStatisticsUpdated object:self];
-
     [self initStrings];
 
-    _statisticsEnabled = var_InheritBool(getIntf(), "stats");
     if (!_statisticsEnabled || !_mainMenuInstance) {
         if ([_segmentedView segmentCount] >= 3)
             [_segmentedView setSegmentCount: 2];
     } else {
         [self initMediaPanelStats];
     }
+
+#define SET_METADATA_SETTING_FIELD_DELEGATE(field)  \
+_##field##TextField.delegate = self
+
+    PERFORM_ACTION_ALL_TEXTFIELDS(SET_METADATA_SETTING_FIELD_DELEGATE)
 
     [self updateRepresentation];
 }
@@ -125,7 +161,7 @@
 {
     [self.window setTitle: _NS("Media Information")];
 
-    [_uriLabel setStringValue: _NS("Location")];
+    [_decodedMRLLabel setStringValue: _NS("Location")];
     [_titleLabel setStringValue: NSTR(VLC_META_TITLE)];
     [_artistLabel setStringValue: NSTR(VLC_META_ARTIST)];
     [_saveMetaDataButton setStringValue: _NS("Save Metadata")];
@@ -140,12 +176,12 @@
     [_albumLabel setStringValue: NSTR(VLC_META_ALBUM)];
     [_trackNumberLabel setStringValue: NSTR(VLC_META_TRACK_NUMBER)];
     [_trackTotalLabel setStringValue: _NS("Track Total")];
-    [_descriptionLabel setStringValue: NSTR(VLC_META_DESCRIPTION)];
+    [_contentDescriptionLabel setStringValue: NSTR(VLC_META_DESCRIPTION)];
     [_dateLabel setStringValue: NSTR(VLC_META_DATE)];
     [_languageLabel setStringValue: NSTR(VLC_META_LANGUAGE)];
     [_nowPlayingLabel setStringValue: NSTR(VLC_META_NOW_PLAYING)];
     [_publisherLabel setStringValue: NSTR(VLC_META_PUBLISHER)];
-    [_encodedbyLabel setStringValue: NSTR(VLC_META_ENCODED_BY)];
+    [_encodedByLabel setStringValue: NSTR(VLC_META_ENCODED_BY)];
     [_showNameLabel setStringValue: NSTR(VLC_META_SHOW_NAME)];
     [_episodeLabel setStringValue: NSTR(VLC_META_EPISODE)];
     [_seasonLabel setStringValue: NSTR(VLC_META_SEASON)];
@@ -187,9 +223,51 @@
     if ([self.window isKeyWindow])
         [self.window orderOut:sender];
     else {
-        [self.window setLevel: [[[VLCMain sharedInstance] voutProvider] currentStatusWindowLevel]];
+        [self.window setLevel: VLCMain.sharedInstance.voutProvider.currentStatusWindowLevel];
         [self.window makeKeyAndOrderFront:sender];
     }
+}
+
+- (IBAction)copyMrl:(id)sender
+{
+    if (self.representedInputItems.count == 0) {
+        return;
+    } else if (self.representedInputItems.count == 1) {
+        NSPasteboard * const pasteboard = NSPasteboard.generalPasteboard;
+        [pasteboard clearContents];
+        [pasteboard setString:self.representedInputItems.firstObject.MRL
+                      forType:NSPasteboardTypeString];
+    } else {
+        NSMenu * const choiceMenu = [[NSMenu alloc] initWithTitle:_NS("Copy MRL")];
+        for (VLCInputItem * const inputItem in self.representedInputItems) {
+            NSMenuItem * const menuItem =
+                [[NSMenuItem alloc] initWithTitle:inputItem.title
+                                           action:@selector(copyMrlFromMenuItem:)
+                                    keyEquivalent:@""];
+            menuItem.representedObject = inputItem;
+            [choiceMenu addItem:menuItem];
+        }
+        CGFloat senderHeight = 0;
+        if ([sender isKindOfClass:NSView.class]) {
+            senderHeight = ((NSView *)sender).frame.size.height;
+        }
+        [choiceMenu popUpMenuPositioningItem:nil
+                                  atLocation:NSMakePoint(0, senderHeight)
+                                      inView:sender];
+    }
+}
+
+- (void)copyMrlFromMenuItem:(id)sender
+{
+    NSParameterAssert(sender);
+    NSParameterAssert([sender isKindOfClass:NSMenuItem.class]);
+    NSMenuItem * const menuItem = (NSMenuItem *)sender;
+    NSParameterAssert(menuItem.representedObject);
+    NSParameterAssert([menuItem.representedObject isKindOfClass:VLCInputItem.class]);
+    VLCInputItem * const inputItem = (VLCInputItem *)menuItem.representedObject;
+    NSPasteboard * const pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:inputItem.MRL forType:NSPasteboardTypeString];
 }
 
 - (void)initMediaPanelStats
@@ -216,18 +294,124 @@
     [_lostAudioBuffersTextField setIntValue: 0];
 }
 
-- (void)currentPlayingItemChanged:(NSNotification *)aNotification
+- (void)setRepresentedMediaLibraryItems:(NSArray<VLCLibraryRepresentedItem *> *)representedMediaLibraryItems
 {
-    VLCPlayerController * const playerController = VLCMain.sharedInstance.playlistController.playerController;
-    VLCInputItem * const currentMediaItem = playerController.currentMedia;
-    [self setRepresentedInputItem:currentMediaItem];
+    NSMutableArray<VLCInputItem *> * const inputItems = NSMutableArray.array;
+    for (VLCLibraryRepresentedItem * const representedItem in representedMediaLibraryItems) {
+        NSArray<VLCMediaLibraryMediaItem *> * const mediaItems = representedItem.item.mediaItems;
+        for (VLCMediaLibraryMediaItem * const mediaItem in mediaItems) {
+            [inputItems addObject:mediaItem.inputItem];
+        }
+    }
+
+    NSParameterAssert(inputItems.count > 0);
+    _representedInputItems = inputItems.copy;
+
+    NSMutableSet * const artworkMrlSet = NSMutableSet.set;
+
+    const dispatch_queue_t queue = dispatch_queue_create("vlc_infowindow_libraryitemimg_queue", 0);
+    dispatch_async(queue, ^{
+        NSMutableArray<NSImage *> * const artworkImages = NSMutableArray.array;
+        dispatch_group_t group = dispatch_group_create();
+
+        for (VLCLibraryRepresentedItem * const item in representedMediaLibraryItems) {
+            NSArray<VLCMediaLibraryMediaItem *> * const mediaItems = item.item.mediaItems;
+
+            for (VLCMediaLibraryMediaItem * const mediaItem in mediaItems) {
+                @synchronized (artworkMrlSet) {
+                    NSString * const itemArtworkMrl = mediaItem.smallArtworkMRL;
+                    if ([artworkMrlSet containsObject:itemArtworkMrl] || itemArtworkMrl == nil) {
+                        continue;
+                    }
+                    [artworkMrlSet addObject:itemArtworkMrl];
+                }
+
+                @synchronized (artworkImages) {
+                    dispatch_group_enter(group);
+                    [VLCLibraryImageCache thumbnailForLibraryItem:mediaItem
+                                                   withCompletion:^(NSImage * const image) {
+                        if (image) {
+                            [artworkImages addObject:image];
+                        }
+                        dispatch_group_leave(group);
+                    }];
+                }
+            }
+        }
+
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+
+        if (artworkImages.count == 0) {
+            _artwork = [NSImage imageNamed:@"noart.png"];
+            [self updateRepresentation];
+            return;
+        }
+
+        // Without an image set the button's size can be {{0, 0}, {0, 0}}
+        const CGFloat buttonHeight = self.artworkImageButton.frame.size.height;
+        const NSSize artworkSize =
+            buttonHeight == 0 ? NSMakeSize(256, 256) : NSMakeSize(buttonHeight, buttonHeight);
+        NSArray<NSValue *> * const frames =
+            [NSImage framesForCompositeImageSquareGridWithImages:artworkImages
+                                                            size:artworkSize
+                                                   gridItemCount:artworkImages.count];
+        _artwork = [NSImage compositeImageWithImages:artworkImages
+                                              frames:frames
+                                                size:artworkSize];
+
+        [self updateRepresentation];
+    });
 }
 
-- (void)setRepresentedInputItem:(VLCInputItem *)representedInputItem
+- (void)setRepresentedInputItems:(NSArray<VLCInputItem *> *)representedInputItems
 {
-    _representedInputItem = representedInputItem;
+    if (representedInputItems == _representedInputItems) {
+        return;
+    }
 
-    [self updateRepresentation];
+    NSParameterAssert(representedInputItems.count > 0);
+    _representedInputItems = representedInputItems;
+
+    const dispatch_queue_t queue = dispatch_queue_create("vlc_infowindow_inputitemimg_queue", 0);
+    dispatch_async(queue, ^{
+        NSMutableArray<NSImage *> * const artworkImages = NSMutableArray.array;
+        dispatch_group_t group = dispatch_group_create();
+
+        for (VLCInputItem * const item in representedInputItems) {
+            @synchronized (artworkImages) {
+                dispatch_group_enter(group);
+                [VLCLibraryImageCache thumbnailForInputItem:item
+                                             withCompletion:^(NSImage * const image) {
+                    if (image) {
+                        [artworkImages addObject:image];
+                    }
+                    dispatch_group_leave(group);
+                }];
+            }
+        }
+
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+
+        if (artworkImages.count == 0) {
+            _artwork = [NSImage imageNamed:@"noart.png"];
+            [self updateRepresentation];
+            return;
+        }
+
+        // Without an image set the button's size can be {{0, 0}, {0, 0}}
+        const CGFloat buttonHeight = self.artworkImageButton.frame.size.height;
+        const NSSize artworkSize =
+            buttonHeight == 0 ? NSMakeSize(256, 256) : NSMakeSize(buttonHeight, buttonHeight);
+        NSArray<NSValue *> * const frames =
+            [NSImage framesForCompositeImageSquareGridWithImages:artworkImages
+                                                            size:artworkSize
+                                                   gridItemCount:artworkImages.count];
+        _artwork = [NSImage compositeImageWithImages:artworkImages
+                                              frames:frames
+                                                size:artworkSize];
+
+        [self updateRepresentation];
+    });
 }
 
 - (void)mediaItemWasParsed:(NSNotification *)aNotification
@@ -237,17 +421,16 @@
 
 - (void)updateStatistics:(NSNotification *)aNotification
 {
-    if (!_statisticsEnabled)
-        return;
-
-    if (![self.window isVisible])
-        return;
-
-    VLCInputStats *inputStats = aNotification.userInfo[VLCPlayerInputStats];
-    if (!inputStats) {
-        [self initMediaPanelStats];
-        return;
-    }
+    NSAssert(self.representedInputItems.count == 1, @"Should not be updating stats for many items");
+    VLCPlayerController * const playerController =
+        VLCMain.sharedInstance.playlistController.playerController;
+    VLCInputItem * const currentPlayingItem = playerController.currentMedia;
+    VLCInputItem * const firstItem = self.representedInputItems.firstObject;
+    NSAssert([currentPlayingItem.MRL isEqualToString:firstItem.MRL],
+             @"Should not update statistics when items are different!");
+    NSAssert(_statisticsEnabled, @"Statistics should not be updated when they are disabled!");
+    VLCInputStats * const inputStats = aNotification.userInfo[VLCPlayerInputStats];
+    NSAssert(inputStats != nil, @"inputStats received for statistics update should not be nil!");
 
     /* input */
     [_inputReadBytesTextField setStringValue: [NSString stringWithFormat:
@@ -275,66 +458,89 @@
     [_lostAudioBuffersTextField setIntegerValue: inputStats.lostAudioBuffers];
 }
 
+- (void)fillWindowWithInputItemData:(VLCInputItem *)inputItem
+{
+    NSParameterAssert(inputItem != nil);
+    if (!inputItem.preparsed) {
+        [inputItem preparseInputItem];
+    }
+
+#define FILL_FIELD_FROM_INPUTITEM(field)                            \
+    {                                                               \
+    NSString * const inputItemString = inputItem.field;             \
+    if (inputItemString != nil) {                                   \
+        _##field##TextField.originalStateString = inputItemString;  \
+    } else {                                                        \
+        _##field##TextField.originalStateString = @"";              \
+    }                                                               \
+}
+
+    PERFORM_ACTION_ALL_TEXTFIELDS(FILL_FIELD_FROM_INPUTITEM);
+
+#undef FILL_FIELD_FROM_INPUTITEM
+
+    _artworkImageButton.image = _artwork;
+
+    if (!_mainMenuInstance) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.window.title = inputItem.title;
+        });
+    }
+}
+
+- (void)fillWindowWithDictionaryData:(NSDictionary<NSString *, id> *)dict
+{
+    NSParameterAssert(dict != nil);
+
+#define FILL_FIELD_FROM_DICT(field)                                                 \
+{                                                                                   \
+    NSString * const dictKey = [NSString stringWithUTF8String:#field];              \
+    NSString * const fieldValue = [dict objectForKey:dictKey];                      \
+                                                                                    \
+    if ([fieldValue isEqualToString:VLCInputItemCommonDataDifferingFlagString]) {   \
+        _##field##TextField.placeholderString = _NS("(Multiple values)");           \
+        _##field##TextField.originalStateString = @"";                              \
+    } else if (fieldValue != nil) {                                                 \
+        _##field##TextField.placeholderString = @"";                                \
+        _##field##TextField.originalStateString = fieldValue;                       \
+    } else {                                                                        \
+        _##field##TextField.placeholderString = @"";                                \
+        _##field##TextField.originalStateString = @"";                              \
+    }                                                                               \
+}
+
+    PERFORM_ACTION_ALL_TEXTFIELDS(FILL_FIELD_FROM_DICT);
+
+#undef FILL_FIELD_FROM_DICT
+
+    _artworkImageButton.image = _artwork;
+}
+
 - (void)updateRepresentation
 {
-    [_saveMetaDataButton setEnabled: NO];
+    _saveMetaDataButton.enabled = NO;
+    _newArtworkURL = nil;
+    _artworkImageButton.image = _artwork;
+    _artworkImageButton.alternateImage = _artwork;
 
-    if (!_representedInputItem) {
+    if (_representedInputItems.count == 0) {
         /* Erase */
-#define SET( foo ) \
-[_##foo##TextField setStringValue:@""];
-        SET( uri );
-        SET( title );
-        SET( artist );
-        SET( album );
-        SET( trackNumber );
-        SET( trackTotal );
-        SET( genre );
-        SET( season );
-        SET( episode );
-        SET( actors );
-        SET( director );
-        SET( showName );
-        SET( copyright );
-        SET( publisher );
-        SET( nowPlaying );
-        SET( language );
-        SET( date );
-        SET( description );
-        SET( encodedby );
-#undef SET
-        [_artworkImageView setImage: [NSImage imageNamed:@"noart.png"]];
-    } else {
-        if (!_representedInputItem.preparsed) {
-            [_representedInputItem preparseInputItem];
-        }
+#define CLEAR_TEXT(field) \
+_##field##TextField.originalStateString = @"";
 
-        _uriTextField.stringValue = _representedInputItem.decodedMRL;
-        _titleTextField.stringValue = _representedInputItem.title;
-        _artistTextField.stringValue = _representedInputItem.artist;
-        _albumTextField.stringValue = _representedInputItem.albumName;
-        _trackNumberTextField.stringValue = _representedInputItem.trackNumber;
-        _trackTotalTextField.stringValue = _representedInputItem.trackTotal;
-        _genreTextField.stringValue = _representedInputItem.genre;
-        _seasonTextField.stringValue = _representedInputItem.season;
-        _episodeTextField.stringValue = _representedInputItem.episode;
-        _actorsTextField.stringValue = _representedInputItem.actors;
-        _directorTextField.stringValue = _representedInputItem.director;
-        _showNameTextField.stringValue = _representedInputItem.showName;
-        _copyrightTextField.stringValue = _representedInputItem.copyright;
-        _publisherTextField.stringValue = _representedInputItem.publisher;
-        _nowPlayingTextField.stringValue = _representedInputItem.nowPlaying;
-        _languageTextField.stringValue = _representedInputItem.language;
-        _dateTextField.stringValue = _representedInputItem.date;
-        _descriptionTextField.stringValue = _representedInputItem.contentDescription;
-        _encodedbyTextField.stringValue = _representedInputItem.encodedBy;
+        PERFORM_ACTION_ALL_TEXTFIELDS(CLEAR_TEXT);
 
-        NSURL *artworkURL = _representedInputItem.artworkURL;
-        NSImage *placeholderImage = [NSImage imageNamed: @"noart.png"];
-        [_artworkImageView setImageURL:artworkURL placeholderImage:placeholderImage];
+#undef CLEAR_TEXT
+        _artworkImageButton.image = [NSImage imageNamed:@"noart.png"];
+    } else if (_representedInputItems.count == 1) {
+        [self fillWindowWithInputItemData:_representedInputItems.firstObject];
+    } else if (_representedInputItems.count > 1) {
+        NSDictionary * const commonItemsData = commonInputItemData(_representedInputItems);
 
-        if (!_mainMenuInstance) {
-            [self.window setTitle:_representedInputItem.title];
+        if ([commonItemsData objectForKey:@"inputItem"]) {
+            self.representedInputItems = @[[commonItemsData objectForKey:@"inputItem"]];
+        } else {
+            [self fillWindowWithDictionaryData:commonItemsData];
         }
     }
 
@@ -342,31 +548,31 @@
     [self updateStreamsList];
 }
 
-- (void)updateStreamsList
+- (void)updateStreamsForInputItems:(NSArray<VLCInputItem *> *)inputItems
 {
-    _rootCodecInformationItem = [[VLCCodecInformationTreeItem alloc] init];
+    NSParameterAssert(inputItems != nil);
 
-    if (_representedInputItem) {
-        input_item_t *p_input = _representedInputItem.vlcInputItem;
+    for (VLCInputItem * const inputItem in inputItems) {
+        input_item_t * const p_input = inputItem.vlcInputItem;
         vlc_mutex_lock(&p_input->lock);
         // build list of streams
-        NSMutableArray *streams = [NSMutableArray array];
+        NSMutableArray * const streams = NSMutableArray.array;
 
         info_category_t *cat;
         vlc_list_foreach(cat, &p_input->categories, node) {
-            info_t *info;
-
-            if (info_category_IsHidden(cat))
+            if (info_category_IsHidden(cat)) {
                 continue;
+            }
 
-            VLCCodecInformationTreeItem *subItem = [[VLCCodecInformationTreeItem alloc] init];
+            VLCCodecInformationTreeItem * const subItem = [[VLCCodecInformationTreeItem alloc] init];
             subItem.propertyName = toNSStr(cat->psz_name);
 
             // Build list of codec details
-            NSMutableArray *infos = [NSMutableArray array];
+            NSMutableArray * const infos = NSMutableArray.array;
 
+            info_t *info;
             info_foreach(info, &cat->infos) {
-                VLCCodecInformationTreeItem *infoItem = [[VLCCodecInformationTreeItem alloc] init];
+                VLCCodecInformationTreeItem * const infoItem = [[VLCCodecInformationTreeItem alloc] init];
                 infoItem.propertyName = toNSStr(info->psz_name);
                 infoItem.propertyValue = toNSStr(info->psz_value);
                 [infos addObject:infoItem];
@@ -379,44 +585,118 @@
         _rootCodecInformationItem.children = [streams copy];
         vlc_mutex_unlock(&p_input->lock);
     }
+}
+
+- (void)updateStreamsList
+{
+    _rootCodecInformationItem = [[VLCCodecInformationTreeItem alloc] init];
+
+    if (_representedInputItems.count > 0) {
+        [self updateStreamsForInputItems:_representedInputItems];
+    }
 
     [_outlineView reloadData];
     [_outlineView expandItem:nil expandChildren:YES];
 }
 
-- (IBAction)metaFieldChanged:(id)sender
+- (void)controlTextDidChange:(NSNotification *)notification
 {
-    [_saveMetaDataButton setEnabled: YES];
+    BOOL settingsChanged = NO;
+
+#define CHECK_FIELD_SETTING_CHANGED(field)                              \
+settingsChanged = settingsChanged || _##field##TextField.settingChanged;
+
+    PERFORM_ACTION_ALL_TEXTFIELDS(CHECK_FIELD_SETTING_CHANGED);
+
+#undef CHECK_FIELD_SETTING_CHANGED
+
+    settingsChanged = settingsChanged || _newArtworkURL != nil;
+
+    _saveMetaDataButton.enabled = settingsChanged;
+}
+
+- (void)reloadMediaLibraryFoldersForInputItems:(NSArray<VLCInputItem *> *)inputItems
+{
+    VLCLibraryController * const libraryController = VLCMain.sharedInstance.libraryController;
+    [libraryController reloadMediaLibraryFoldersForInputItems:inputItems];
+}
+
+- (void)saveInputItemsMetadata:(NSArray<VLCInputItem *> *)inputItems
+{
+    NSParameterAssert(inputItems);
+
+#define SET_INPUTITEM_PROP(field, prop)                          \
+{                                                                \
+    NSString * const value = _##field##TextField.stringValue;    \
+    if (_##field##TextField.settingChanged) {                    \
+        inputItem.prop = value;                                  \
+    }                                                            \
+}
+
+#define SET_INPUTITEM_MATCHING_PROP(field)      \
+SET_INPUTITEM_PROP(field, field)                \
+
+    for (VLCInputItem * const inputItem in inputItems) {
+        // We do not have a textfield for names; set the contents of the title field to the input
+        // item's name
+        SET_INPUTITEM_PROP(title, name);
+        PERFORM_ACTION_READWRITE_TEXTFIELDS(SET_INPUTITEM_MATCHING_PROP);
+
+        if (_newArtworkURL != nil) { // Artwork urls require their own handling
+            inputItem.artworkURL = _newArtworkURL;
+        }
+
+        [inputItem writeMetadataToFile];
+    }
+
+#undef SET_INPUTITEM_MATCHING_PROP
+#undef SET_INPUTITEM_PROP
+
+    [self updateRepresentation];
+    [self reloadMediaLibraryFoldersForInputItems:inputItems];
 }
 
 - (IBAction)saveMetaData:(id)sender
 {
-    if (!_representedInputItem) {
+    if (_representedInputItems.count > 0) {
+        [self saveInputItemsMetadata:_representedInputItems];
+    } else {
         NSAlert *alert = [[NSAlert alloc] init];
         [alert setMessageText:_NS("Error while saving meta")];
         [alert setInformativeText:_NS("VLC was unable to save the meta data.")];
         [alert addButtonWithTitle:_NS("OK")];
         [alert runModal];
-        return;
     }
+}
 
-    _representedInputItem.name = _titleTextField.stringValue;
-    _representedInputItem.title = _titleTextField.stringValue;
-    _representedInputItem.artist = _artistTextField.stringValue;
-    _representedInputItem.albumName = _albumTextField.stringValue;
-    _representedInputItem.genre = _genreTextField.stringValue;
-    _representedInputItem.trackNumber = _trackNumberTextField.stringValue;
-    _representedInputItem.date = _dateTextField.stringValue;
-    _representedInputItem.copyright = _copyrightTextField.stringValue;
-    _representedInputItem.publisher = _publisherTextField.stringValue;
-    _representedInputItem.contentDescription = _descriptionTextField.stringValue;
-    _representedInputItem.language = _languageTextField.stringValue;
-    _representedInputItem.showName = _showNameTextField.stringValue;
-    _representedInputItem.actors = _actorsTextField.stringValue;
-    _representedInputItem.director = _directorTextField.stringValue;
+- (IBAction)chooseArtwork:(id)sender
+{
+    NSOpenPanel * const panel = [NSOpenPanel openPanel];
+    [panel setAllowedFileTypes:@[@"png", @"jpg", @"jpeg", @"gif", @"tiff", @"tif", @"bmp"]];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setCanChooseDirectories:NO];
+    [panel setCanChooseFiles:YES];
+    [panel setCanCreateDirectories:NO];
+    [panel setResolvesAliases:YES];
+    [panel setAllowsOtherFileTypes:NO];
+    [panel setPrompt:_NS("Choose")];
+    [panel beginSheetModalForWindow:self.window completionHandler:^(const NSInteger result) {
+        if (result != NSFileHandlingPanelOKButton) {
+            return;
+        }
 
-    [_representedInputItem writeMetadataToFile];
-    [_saveMetaDataButton setEnabled: NO];
+        NSURL * const url = panel.URLs.firstObject;
+        NSImage * const image = [[NSImage alloc] initWithContentsOfURL:url];
+        if (!image) {
+            return;
+        }
+
+        _artwork = image;
+        _artworkImageButton.image = [[NSImage alloc] initWithContentsOfURL:url];
+
+        _newArtworkURL = url;
+        _saveMetaDataButton.enabled = YES;
+    }];
 }
 
 @end

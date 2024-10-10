@@ -25,8 +25,7 @@
 #include "demux.hpp"
 #include "stream_io_callback.hpp"
 #include "Ebml_parser.hpp"
-
-#include <vlc_actions.h>
+#include "virtual_segment.hpp"
 
 namespace mkv {
 
@@ -79,9 +78,9 @@ bool demux_sys_t::AnalyseAllSegmentsFound( demux_t *p_demux, matroska_stream_c *
     }
 
     EDocTypeReadVersion doc_read_version = GetChild<EDocTypeReadVersion>(*static_cast<EbmlHead*>(p_l0));
-    if (uint64(doc_read_version) > 5)
+    if (uint64_t(doc_read_version) > 5)
     {
-        msg_Err( p_demux, "matroska file needs version %" PRId64 " but only versions 1 to 4 supported", uint64(doc_read_version));
+        msg_Err( p_demux, "matroska file needs version %" PRId64 " but only versions 1 to 4 supported", uint64_t(doc_read_version));
         return false;
     }
 
@@ -107,7 +106,7 @@ bool demux_sys_t::AnalyseAllSegmentsFound( demux_t *p_demux, matroska_stream_c *
             p_segment1->Preload();
 
             if ( !p_segment1->p_segment_uid ||
-                 FindSegment( *p_segment1->p_segment_uid ) == NULL)
+                 !SegmentIsOpened( *p_segment1->p_segment_uid ) )
             {
                 opened_segments.push_back( p_segment1 );
                 b_keep_stream = true;
@@ -129,7 +128,7 @@ bool demux_sys_t::AnalyseAllSegmentsFound( demux_t *p_demux, matroska_stream_c *
 
         if (p_l0->IsFiniteSize() )
         {
-            p_l0->SkipData(p_stream1->estream, KaxMatroska_Context);
+            p_l0->SkipData(p_stream1->estream, Context_KaxMatroska);
             p_l0 = p_stream1->estream.FindNextID(EBML_INFO(KaxSegment), UINT64_MAX);
         }
         else
@@ -172,9 +171,8 @@ bool demux_sys_t::PreloadLinked()
         return false;
 
     /* Set current chapter */
-    p_current_vsegment->p_current_vchapter = p_current_vsegment->CurrentEdition()->getChapterbyTimecode(0);
-    msg_Dbg( &demuxer, "NEW START CHAPTER uid=%" PRId64, p_current_vsegment->p_current_vchapter && p_current_vsegment->p_current_vchapter->p_chapter ?
-                 p_current_vsegment->p_current_vchapter->p_chapter->i_uid : 0 );
+    msg_Dbg( &demuxer, "NEW START CHAPTER uid=%" PRId64, p_current_vsegment->CurrentChapter() && p_current_vsegment->CurrentChapter()->p_chapter ?
+                 p_current_vsegment->CurrentChapter()->p_chapter->i_uid : 0 );
 
     used_vsegments.push_back( p_current_vsegment );
 
@@ -275,19 +273,20 @@ bool demux_sys_t::FreeUnused()
     return !streams.empty() && !opened_segments.empty();
 }
 
-bool demux_sys_t::PreparePlayback( virtual_segment_c & new_vsegment, vlc_tick_t i_mk_date )
+bool demux_sys_t::PreparePlayback( virtual_segment_c & new_vsegment )
 {
     if ( p_current_vsegment != &new_vsegment )
     {
         if ( p_current_vsegment->CurrentSegment() != NULL )
             p_current_vsegment->CurrentSegment()->ESDestroy();
 
+        if( !new_vsegment.CurrentSegment() )
+            return false;
+
         p_current_vsegment = &new_vsegment;
         p_current_vsegment->CurrentSegment()->ESCreate();
         i_current_title = p_current_vsegment->i_sys_title;
     }
-    if( !p_current_vsegment->CurrentSegment() )
-        return false;
     if( !p_current_vsegment->CurrentSegment()->b_cues )
         msg_Warn( &p_current_vsegment->CurrentSegment()->sys.demuxer, "no cues/empty cues found->seek won't be precise" );
 
@@ -296,10 +295,6 @@ bool demux_sys_t::PreparePlayback( virtual_segment_c & new_vsegment, vlc_tick_t 
     /* add information */
     p_current_vsegment->CurrentSegment()->InformationCreate( );
     p_current_vsegment->CurrentSegment()->ESCreate( );
-
-    /* Seek to the beginning */
-    p_current_vsegment->Seek(p_current_vsegment->CurrentSegment()->sys.demuxer,
-                             i_mk_date, p_current_vsegment->p_current_vchapter );
 
     return true;
 }
@@ -313,26 +308,24 @@ void demux_sys_t::JumpTo( virtual_segment_c & vsegment, virtual_chapter_c & vcha
     }
 }
 
-matroska_segment_c *demux_sys_t::FindSegment( const EbmlBinary & uid ) const
+bool demux_sys_t::SegmentIsOpened( const EbmlBinary & uid ) const
 {
     for (size_t i=0; i<opened_segments.size(); i++)
     {
         if ( opened_segments[i]->p_segment_uid && *opened_segments[i]->p_segment_uid == uid )
-            return opened_segments[i];
+            return true;
     }
-    return NULL;
+    return false;
 }
 
-virtual_chapter_c *demux_sys_t::BrowseCodecPrivate( unsigned int codec_id,
-                                        bool (*match)(const chapter_codec_cmds_c &data, const void *p_cookie, size_t i_cookie_size ),
-                                        const void *p_cookie,
-                                        size_t i_cookie_size,
-                                        virtual_segment_c * &p_vsegment_found )
+virtual_chapter_c *demux_sys_t::BrowseCodecPrivate( chapter_codec_id codec_id,
+                                                    chapter_cmd_match match,
+                                                    virtual_segment_c * &p_vsegment_found )
 {
     virtual_chapter_c *p_result = NULL;
     for (size_t i=0; i<used_vsegments.size(); i++)
     {
-        p_result = used_vsegments[i]->BrowseCodecPrivate( codec_id, match, p_cookie, i_cookie_size );
+        p_result = used_vsegments[i]->BrowseCodecPrivate( codec_id, match );
         if ( p_result != NULL )
         {
             p_vsegment_found = used_vsegments[i];
@@ -342,7 +335,7 @@ virtual_chapter_c *demux_sys_t::BrowseCodecPrivate( unsigned int codec_id,
     return p_result;
 }
 
-virtual_chapter_c *demux_sys_t::FindChapter( int64_t i_find_uid, virtual_segment_c * & p_vsegment_found )
+virtual_chapter_c *demux_sys_t::FindVChapter( chapter_uid i_find_uid, virtual_segment_c * & p_vsegment_found )
 {
     virtual_chapter_c *p_result = NULL;
     for (size_t i=0; i<used_vsegments.size(); i++)
@@ -355,6 +348,11 @@ virtual_chapter_c *demux_sys_t::FindChapter( int64_t i_find_uid, virtual_segment
         }
     }
     return p_result;
+}
+
+void demux_sys_t::SetHighlight( vlc_spu_highlight_t & spu_hl )
+{
+    ev.SetHighlight( spu_hl );
 }
 
 } // namespace

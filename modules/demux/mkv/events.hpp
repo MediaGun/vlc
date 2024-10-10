@@ -26,16 +26,16 @@
 
 #include <vlc_common.h>
 #include <vlc_threads.h>
-#include <vlc_actions.h>
 #include <vlc_mouse.h>
 
-#include "dvd_types.hpp"
-
 #include <list>
+#include <memory>
+
+struct vlc_spu_highlight_t;
 
 namespace mkv {
 
-struct demux_sys_t;
+struct p_block;
 
 class event_thread_t
 {
@@ -43,28 +43,28 @@ public:
     event_thread_t(demux_t *);
     virtual ~event_thread_t();
 
-    void SetPci(const pci_t *data);
-    void ResetPci();
+    void SendData( mkv_track_t &, block_t * );
+    void AbortThread();
+    int SendEventNav( demux_query_e );
+    void SetHighlight( vlc_spu_highlight_t & spu_hl );
 
-    bool AddES( es_out_id_t* es, int category );
-    void DelES( es_out_id_t* es );
+    bool AddTrack( mkv_track_t & );
+    void DelTrack( mkv_track_t & );
 
 private:
     struct ESInfo {
-        ESInfo( es_out_id_t* es, int category, event_thread_t& owner )
-            : es( es )
-            , category( category )
+        ESInfo( mkv_track_t & track_, event_thread_t& owner )
+            : track( track_ )
             , owner( owner )
         {
             vlc_mouse_Init( &mouse_state );
         }
 
-        bool operator==( es_out_id_t* es ) const {
-            return this->es == es;
+        bool operator==( const mkv_track_t & t ) const {
+            return track.p_es == t.p_es;
         }
 
-        es_out_id_t* es;
-        int category;
+        mkv_track_t & track;
         event_thread_t& owner;
         vlc_mouse_t mouse_state;
     };
@@ -73,45 +73,50 @@ private:
         enum {
             ESMouseEvent,
             ActionEvent,
+            ButtonDataEvent,
         } type;
 
-        EventInfo( ESInfo* info, vlc_mouse_t state_old, vlc_mouse_t state_new )
+        EventInfo( const vlc_mouse_t & state_old, const vlc_mouse_t & state_new )
             : type( ESMouseEvent )
+            , mouse{ state_old, state_new }
         {
-            mouse.es_info = info;
-            mouse.state_old = state_old;
-            mouse.state_new = state_new;
         }
 
-        EventInfo( vlc_action_id_t id )
+        EventInfo( NavivationKey key )
             : type( ActionEvent )
+            , nav{ key }
         {
-            action.id = id;
+        }
+
+        EventInfo( block_t * block )
+            : type( ButtonDataEvent )
+            , button_data( block, block_Release )
+        {
         }
 
         union {
             struct {
-                ESInfo* es_info;
-                vlc_mouse_t state_old;
-                vlc_mouse_t state_new;
+                const vlc_mouse_t state_old;
+                const vlc_mouse_t state_new;
             } mouse;
 
             struct {
-                vlc_action_id_t id;
-            } action;
+                const NavivationKey key;
+            } nav;
         };
+
+        std::shared_ptr<block_t> button_data;
     };
 
     void EventThread();
     static void *EventThread(void *);
+    void EnsureThreadLocked();
 
     static void EventMouse( vlc_mouse_t const* state, void* userdata );
-    static int EventKey( vlc_object_t *, char const *, vlc_value_t, vlc_value_t, void * );
 
     void HandleKeyEvent( EventInfo const& );
     void HandleMouseEvent( EventInfo const& );
-
-    void ProcessNavAction( uint16 button, pci_t* pci );
+    void HandleButtonData( EventInfo const& );
 
     demux_t      *p_demux;
 
@@ -120,14 +125,27 @@ private:
 
     vlc_mutex_t  lock;
     vlc_cond_t   wait;
-    bool         b_abort;
-    pci_t        pci_packet;
+    bool         b_abort = false;
 
     typedef std::list<ESInfo> es_list_t;
-    es_list_t es_list;
+    es_list_t es_list;               //protected by "lock"
 
     typedef std::list<EventInfo> pending_events_t;
-    pending_events_t pending_events;
+    pending_events_t pending_events; // protected by "lock"
+
+    void QueueEvent(const EventInfo e)
+    {
+        vlc_mutex_locker lock_guard( &lock );
+
+        EnsureThreadLocked();
+
+        pending_events.push_back( e );
+        vlc_cond_signal( &wait );
+    }
+
+    void HandleKeyEvent( NavivationKey key );
+    void HandleMousePressed( unsigned x, unsigned y );
+    void HandleButtonData( block_t * );
 };
 } // namespace
 

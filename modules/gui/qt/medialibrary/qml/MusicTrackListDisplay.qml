@@ -15,34 +15,36 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQml.Models 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQml.Models
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
-import org.videolan.medialib 0.1
+import VLC.MediaLibrary
 
-import "qrc:///util/" as Util
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.Style
 
-Widgets.KeyNavigableTableView {
+Widgets.TableViewExt {
     id: root
 
     // Properties
 
-    property int _nbCols: VLCStyle.gridColumnsForWidth(availableRowWidth)
+    readonly property bool isSearchable: true
 
-    readonly property int _sizeA: Math.floor((_nbCols - 3) / 3)
-    readonly property int _sizeB: Math.floor((_nbCols - 2) / 2)
+    property var pagePrefix: []
+
+    property alias searchPattern: rootmodel.searchPattern
+    property alias sortOrder: rootmodel.sortOrder
+    property alias sortCriteria: rootmodel.sortCriteria
+    property alias parentId: rootmodel.parentId
 
     // Private
-
     property var _lineTitle: ({
         criteria: "title",
 
-        text: I18n.qtr("Title"),
+        text: qsTr("Title"),
 
         showSection: "title",
 
@@ -55,7 +57,7 @@ Widgets.KeyNavigableTableView {
     property var _lineAlbum: ({
         criteria: "album_title",
 
-        text: I18n.qtr("Album"),
+        text: qsTr("Album"),
 
         showSection: "album_title"
     })
@@ -63,7 +65,7 @@ Widgets.KeyNavigableTableView {
     property var _lineArtist: ({
         criteria: "main_artist",
 
-        text: I18n.qtr("Artist"),
+        text: qsTr("Artist"),
 
         showSection: "main_artist"
     })
@@ -71,7 +73,7 @@ Widgets.KeyNavigableTableView {
     property var _lineDuration: ({
         criteria: "duration",
 
-        text: I18n.qtr("Duration"),
+        text: qsTr("Duration"),
 
         showSection: "",
 
@@ -82,7 +84,7 @@ Widgets.KeyNavigableTableView {
     property var _lineTrack: ({
         criteria: "track_number",
 
-        text: I18n.qtr("Track"),
+        text: qsTr("Track"),
 
         showSection: ""
     })
@@ -90,27 +92,23 @@ Widgets.KeyNavigableTableView {
     property var _lineDisc: ({
         criteria: "disc_number",
 
-        text: I18n.qtr("Disc"),
+        text: qsTr("Disc"),
 
         showSection: ""
     })
 
     property var _modelLarge: [{
-        size: _sizeA,
+        weight: 1,
 
         model: _lineTitle
     }, {
-        size: _sizeA,
+        weight: 1,
 
         model: _lineAlbum
     }, {
-        size: _sizeA,
+        weight: 1,
 
         model: _lineArtist
-    }, {
-        size: 1,
-
-        model: _lineDuration
     }, {
         size: 1,
 
@@ -119,18 +117,22 @@ Widgets.KeyNavigableTableView {
         size: 1,
 
         model: _lineDisc
+    }, {
+        size: 1,
+
+        model: _lineDuration
     }]
 
     property var _modelMedium: [{
-        size: _sizeB,
+        weight: 1,
 
         model: _lineTitle
     }, {
-        size: _sizeB,
+        weight: 1,
 
         model: _lineAlbum
     }, {
-        size: 1,
+        weight: 1,
 
         model: _lineArtist
     }, {
@@ -140,14 +142,14 @@ Widgets.KeyNavigableTableView {
     }]
 
     property var _modelSmall: [{
-        size: Math.max(2, _nbCols),
+        weight: 1,
 
         model: ({
             criteria: "title",
 
             subCriterias: [ "duration", "album_title" ],
 
-            text: I18n.qtr("Title"),
+            text: qsTr("Title"),
 
             showSection: "title",
 
@@ -157,10 +159,6 @@ Widgets.KeyNavigableTableView {
             placeHolder: VLCStyle.noArtAlbumCover
         })
     }]
-
-    // Aliases
-
-    property alias parentId: rootmodel.parentId
 
     // Settings
 
@@ -176,21 +174,32 @@ Widgets.KeyNavigableTableView {
     section.property: "title_first_symbol"
 
     model: rootmodel
-    selectionDelegateModel: selectionModel
     rowHeight: VLCStyle.tableCoverRow_height
 
-    onActionForSelection:  MediaLib.addAndPlay(model.getIdsForIndexes( selection ))
-    onItemDoubleClicked: MediaLib.addAndPlay(model.id)
-    onContextMenuButtonClicked: contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
-    onRightClick: contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
+    dragItem: tableDragItem
 
-    dragItem: Widgets.MLDragItem {
-        indexes: selectionModel.selectedIndexes
+    onDragItemChanged: console.assert(root.dragItem === tableDragItem)
+
+    onActionForSelection: (selection) => model.addAndPlay(selection)
+    onItemDoubleClicked: (index, model) => MediaLib.addAndPlay(model.id)
+    onContextMenuButtonClicked: (_,_, globalMousePos) => {
+        contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
+    }
+    onRightClick: (_,_, globalMousePos) => {
+        contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
+    }
+
+    Widgets.MLDragItem {
+        id: tableDragItem
+
+        indexes: indexesFlat ? root.selectionModel.selectedIndexesFlat
+                             : root.selectionModel.selectedIndexes
+        indexesFlat: !!root.selectionModel.selectedIndexesFlat
 
         mlModel: model
     }
 
-    Widgets.TableColumns {
+    Widgets.MLTableColumns {
         id: tableColumns
 
         showCriterias: (root.sortModel === root._modelSmall)
@@ -199,6 +208,7 @@ Widgets.KeyNavigableTableView {
     MLAlbumTrackModel {
         id: rootmodel
         ml: MediaLib
+
         onSortCriteriaChanged: {
             switch (rootmodel.sortCriteria) {
             case "title":
@@ -212,13 +222,7 @@ Widgets.KeyNavigableTableView {
         }
     }
 
-    Util.SelectableDelegateModel {
-        id: selectionModel
-
-        model: rootmodel
-    }
-
-    Util.MLContextMenu {
+    MLContextMenu {
         id: contextMenu
 
         model: rootmodel

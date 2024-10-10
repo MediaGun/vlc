@@ -16,55 +16,73 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import QtQml.Models
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Playlist
+import VLC.Player
+import VLC.Util
 
-T.ItemDelegate {
+T.Control {
     id: delegate
 
     // Properties
 
-    readonly property int selectionLength: root.model.selectedCount
+    property Flickable view: ListView.view
 
-    readonly property bool selected : model.selected
+    readonly property bool selected : view.selectionModel.selectedIndexesFlat.includes(index)
 
-    readonly property bool topContainsDrag: higherDropArea.containsDrag
+    readonly property bool topContainsDrag: dropAreaLayout.higherDropArea.containsDrag
 
-    readonly property bool bottomContainsDrag: lowerDropArea.containsDrag
+    readonly property bool bottomContainsDrag: dropAreaLayout.lowerDropArea.containsDrag
 
     readonly property bool containsDrag: (topContainsDrag || bottomContainsDrag)
 
+    readonly property point dragPosition: mapFromItem(dropAreaLayout,
+                                                      dropAreaLayout.dragPosition.x,
+                                                      dropAreaLayout.dragPosition.y)
+
+    // Optional
+    property var contextMenu
+
+    // Optional, an item to show as drag target
+    property Item dragItem
+
+    // Optional, used to show the drop indicator
+    property alias isDropAcceptable: dropAreaLayout.isDropAcceptable
+
+    // Optional, but required to drop a drag
+    property alias acceptDrop: dropAreaLayout.acceptDrop
+
     // Settings
 
-    topPadding: VLCStyle.playlistDelegate_verticalPadding
+    hoverEnabled: true
 
-    bottomPadding: VLCStyle.playlistDelegate_verticalPadding
+    verticalPadding: VLCStyle.playlistDelegate_verticalPadding
 
-    leftPadding: VLCStyle.margin_xxsmall
+    leftPadding: VLCStyle.margin_normal
 
-    rightPadding: Math.max(listView.scrollBarWidth, VLCStyle.margin_normal)
+    rightPadding: VLCStyle.margin_normal
 
-    implicitWidth: Math.max(background.implicitWidth,
-                            contentItem.implicitWidth + leftPadding + rightPadding)
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
 
-    implicitHeight: Math.max(background.implicitHeight,
-                            contentItem.implicitHeight + topPadding + bottomPadding)
+    ListView.delayRemove: dragHandler.active
 
-    ListView.delayRemove: mouseArea.drag.active
-
-    T.ToolTip.visible: ( (visualFocus || hovered) &&
-                         !overlayMenu.shown && MainCtx.playlistVisible &&
+    T.ToolTip.visible: ( visible && (visualFocus || hovered) &&
                          (textInfoColumn.implicitWidth > textInfoColumn.width) )
 
-    T.ToolTip.timeout: (hovered ? 0 : VLCStyle.duration_humanMoment)
+    // NOTE: This is useful for keyboard navigation on a column, to avoid blocking visibility on
+    //       the surrounding items.
+    T.ToolTip.timeout: (visualFocus) ? VLCStyle.duration_humanMoment : 0
 
     T.ToolTip.text: (textInfo.text + '\n' + textArtist.text)
 
@@ -73,19 +91,6 @@ T.ItemDelegate {
     // Events
 
     // Functions
-
-    function moveSelected() {
-        const selectedIndexes = root.model.getSelection()
-        if (selectedIndexes.length === 0)
-            return
-        let preTarget = index
-        /* move to _above_ the clicked item if move up, but
-         * _below_ the clicked item if move down */
-        if (preTarget > selectedIndexes[0])
-            preTarget++
-        listView.currentIndex = selectedIndexes[0]
-        root.model.moveItemsPre(selectedIndexes, preTarget)
-    }
 
     // Childs
 
@@ -99,27 +104,20 @@ T.ItemDelegate {
     }
 
     background: Widgets.AnimatedBackground {
-        backgroundColor: selected ? theme.bg.highlight : theme.bg.primary
+        color: selected ? theme.bg.highlight : theme.bg.primary
 
-        active: delegate.visualFocus
-        animate: theme.initialized
+        enabled: theme.initialized
 
-        activeBorderColor: theme.visualFocus
-
-        visible: animationRunning || active || selected || hovered
-    }
-
-    contentItem: RowLayout {
-        spacing: 0
+        border.color: delegate.visualFocus ? theme.visualFocus : "transparent"
 
         Widgets.CurrentIndicator {
-            id: currentIndicator
+            anchors {
+                left: parent.left
+                leftMargin: VLCStyle.margin_xxsmall
+                verticalCenter: parent.verticalCenter
+            }
 
-            // disable positioning via CurrentIndicator, manually position according to RowLayout
-            source: null
-
-            implicitWidth: VLCStyle.heightBar_xxxsmall
-            Layout.fillHeight: true
+            implicitHeight: parent.height * 3 / 4
 
             color: {
                 if (model.isCurrent)
@@ -127,11 +125,15 @@ T.ItemDelegate {
 
                 // based on design, ColorContext can't handle this case
                 if (!delegate.hovered)
-                    return VLCStyle.setColorAlpha(theme.indicator, 0)
+                    return theme.indicator.alpha(0)
 
                 return theme.indicator
             }
         }
+    }
+
+    contentItem: RowLayout {
+        spacing: 0
 
         Item {
             id: artworkItem
@@ -139,18 +141,17 @@ T.ItemDelegate {
             Layout.preferredHeight: VLCStyle.icon_playlistArt
             Layout.preferredWidth: VLCStyle.icon_playlistArt
             Layout.alignment: Qt.AlignVCenter
-            Layout.leftMargin: VLCStyle.margin_xsmall
 
             Accessible.role: Accessible.Graphic
-            Accessible.name: I18n.qtr("Cover")
+            Accessible.name: qsTr("Cover")
             Accessible.description: {
                 if (model.isCurrent) {
                     if (Player.playingState === Player.PLAYING_STATE_PLAYING)
-                        return I18n.qtr("Playing")
+                        return qsTr("Playing")
                     else if (Player.playingState === Player.PLAYING_STATE_PAUSED)
-                        return I18n.qtr("Paused")
+                        return qsTr("Paused")
                 }
-                return I18n.qtr("Media cover")
+                return qsTr("Media cover")
             }
 
             Widgets.ScaledImage {
@@ -158,22 +159,21 @@ T.ItemDelegate {
 
                 anchors.fill: parent
                 fillMode: Image.PreserveAspectFit
-                source: (model.artwork && model.artwork.toString()) ? model.artwork : VLCStyle.noArtAlbumCover
+                source: (model?.artwork.toString()) ? VLCAccessImage.uri(model.artwork) : VLCStyle.noArtAlbumCover
                 visible: !statusIcon.visible
                 asynchronous: true
 
-                Widgets.DoubleShadow {
+                onStatusChanged: {
+                    if (source !== VLCStyle.noArtAlbumCover && status === Image.Error)
+                        source = VLCStyle.noArtAlbumCover
+                }
+
+                Widgets.DefaultShadow {
                     anchors.centerIn: parent
-                    width: parent.paintedWidth
-                    height: parent.paintedHeight
 
-                    z: -1
+                    sourceItem: parent
 
-                    primaryBlurRadius: VLCStyle.dp(3)
-                    primaryVerticalOffset: VLCStyle.dp(1)
-
-                    secondaryBlurRadius: VLCStyle.dp(14)
-                    secondaryVerticalOffset: VLCStyle.dp(6)
+                    visible: (artwork.status === Image.Ready)
                 }
             }
 
@@ -187,7 +187,7 @@ T.ItemDelegate {
                     if (Player.playingState === Player.PLAYING_STATE_PLAYING)
                         return VLCIcons.volume_high
                     else if (Player.playingState === Player.PLAYING_STATE_PAUSED)
-                        return VLCIcons.pause
+                        return VLCIcons.pause_filled
                     else
                         return ""
                 }
@@ -220,7 +220,7 @@ T.ItemDelegate {
                 Layout.fillHeight: true
                 Layout.fillWidth: true
 
-                text: (model.artist ? model.artist : I18n.qtr("Unknown Artist"))
+                text: model.artist || qsTr("Unknown Artist")
                 color: theme.fg.primary
                 verticalAlignment: Text.AlignBottom
             }
@@ -237,123 +237,88 @@ T.ItemDelegate {
         }
     }
 
-    MouseArea {
-        id: mouseArea
-
+    // TODO: Qt bug 6.2: QTBUG-103604
+    DoubleClickIgnoringItem {
         anchors.fill: parent
 
-        hoverEnabled: true
+        TapHandler {
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
 
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
 
-        onClicked: {
-            /* to receive keys events */
-            listView.forceActiveFocus()
-            if (root.mode === PlaylistListView.Mode.Move) {
-                moveSelected()
-                return
-            } else if (root.mode === PlaylistListView.Mode.Select) {
-            } else if (!(root.model.isSelected(index) && mouse.button === Qt.RightButton)) {
-                listView.updateSelection(mouse.modifiers, listView.currentIndex, index)
-                listView.currentIndex = index
-            }
+            gesturePolicy: TapHandler.ReleaseWithinBounds // TODO: Qt 6.2 bug: Use TapHandler.DragThreshold
 
-            if (mouse.button === Qt.RightButton)
-                contextMenu.popup(index, this.mapToGlobal(mouse.x, mouse.y))
-        }
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
 
-        onDoubleClicked: {
-            if (mouse.button !== Qt.RightButton && root.mode === PlaylistListView.Mode.Normal)
-                mainPlaylistController.goTo(index, true)
-        }
+            onSingleTapped: (eventPoint, button) => {
+                initialAction()
 
-        drag.target: dragItem
-
-        drag.onActiveChanged: {
-            if (drag.active) {
-                if (!selected) {
-                    /* the dragged item is not in the selection, replace the selection */
-                    root.model.setSelection([index])
+                if (!(delegate.selected && button === Qt.RightButton)) {
+                    view.selectionModel.updateSelection(point.modifiers, view.currentIndex, index)
+                    view.currentIndex = index
                 }
 
-                if (contains(mapFromItem(dragItem.parent, dragItem.x, dragItem.y))) {
-                    // Force trigger entered signal in drop areas
-                    // so that containsDrag work properly
-                    dragItem.x = -1
-                    dragItem.y = -1
-                }
-
-                dragItem.Drag.active = drag.active
+                if (contextMenu && button === Qt.RightButton)
+                    contextMenu.popup(index, parent.mapToGlobal(eventPoint.position.x, eventPoint.position.y))
             }
-            else {
-                dragItem.Drag.drop()
+
+            onDoubleTapped: (eventPoint, button) => {
+                if (button !== Qt.RightButton)
+                    MainPlaylistController.goTo(index, true)
+            }
+
+            Component.onCompleted: {
+                canceled.connect(initialAction)
+            }
+
+            function initialAction() {
+                delegate.forceActiveFocus(Qt.MouseFocusReason)
             }
         }
 
-        onPositionChanged: {
-            if (drag.active) {
-                // FIXME: Override dragItem's position
-                const pos = mapToItem(dragItem.parent, mouseX, mouseY)
-                dragItem.x = pos.x + VLCStyle.dp(15)
-                dragItem.y = pos.y
+        DragHandler {
+            id: dragHandler
+
+            target: null
+
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
+
+            onActiveChanged: {
+                if (dragItem) {
+                    if (active) {
+                        if (!selected) {
+                            /* the dragged item is not in the selection, replace the selection */
+                            view.selectionModel.select(index, ItemSelectionModel.ClearAndSelect)
+                        }
+
+                        dragItem.indexes = view.selectionModel.selectedIndexesFlat
+                        dragItem.indexesFlat = true
+                        dragItem.Drag.active = true
+                    } else {
+                        dragItem.Drag.drop()
+                    }
+                }
             }
         }
 
         TapHandler {
             acceptedDevices: PointerDevice.TouchScreen
 
-            onTapped: {
-                if (root.mode === PlaylistListView.Mode.Normal) {
-                    mainPlaylistController.goTo(index, true)
-                } else if (root.mode === PlaylistListView.Mode.Move) {
-                    moveSelected()
-                }
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            onTapped: (eventPoint, button) => {
+                MainPlaylistController.goTo(index, true)
             }
 
-            onLongPressed: {
-                contextMenu.popup(index, point.scenePosition)
+            onLongPressed: (eventPoint, button) => {
+                if (contextMenu)
+                    contextMenu.popup(index, point.scenePosition)
             }
         }
     }
 
-    ColumnLayout {
+    Widgets.ListViewExt.VerticalDropAreaLayout {
+        id: dropAreaLayout
         anchors.fill: parent
-        spacing: 0
-
-        DropArea {
-            id: higherDropArea
-
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-
-            onEntered: {
-                if (!isDropAcceptable(drag, index)) {
-                    drag.accepted = false
-                    return
-                }
-            }
-
-            onDropped: {
-                root.acceptDrop(index, drop)
-            }
-        }
-
-        DropArea {
-            id: lowerDropArea
-
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-
-            onEntered: {
-                if (!isDropAcceptable(drag, index + 1)) {
-                    drag.accepted = false
-                    return
-                }
-            }
-
-            onDropped: {
-                root.acceptDrop(index + 1, drop)
-            }
-        }
     }
 }

@@ -23,30 +23,28 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
+#include <winapifamily.h>
+#undef WINAPI_FAMILY
+#define WINAPI_FAMILY WINAPI_FAMILY_DESKTOP_APP
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
 
 #include <assert.h>
 
-#include <winapifamily.h>
-#if defined(WINAPI_FAMILY)
-# undef WINAPI_FAMILY
-#endif
-#define WINAPI_FAMILY WINAPI_FAMILY_DESKTOP_APP
-
 #include <initguid.h>
 
-#if HAVE_LIBAVCODEC_DXVA2_H
+#if defined(HAVE_LIBAVCODEC_DXVA2_H)
 # include <libavcodec/dxva2.h>
-#elif HAVE_LIBAVCODEC_D3D11VA_H
+#elif defined(HAVE_LIBAVCODEC_D3D11VA_H)
 # include <libavcodec/d3d11va.h>
 #else
 # error bogus libavcodec DXVA support
 #endif
 
 #include "directx_va.h"
-#include <vlc_codecs.h>
+#include <vlc_codecs.h> // GUID_FMT/GUID_PRINT
 
 #include "../../packetizer/h264_nal.h"
 #include "../../packetizer/hevc_nal.h"
@@ -73,14 +71,21 @@ static const int PROF_HEVC_MAIN_REXT[]  = { FF_PROFILE_HEVC_REXT,
 static const int PROF_VP9_MAIN[]    = { FF_PROFILE_VP9_0, FF_PROFILE_UNKNOWN };
 static const int PROF_VP9_10[]      = { FF_PROFILE_VP9_2, FF_PROFILE_UNKNOWN };
 
+#if LIBAVCODEC_VERSION_CHECK( 58, 112, 103 )
+#define ENABLED_AV1_CODECID  AV_CODEC_ID_AV1
 static const int PROF_AV1_MAIN[]    = { FF_PROFILE_AV1_MAIN, FF_PROFILE_UNKNOWN };
 static const int PROF_AV1_HIGH[]    = { FF_PROFILE_AV1_HIGH, FF_PROFILE_AV1_MAIN, FF_PROFILE_UNKNOWN };
+#else
+#define ENABLED_AV1_CODECID  0
+#define PROF_AV1_MAIN      NULL
+#define PROF_AV1_HIGH      NULL
+#endif
 
 #if defined(__MINGW64_VERSION_MAJOR) // mingw-w64 doesn't have all the standard GUIDs
 
-# if HAVE_LIBAVCODEC_DXVA2_H
+# if defined(HAVE_LIBAVCODEC_DXVA2_H)
 // do nothing, we have redirected DXVA_xxx to DXVA2_xxx
-# elif HAVE_LIBAVCODEC_D3D11VA_H && __MINGW64_VERSION_MAJOR > 11
+# elif defined(HAVE_LIBAVCODEC_D3D11VA_H) && __MINGW64_VERSION_MAJOR > 11
 // do nothing, we have redirected DXVA_xxx to D3D11_DECODER_PROFILE_xxx
 # else // !HAVE_LIBAVCODEC_DXVA2_H && !HAVE_LIBAVCODEC_D3D11VA_H
 // define missing GUIDs from D3D11-only builds with old mingw-w64
@@ -135,7 +140,7 @@ DEFINE_GUID(DXVA2_ModeVP9_VLD_Profile0,             0x463707f8, 0xa1d0, 0x4585, 
 DEFINE_GUID(DXVA2_ModeVP9_VLD_10bit_Profile2,       0xa4c749ef, 0x6ecf, 0x48aa, 0x84, 0x48, 0x50, 0xa7, 0xa1, 0x16, 0x5f, 0xf7);
 #  endif // __MINGW64_VERSION_MAJOR < 8
 
-// the following GUIDs are never defined in mingw-w64
+#  if __MINGW64_VERSION_MAJOR < 13
 DEFINE_GUID(DXVA_ModeMPEG1_A,                       0x1b81be09, 0xa0c7, 0x11d3, 0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5);
 DEFINE_GUID(DXVA_ModeMPEG2_A,                       0x1b81be0A, 0xa0c7, 0x11d3, 0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5);
 DEFINE_GUID(DXVA_ModeMPEG2_B,                       0x1b81be0B, 0xa0c7, 0x11d3, 0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5);
@@ -153,6 +158,7 @@ DEFINE_GUID(DXVA_ModeH263_E,                        0x1b81be07, 0xa0c7, 0x11d3, 
 DEFINE_GUID(DXVA_ModeH263_F,                        0x1b81be08, 0xa0c7, 0x11d3, 0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5);
 
 DEFINE_GUID(DXVA_ModeH264_VLD_WithFMOASO_NoFGT,     0xd5f04ff9, 0x3418, 0x45d8, 0x95, 0x61, 0x32, 0xa7, 0x6a, 0xae, 0x2d, 0xdd);
+#  endif
 
 #endif // __MINGW64_VERSION_MAJOR
 
@@ -195,131 +201,133 @@ DEFINE_GUID(DXVA_ModeAV1_VLD_12bit_Profile2, 0x17127009, 0xa00f, 0x4ce1, 0x99, 0
 DEFINE_GUID(DXVA_ModeAV1_VLD_12bit_Profile2_420, 0x2d80bed6, 0x9cac, 0x4835, 0x9e, 0x91, 0x32, 0x7b, 0xbc, 0x4f, 0x9e, 0xe8);
 #endif // !_DIRECTX_AV1_VA_
 
+#ifndef FF_DXVA_WORKAROUND_GONE
+#define DEF_DXVA_MODE(name, guid, bitdepth, chroma_w, chroma_h, avcodecid, profiles, workaround) \
+    { name, guid, bitdepth, { chroma_w, chroma_h }, avcodecid, profiles, workaround }
+#else
+#define DEF_DXVA_MODE(name, guid, bitdepth, chroma_w, chroma_h, avcodecid, profiles, workaround) \
+    { name, guid, bitdepth, { chroma_w, chroma_h }, avcodecid, profiles }
+#endif
+
+#define DEF_DXVA_MODE_420_8B(name, guid, avcodecid, profiles) \
+    DEF_DXVA_MODE(name, guid, 8, 1, 1, avcodecid, profiles, 0)
+#define DEF_DXVA_MODE_420_10B(name, guid, avcodecid, profiles) \
+    DEF_DXVA_MODE(name, guid, 10, 1, 1, avcodecid, profiles, 0)
+#define DEF_DXVA_MODE_420_8B_UNSUPPORTED(name, guid) \
+    DEF_DXVA_MODE(name, guid, 8, 1, 1, 0, NULL, 0)
+
+
 /* XXX Preferred modes must come first */
 static const directx_va_mode_t DXVA_MODES[] = {
     /* MPEG-1/2 */
-    { "MPEG-1 decoder, restricted profile A",                                         &DXVA_ModeMPEG1_A,                      8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-2 decoder, restricted profile A",                                         &DXVA_ModeMPEG2_A,                      8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-2 decoder, restricted profile B",                                         &DXVA_ModeMPEG2_B,                      8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-2 decoder, restricted profile C",                                         &DXVA_ModeMPEG2_C,                      8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-2 decoder, restricted profile D",                                         &DXVA_ModeMPEG2_D,                      8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-1 decoder, restricted profile A",               &DXVA_ModeMPEG1_A ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 decoder, restricted profile A",               &DXVA_ModeMPEG2_A ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 decoder, restricted profile B",               &DXVA_ModeMPEG2_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 decoder, restricted profile C",               &DXVA_ModeMPEG2_C ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 decoder, restricted profile D",               &DXVA_ModeMPEG2_D ),
 
-    { "MPEG-2 variable-length decoder",                                               &DXVA2_ModeMPEG2_VLD,                   8, {1, 1}, AV_CODEC_ID_MPEG2VIDEO, PROF_MPEG2_MAIN, 0 },
-    { "MPEG-2 & MPEG-1 variable-length decoder",                                      &DXVA_ModeMPEG2and1_VLD,                8, {1, 1}, AV_CODEC_ID_MPEG2VIDEO, PROF_MPEG2_MAIN, 0 },
-    { "MPEG-2 & MPEG-1 variable-length decoder",                                      &DXVA_ModeMPEG2and1_VLD,                8, {1, 1}, AV_CODEC_ID_MPEG1VIDEO, NULL, 0 },
-    { "MPEG-2 motion compensation",                                                   &DXVA2_ModeMPEG2_MoComp,                8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-2 inverse discrete cosine transform",                                     &DXVA2_ModeMPEG2_IDCT,                  8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B( "MPEG-2 variable-length decoder",                                 &DXVA2_ModeMPEG2_VLD,                   AV_CODEC_ID_MPEG2VIDEO, PROF_MPEG2_MAIN ),
+    DEF_DXVA_MODE_420_8B( "MPEG-2 & MPEG-1 variable-length decoder",                        &DXVA_ModeMPEG2and1_VLD,                AV_CODEC_ID_MPEG2VIDEO, PROF_MPEG2_MAIN ),
+    DEF_DXVA_MODE_420_8B( "MPEG-2 & MPEG-1 variable-length decoder",                        &DXVA_ModeMPEG2and1_VLD,                AV_CODEC_ID_MPEG1VIDEO, NULL ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 motion compensation",                         &DXVA2_ModeMPEG2_MoComp ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-2 inverse discrete cosine transform",           &DXVA2_ModeMPEG2_IDCT ),
 
     /* MPEG-1 http://download.microsoft.com/download/B/1/7/B172A3C8-56F2-4210-80F1-A97BEA9182ED/DXVA_MPEG1_VLD.pdf */
-    { "MPEG-1 variable-length decoder, no D pictures",                                &DXVA_ModeMPEG1_VLD,                   8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-1 variable-length decoder, no D pictures",      &DXVA_ModeMPEG1_VLD ),
 
     /* H.264 http://www.microsoft.com/downloads/details.aspx?displaylang=en&FamilyID=3d1c290b-310b-4ea2-bf76-714063a6d7a6 */
-    { "H.264 variable-length decoder, film grain technology",                         &DXVA_ModeH264_F,                       8, {1, 1}, AV_CODEC_ID_H264, PROF_H264_HIGH, 0 },
-    { "H.264 variable-length decoder, no film grain technology",                      &DXVA_ModeH264_E,                       8, {1, 1}, AV_CODEC_ID_H264, PROF_H264_HIGH, 0 },
+    DEF_DXVA_MODE_420_8B( "H.264 variable-length decoder, film grain technology",           &DXVA_ModeH264_F,                       AV_CODEC_ID_H264, PROF_H264_HIGH ),
+    DEF_DXVA_MODE_420_8B( "H.264 variable-length decoder, no film grain technology",        &DXVA_ModeH264_E,                       AV_CODEC_ID_H264, PROF_H264_HIGH ),
 #if !(defined(_GAMING_XBOX_SCARLETT) || defined(_GAMING_XBOX_XBOXONE) || defined(_XBOX_ONE)) && defined(FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO)
-    { "H.264 variable-length decoder, no film grain technology (Intel ClearVideo)",   &DXVA_Intel_H264_NoFGT_ClearVideo,      8, {1, 1}, AV_CODEC_ID_H264, PROF_H264_HIGH, FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO },
+    DEF_DXVA_MODE( "H.264 variable-length decoder, no film grain technology (Intel ClearVideo)",   &DXVA_Intel_H264_NoFGT_ClearVideo,      8, 1, 1, AV_CODEC_ID_H264, PROF_H264_HIGH, FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO ),
 #endif
-    { "H.264 variable-length decoder, no film grain technology, FMO/ASO",             &DXVA_ModeH264_VLD_WithFMOASO_NoFGT,    8, {1, 1}, AV_CODEC_ID_H264, PROF_H264_HIGH, 0 },
-    { "H.264 variable-length decoder, no film grain technology, Flash",               &DXVA_ModeH264_VLD_NoFGT_Flash,         8, {1, 1}, AV_CODEC_ID_H264, PROF_H264_HIGH, 0 },
+    DEF_DXVA_MODE_420_8B( "H.264 variable-length decoder, no film grain technology, FMO/ASO",             &DXVA_ModeH264_VLD_WithFMOASO_NoFGT,    AV_CODEC_ID_H264, PROF_H264_HIGH ),
+    DEF_DXVA_MODE_420_8B( "H.264 variable-length decoder, no film grain technology, Flash",               &DXVA_ModeH264_VLD_NoFGT_Flash,         AV_CODEC_ID_H264, PROF_H264_HIGH ),
 
-    { "H.264 inverse discrete cosine transform, film grain technology",               &DXVA_ModeH264_D,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.264 inverse discrete cosine transform, no film grain technology",            &DXVA_ModeH264_C,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.264 inverse discrete cosine transform, no film grain technology (Intel)",    &DXVADDI_Intel_ModeH264_C,              8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 inverse discrete cosine transform, film grain technology",     &DXVA_ModeH264_D ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 inverse discrete cosine transform, no film grain technology",  &DXVA_ModeH264_C ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 inverse discrete cosine transform, no film grain technology (Intel)", &DXVADDI_Intel_ModeH264_C ),
 
-    { "H.264 motion compensation, film grain technology",                             &DXVA_ModeH264_B,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.264 motion compensation, no film grain technology",                          &DXVA_ModeH264_A,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.264 motion compensation, no film grain technology (Intel)",                  &DXVADDI_Intel_ModeH264_A,              8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 motion compensation, film grain technology",                   &DXVA_ModeH264_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 motion compensation, no film grain technology",                &DXVA_ModeH264_A ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 motion compensation, no film grain technology (Intel)",        &DXVADDI_Intel_ModeH264_A ),
 
     /* http://download.microsoft.com/download/2/D/0/2D02E72E-7890-430F-BA91-4A363F72F8C8/DXVA_H264_MVC.pdf */
-    { "H.264 stereo high profile, mbs flag set",                                      &DXVA_ModeH264_VLD_Stereo_Progressive_NoFGT, 8, {1, 1}, 0, NULL, 0 },
-    { "H.264 stereo high profile",                                                    &DXVA_ModeH264_VLD_Stereo_NoFGT,             8, {1, 1}, 0, NULL, 0 },
-    { "H.264 multiview high profile",                                                 &DXVA_ModeH264_VLD_Multiview_NoFGT,          8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 stereo high profile, mbs flag set",                            &DXVA_ModeH264_VLD_Stereo_Progressive_NoFGT ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 stereo high profile",                                          &DXVA_ModeH264_VLD_Stereo_NoFGT ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 multiview high profile",                                       &DXVA_ModeH264_VLD_Multiview_NoFGT ),
 
     /* SVC http://download.microsoft.com/download/C/8/A/C8AD9F1B-57D1-4C10-85A0-09E3EAC50322/DXVA_SVC_2012_06.pdf */
-    { "H.264 scalable video coding, Scalable Baseline Profile",                       &DXVA_ModeH264_VLD_SVC_Scalable_Baseline,            8, {1, 1}, 0, NULL, 0 },
-    { "H.264 scalable video coding, Scalable Constrained Baseline Profile",           &DXVA_ModeH264_VLD_SVC_Restricted_Scalable_Baseline, 8, {1, 1}, 0, NULL, 0 },
-    { "H.264 scalable video coding, Scalable High Profile",                           &DXVA_ModeH264_VLD_SVC_Scalable_High,                8, {1, 1}, 0, NULL, 0 },
-    { "H.264 scalable video coding, Scalable Constrained High Profile",               &DXVA_ModeH264_VLD_SVC_Restricted_Scalable_High_Progressive, 8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 scalable video coding, Scalable Baseline Profile",             &DXVA_ModeH264_VLD_SVC_Scalable_Baseline ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 scalable video coding, Scalable Constrained Baseline Profile", &DXVA_ModeH264_VLD_SVC_Restricted_Scalable_Baseline ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 scalable video coding, Scalable High Profile",                 &DXVA_ModeH264_VLD_SVC_Scalable_High ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.264 scalable video coding, Scalable Constrained High Profile",     &DXVA_ModeH264_VLD_SVC_Restricted_Scalable_High_Progressive ),
 
     /* WMV */
-    { "Windows Media Video 8 motion compensation",                                    &DXVA_ModeWMV8_B,                       8, {1, 1}, 0, NULL, 0 },
-    { "Windows Media Video 8 post processing",                                        &DXVA_ModeWMV8_A,                       8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "Windows Media Video 8 motion compensation",          &DXVA_ModeWMV8_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "Windows Media Video 8 post processing",              &DXVA_ModeWMV8_A ),
 
-    { "Windows Media Video 9 IDCT",                                                   &DXVA_ModeWMV9_C,                       8, {1, 1}, 0, NULL, 0 },
-    { "Windows Media Video 9 motion compensation",                                    &DXVA_ModeWMV9_B,                       8, {1, 1}, 0, NULL, 0 },
-    { "Windows Media Video 9 post processing",                                        &DXVA_ModeWMV9_A,                       8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "Windows Media Video 9 IDCT",                         &DXVA_ModeWMV9_C ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "Windows Media Video 9 motion compensation",          &DXVA_ModeWMV9_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "Windows Media Video 9 post processing",              &DXVA_ModeWMV9_A ),
 
     /* VC-1 */
-    { "VC-1 variable-length decoder",                                                 &DXVA_ModeVC1_D,                        8, {1, 1}, AV_CODEC_ID_VC1, NULL, 0 },
-    { "VC-1 variable-length decoder",                                                 &DXVA_ModeVC1_D,                        8, {1, 1}, AV_CODEC_ID_WMV3, NULL, 0 },
-    { "VC-1 variable-length decoder",                                                 &DXVA_ModeVC1_D2010,                    8, {1, 1}, AV_CODEC_ID_VC1, NULL, 0 },
-    { "VC-1 variable-length decoder",                                                 &DXVA_ModeVC1_D2010,                    8, {1, 1}, AV_CODEC_ID_WMV3, NULL, 0 },
-    { "VC-1 variable-length decoder 2 (Intel)",                                       &DXVA_Intel_VC1_ClearVideo_2,           8, {1, 1}, 0, NULL, 0 },
-    { "VC-1 variable-length decoder (Intel)",                                         &DXVA_Intel_VC1_ClearVideo,             8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B( "VC-1 variable-length decoder",                                   &DXVA_ModeVC1_D,                        AV_CODEC_ID_VC1, NULL ),
+    DEF_DXVA_MODE_420_8B( "VC-1 variable-length decoder",                                   &DXVA_ModeVC1_D,                        AV_CODEC_ID_WMV3, NULL ),
+    DEF_DXVA_MODE_420_8B( "VC-1 variable-length decoder",                                   &DXVA_ModeVC1_D2010,                    AV_CODEC_ID_VC1, NULL ),
+    DEF_DXVA_MODE_420_8B( "VC-1 variable-length decoder",                                   &DXVA_ModeVC1_D2010,                    AV_CODEC_ID_WMV3, NULL ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VC-1 variable-length decoder 2 (Intel)",             &DXVA_Intel_VC1_ClearVideo_2 ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VC-1 variable-length decoder (Intel)",               &DXVA_Intel_VC1_ClearVideo ),
 
-    { "VC-1 inverse discrete cosine transform",                                       &DXVA_ModeVC1_C,                        8, {1, 1}, 0, NULL, 0 },
-    { "VC-1 motion compensation",                                                     &DXVA_ModeVC1_B,                        8, {1, 1}, 0, NULL, 0 },
-    { "VC-1 post processing",                                                         &DXVA_ModeVC1_A,                        8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VC-1 inverse discrete cosine transform",             &DXVA_ModeVC1_C ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VC-1 motion compensation",                           &DXVA_ModeVC1_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VC-1 post processing",                               &DXVA_ModeVC1_A ),
 
     /* Xvid/Divx: TODO */
-    { "MPEG-4 Part 2 nVidia bitstream decoder",                                       &DXVA_nVidia_MPEG4_ASP,                 8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-4 Part 2 variable-length decoder, Simple Profile",                        &DXVA_ModeMPEG4pt2_VLD_Simple,          8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, no GMC",       &DXVA_ModeMPEG4pt2_VLD_AdvSimple_NoGMC, 8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, GMC",          &DXVA_ModeMPEG4pt2_VLD_AdvSimple_GMC,   8, {1, 1}, 0, NULL, 0 },
-    { "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, Avivo",        &DXVA_ModeMPEG4pt2_VLD_AdvSimple_Avivo, 8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-4 Part 2 nVidia bitstream decoder",                                    &DXVA_nVidia_MPEG4_ASP ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-4 Part 2 variable-length decoder, Simple Profile",                     &DXVA_ModeMPEG4pt2_VLD_Simple ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, no GMC",    &DXVA_ModeMPEG4pt2_VLD_AdvSimple_NoGMC ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, GMC",       &DXVA_ModeMPEG4pt2_VLD_AdvSimple_GMC   ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "MPEG-4 Part 2 variable-length decoder, Simple&Advanced Profile, Avivo",     &DXVA_ModeMPEG4pt2_VLD_AdvSimple_Avivo ),
 
     /* HEVC */
     // Intel specific GUID support
-    { "HEVC Main profile (Intel)",                                                    &DXVA_ModeHEVC_VLD_Main_Intel,           8, {1, 1}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN, 0 },
-    { "HEVC Main 10 profile (Intel)",                                                 &DXVA_ModeHEVC_VLD_Main10_Intel,        10, {1, 1}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN10, 0 },
+    DEF_DXVA_MODE_420_8B( "HEVC Main profile (Intel)",                                      &DXVA_ModeHEVC_VLD_Main_Intel,           AV_CODEC_ID_HEVC, PROF_HEVC_MAIN ),
+    DEF_DXVA_MODE_420_10B( "HEVC Main 10 profile (Intel)",                                  &DXVA_ModeHEVC_VLD_Main10_Intel,         AV_CODEC_ID_HEVC, PROF_HEVC_MAIN10 ),
 #ifdef FF_DXVA2_WORKAROUND_HEVC_REXT
-    { "HEVC Main profile 4:2:2 Range Extension (Intel)",                              &DXVA_ModeHEVC_VLD_Main12_Intel,         8, {1, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
-    { "HEVC Main 10 profile 4:2:2 Range Extension (Intel)",                           &DXVA_ModeHEVC_VLD_Main422_10_Intel,    10, {1, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
-    { "HEVC Main 12 profile 4:2:2 Range Extension (Intel)",                           &DXVA_ModeHEVC_VLD_Main422_12_Intel,    12, {1, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
-    { "HEVC Main profile 4:4:4 Range Extension (Intel)",                              &DXVA_ModeHEVC_VLD_Main444_Intel,        8, {0, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
-    { "HEVC Main 10 profile 4:4:4 Range Extension (Intel)",                           &DXVA_ModeHEVC_VLD_Main444_10_Intel,    10, {0, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
-    { "HEVC Main 12 profile 4:4:4 Range Extension (Intel)",                           &DXVA_ModeHEVC_VLD_Main444_12_Intel,    12, {0, 0}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT },
+    DEF_DXVA_MODE( "HEVC Main profile 4:2:2 Range Extension (Intel)",                       &DXVA_ModeHEVC_VLD_Main12_Intel,         8, 1, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
+    DEF_DXVA_MODE( "HEVC Main 10 profile 4:2:2 Range Extension (Intel)",                    &DXVA_ModeHEVC_VLD_Main422_10_Intel,    10, 1, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
+    DEF_DXVA_MODE( "HEVC Main 12 profile 4:2:2 Range Extension (Intel)",                    &DXVA_ModeHEVC_VLD_Main422_12_Intel,    12, 1, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
+    DEF_DXVA_MODE( "HEVC Main profile 4:4:4 Range Extension (Intel)",                       &DXVA_ModeHEVC_VLD_Main444_Intel,        8, 0, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
+    DEF_DXVA_MODE( "HEVC Main 10 profile 4:4:4 Range Extension (Intel)",                    &DXVA_ModeHEVC_VLD_Main444_10_Intel,    10, 0, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
+    DEF_DXVA_MODE( "HEVC Main 12 profile 4:4:4 Range Extension (Intel)",                    &DXVA_ModeHEVC_VLD_Main444_12_Intel,    12, 0, 0, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN_REXT, FF_DXVA2_WORKAROUND_HEVC_REXT ),
 #endif
-    { "HEVC Main profile",                                                            &DXVA_ModeHEVC_VLD_Main,                8, {1, 1}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN, 0 },
-    { "HEVC Main 10 profile",                                                         &DXVA_ModeHEVC_VLD_Main10,              10, {1, 1}, AV_CODEC_ID_HEVC, PROF_HEVC_MAIN10, 0 },
+    DEF_DXVA_MODE_420_8B( "HEVC Main profile",                                              &DXVA_ModeHEVC_VLD_Main,                AV_CODEC_ID_HEVC, PROF_HEVC_MAIN ),
+    DEF_DXVA_MODE_420_10B( "HEVC Main 10 profile",                                          &DXVA_ModeHEVC_VLD_Main10,              AV_CODEC_ID_HEVC, PROF_HEVC_MAIN10 ),
 
     /* H.261 */
-    { "H.261 decoder, restricted profile A",                                          &DXVA_ModeH261_A,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.261 decoder, restricted profile B",                                          &DXVA_ModeH261_B,                       8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.261 decoder, restricted profile A",                &DXVA_ModeH261_A ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.261 decoder, restricted profile B",                &DXVA_ModeH261_B ),
 
     /* H.263 */
-    { "H.263 decoder, restricted profile A",                                          &DXVA_ModeH263_A,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.263 decoder, restricted profile B",                                          &DXVA_ModeH263_B,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.263 decoder, restricted profile C",                                          &DXVA_ModeH263_C,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.263 decoder, restricted profile D",                                          &DXVA_ModeH263_D,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.263 decoder, restricted profile E",                                          &DXVA_ModeH263_E,                       8, {1, 1}, 0, NULL, 0 },
-    { "H.263 decoder, restricted profile F",                                          &DXVA_ModeH263_F,                       8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile A",                &DXVA_ModeH263_A ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile B",                &DXVA_ModeH263_B ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile C",                &DXVA_ModeH263_C ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile D",                &DXVA_ModeH263_D ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile E",                &DXVA_ModeH263_E ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "H.263 decoder, restricted profile F",                &DXVA_ModeH263_F ),
 
     /* VPx */
-    { "VP8",                                                                          &DXVA_ModeVP8_VLD,                      8, {1, 1}, 0, NULL, 0 },
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT( 57, 17, 100 )
-    { "VP9 profile 0",                                                                &DXVA_ModeVP9_VLD_Profile0,             8, {1, 1}, AV_CODEC_ID_VP9, PROF_VP9_MAIN, 0 },
-    { "VP9 profile 2",                                                                &DXVA_ModeVP9_VLD_10bit_Profile2,       10, {1, 1}, AV_CODEC_ID_VP9, PROF_VP9_10, 0 },
-#else
-    { "VP9 profile 0",                                                                &DXVA_ModeVP9_VLD_Profile0,             8, {1, 1}, 0, NULL, 0 },
-    { "VP9 profile 2",                                                                &DXVA_ModeVP9_VLD_10bit_Profile2,       10, {1, 1}, 0, NULL, 0 },
-#endif
-    { "VP9 profile Intel",                                                            &DXVA_ModeVP9_VLD_Intel,                8, {1, 1}, 0, NULL, 0 },
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VP8",                                                &DXVA_ModeVP8_VLD ),
+    DEF_DXVA_MODE_420_8B( "VP9 profile 0",                                                  &DXVA_ModeVP9_VLD_Profile0,             AV_CODEC_ID_VP9, PROF_VP9_MAIN ),
+    DEF_DXVA_MODE_420_10B( "VP9 profile 2",                                                 &DXVA_ModeVP9_VLD_10bit_Profile2,       AV_CODEC_ID_VP9, PROF_VP9_10 ),
+    DEF_DXVA_MODE_420_8B_UNSUPPORTED( "VP9 profile Intel",                                  &DXVA_ModeVP9_VLD_Intel ),
 
     /* AV1 */
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT( 58, 112, 103 )
-    { "AV1 Main profile 8",                                                           &DXVA_ModeAV1_VLD_Profile0,             8, {1, 1}, AV_CODEC_ID_AV1, PROF_AV1_MAIN, 0 },
-    { "AV1 Main profile 10",                                                          &DXVA_ModeAV1_VLD_Profile0,            10, {1, 1}, AV_CODEC_ID_AV1, PROF_AV1_MAIN, 0 },
-    { "AV1 High profile 8",                                                           &DXVA_ModeAV1_VLD_Profile1,             8, {1, 1}, AV_CODEC_ID_AV1, PROF_AV1_HIGH, 0 },
-    { "AV1 High profile 10",                                                          &DXVA_ModeAV1_VLD_Profile1,            10, {1, 1}, AV_CODEC_ID_AV1, PROF_AV1_HIGH, 0 },
-#else
-    { "AV1 Main profile 8",                                                           &DXVA_ModeAV1_VLD_Profile0,             8, {1, 1}, 0, NULL, 0 },
-    { "AV1 Main profile 10",                                                          &DXVA_ModeAV1_VLD_Profile0,            10, {1, 1}, 0, NULL, 0 },
-    { "AV1 High profile 8",                                                           &DXVA_ModeAV1_VLD_Profile1,             8, {1, 1}, 0, NULL, 0 },
-    { "AV1 High profile 10",                                                          &DXVA_ModeAV1_VLD_Profile1,            10, {1, 1}, 0, NULL, 0 },
-#endif
-
-    { NULL, NULL, 0, {0, 0}, 0, NULL, 0 }
+    DEF_DXVA_MODE_420_8B( "AV1 Main profile 8",                                             &DXVA_ModeAV1_VLD_Profile0,             ENABLED_AV1_CODECID, PROF_AV1_MAIN ),
+    DEF_DXVA_MODE_420_10B( "AV1 Main profile 10",                                           &DXVA_ModeAV1_VLD_Profile0,             ENABLED_AV1_CODECID, PROF_AV1_MAIN ),
+    DEF_DXVA_MODE_420_8B( "AV1 High profile 8",                                             &DXVA_ModeAV1_VLD_Profile1,             ENABLED_AV1_CODECID, PROF_AV1_HIGH ),
+    DEF_DXVA_MODE_420_10B( "AV1 High profile 10",                                           &DXVA_ModeAV1_VLD_Profile1,             ENABLED_AV1_CODECID, PROF_AV1_HIGH ),
 };
 
 static const directx_va_mode_t *FindVideoServiceConversion(vlc_va_t *, const directx_sys_t *, const es_format_t *, video_format_t *fmt_out,
@@ -327,7 +335,7 @@ static const directx_va_mode_t *FindVideoServiceConversion(vlc_va_t *, const dir
 
 static char *directx_va_GetDecoderName(const GUID *guid)
 {
-    for (unsigned i = 0; DXVA_MODES[i].name; i++) {
+    for (size_t i = 0; i < ARRAY_SIZE(DXVA_MODES); i++) {
         if (IsEqualGUID(DXVA_MODES[i].guid, guid))
             return strdup(DXVA_MODES[i].name);
     }
@@ -400,8 +408,12 @@ const directx_va_mode_t *directx_va_Setup(vlc_va_t *va, const directx_sys_t *dx_
     fmt_out->i_height = surface_height;
 
     /* FIXME transmit a video_format_t by VaSetup directly */
-    fmt_out->i_frame_rate      = avctx->framerate.num;
-    fmt_out->i_frame_rate_base = avctx->framerate.den;
+    if (avctx->framerate.num && avctx->framerate.den &&
+        (!fmt_out->i_frame_rate || !fmt_out->i_frame_rate_base))
+    {
+        fmt_out->i_frame_rate      = avctx->framerate.num;
+        fmt_out->i_frame_rate_base = avctx->framerate.den;
+    }
 
     /* */
     const directx_va_mode_t *res = FindVideoServiceConversion(va, dx_sys, fmt, fmt_out, avctx, desc);
@@ -473,8 +485,8 @@ static const directx_va_mode_t * FindVideoServiceConversion(vlc_va_t *va, const 
     }
 
     /* Try all supported mode by our priority */
-    const directx_va_mode_t *mode = DXVA_MODES;
-    for (; mode->name; ++mode) {
+    for (size_t i=0; i<ARRAY_SIZE(DXVA_MODES); ++i) {
+        const directx_va_mode_t *mode = &DXVA_MODES[i];
         if (!mode->codec || mode->codec != avctx->codec_id)
             continue;
 

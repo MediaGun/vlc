@@ -65,9 +65,13 @@ libvlc_instance_t * libvlc_new( int argc, const char *const *argv )
     if (unlikely (p_libvlc_int == NULL))
         goto error;
 
-    if (libvlc_InternalInit( p_libvlc_int, argc + 1, my_argv ))
+    const int ret = libvlc_InternalInit( p_libvlc_int, argc + 1, my_argv );
+    if (ret != VLC_SUCCESS)
     {
         libvlc_InternalDestroy( p_libvlc_int );
+        const char *error = (ret == VLC_EGENERIC) ? _( "Generic VLC error" )
+                                                  : vlc_strerror_c( -ret );
+        libvlc_printerr( "%s", error );
         goto error;
     }
 
@@ -100,13 +104,6 @@ void libvlc_release( libvlc_instance_t *p_instance )
         free( p_instance );
         libvlc_threads_deinit ();
     }
-}
-
-void libvlc_set_exit_handler( libvlc_instance_t *p_i, void (*cb) (void *),
-                              void *data )
-{
-    libvlc_int_t *p_libvlc = p_i->p_libvlc_int;
-    libvlc_SetExitHandler( p_libvlc, cb, data );
 }
 
 void libvlc_set_user_agent (libvlc_instance_t *p_i,

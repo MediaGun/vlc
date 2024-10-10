@@ -46,21 +46,17 @@ public:
 
     static virtual_chapter_c * CreateVirtualChapter( chapter_item_c * p_chap,
                                                      matroska_segment_c & main_segment,
-                                                     std::vector<matroska_segment_c*> & segments,
+                                                     const std::vector<matroska_segment_c*> & opened_segments,
                                                      vlc_tick_t & usertime_offset, bool b_ordered );
 
     virtual_chapter_c* getSubChapterbyTimecode( vlc_tick_t time );
     bool Leave( );
     bool EnterAndLeave( virtual_chapter_c *p_leaving_vchapter, bool b_enter = true );
-    virtual_chapter_c * FindChapter( int64_t i_find_uid );
+    virtual_chapter_c * FindChapter( chapter_uid i_find_uid );
     int PublishChapters( input_title_t & title, int & i_user_chapters, int i_level, bool allow_no_name );
 
-    virtual_chapter_c * BrowseCodecPrivate( unsigned int codec_id,
-                                            bool (*match)( const chapter_codec_cmds_c &data,
-                                                           const void *p_cookie,
-                                                           size_t i_cookie_size ),
-                                            const void *p_cookie,
-                                            size_t i_cookie_size );
+    virtual_chapter_c * BrowseCodecPrivate( chapter_codec_id codec_id,
+                                            chapter_cmd_match match );
     bool Enter( bool b_do_subs );
     bool Leave( bool b_do_subs );
 
@@ -85,18 +81,15 @@ public:
 class virtual_edition_c
 {
 public:
-    virtual_edition_c( chapter_edition_c * p_edition, matroska_segment_c & main_segment, std::vector<matroska_segment_c*> & opened_segments );
+    virtual_edition_c( chapter_edition_c * p_edition, matroska_segment_c & main_segment, const std::vector<matroska_segment_c*> & opened_segments );
     ~virtual_edition_c();
     std::vector<virtual_chapter_c*> vchapters;
 
     virtual_chapter_c* getChapterbyTimecode( vlc_tick_t time );
     std::string GetMainName();
     int PublishChapters( input_title_t & title, int & i_user_chapters, int i_level );
-    virtual_chapter_c * BrowseCodecPrivate( unsigned int codec_id,
-                                            bool (*match)( const chapter_codec_cmds_c &data,
-                                                           const void *p_cookie,
-                                                           size_t i_cookie_size ),
-                                             const void *p_cookie, size_t i_cookie_size );
+    virtual_chapter_c * BrowseCodecPrivate( chapter_codec_id codec_id,
+                                            chapter_cmd_match match );
 
     bool                b_ordered;
     vlc_tick_t          i_duration;
@@ -120,9 +113,8 @@ public:
     ~virtual_segment_c();
     std::vector<virtual_edition_c*> veditions;
     std::vector<virtual_edition_c*>::size_type i_current_edition;
-    virtual_chapter_c               *p_current_vchapter;
-    bool                            b_current_vchapter_entered;
-    int                             i_sys_title;
+    bool                            b_current_vchapter_entered = false;
+    int                             i_sys_title = 0;
 
 
     inline virtual_edition_c * CurrentEdition()
@@ -151,19 +143,17 @@ public:
 
     inline std::vector<virtual_edition_c*>* Editions() { return &veditions; }
 
-    virtual_chapter_c *BrowseCodecPrivate( unsigned int codec_id,
-                                           bool (*match)( const chapter_codec_cmds_c &data,
-                                                          const void *p_cookie,
-                                                          size_t i_cookie_size ),
-                                           const void *p_cookie,
-                                           size_t i_cookie_size );
+    virtual_chapter_c *BrowseCodecPrivate( chapter_codec_id codec_id,
+                                           chapter_cmd_match match );
 
-    virtual_chapter_c * FindChapter( int64_t i_find_uid );
+    virtual_chapter_c * FindChapter( chapter_uid i_find_uid );
 
     bool UpdateCurrentToChapter( demux_t & demux );
     bool Seek( demux_t & demuxer, vlc_tick_t i_mk_date, virtual_chapter_c *p_vchapter, bool b_precise = true );
 private:
-    void KeepTrackSelection( matroska_segment_c & old, matroska_segment_c & next );
+    void KeepTrackSelection( const matroska_segment_c & old, const matroska_segment_c & next );
+
+    virtual_chapter_c               *p_current_vchapter = nullptr;
 };
 
 } // namespace

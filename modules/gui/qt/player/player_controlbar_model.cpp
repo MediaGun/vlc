@@ -92,6 +92,11 @@ bool PlayerControlbarModel::dirty() const
     return m_dirty;
 }
 
+bool PlayerControlbarModel::empty() const
+{
+    return m_empty;
+}
+
 std::array<QVector<int>, 3> PlayerControlbarModel::serializeModels() const
 {
     return { left()->getControls(),
@@ -121,6 +126,26 @@ ControlListModel *PlayerControlbarModel::right() const
     return m_right;
 }
 
+bool PlayerControlbarModel::operator==(const PlayerControlbarModel &model) const
+{
+    assert(m_left && model.m_left);
+    assert(m_center && model.m_center);
+    assert(m_right && model.m_right);
+
+    // Deep comparison
+
+    if (*m_left != *model.m_left)
+        return false;
+
+    if (*m_center != *model.m_center)
+        return false;
+
+    if (*m_right != *model.m_right)
+        return false;
+
+    return true;
+}
+
 void PlayerControlbarModel::setDirty(bool dirty)
 {
     if (m_dirty == dirty)
@@ -133,6 +158,20 @@ void PlayerControlbarModel::setDirty(bool dirty)
 void PlayerControlbarModel::contentChanged()
 {
     setDirty(true);
+
+    {
+        bool empty = true;
+        if ((m_left && m_left->rowCount() > 0) ||
+            (m_center && m_center->rowCount() > 0) ||
+            (m_right && m_right->rowCount() > 0))
+            empty = false;
+
+        if (empty != m_empty)
+        {
+            m_empty = empty;
+            emit emptyChanged(empty);
+        }
+    }
 
     emit controlListChanged();
 }

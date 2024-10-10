@@ -19,20 +19,16 @@
 #ifndef MLHELPER_HPP
 #define MLHELPER_HPP
 
-#include <memory>
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include <vlc_media_library.h>
-#include <QString>
+#include <memory>
 
-// Forward declarations
-class MLBaseModel;
-class MLItemId;
-class CoverGenerator;
-class QUrl;
+#include <vlc_media_library.h>
+
+#include <QString>
+#include <QUrl>
 
 template<typename T>
 class MLDeleter
@@ -100,5 +96,20 @@ void thumbnailCopy(const MLListRange<T> &list, O dst, const int max)
 }
 
 QString urlToDisplayString(const QUrl &url);
+
+template<typename T>
+QUrl getParentURLFromMLItem(T *mlItem)
+{
+    if (mlItem == nullptr)
+        return QUrl();
+
+    QString mrl = mlItem->getMRL();
+    QUrl fileUrl(mrl);
+    QUrl parentDirUrl = fileUrl.adjusted(QUrl::RemoveFilename);
+
+    return parentDirUrl;
+}
+
+QString getFirstSymbol(const QString &);
 
 #endif // MLHELPER_HPP

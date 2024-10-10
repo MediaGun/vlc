@@ -18,10 +18,6 @@
 
 #include "mlartistmodel.hpp"
 
-QHash<QByteArray, vlc_ml_sorting_criteria_t> MLArtistModel::M_names_to_criteria = {
-    {"title", VLC_ML_SORTING_ALPHA},
-};
-
 MLArtistModel::MLArtistModel(QObject *parent)
     : MLBaseModel(parent)
 {
@@ -63,25 +59,12 @@ QHash<int, QByteArray> MLArtistModel::roleNames() const
     };
 }
 
-vlc_ml_sorting_criteria_t MLArtistModel::roleToCriteria(int role) const
-{
-    switch (role)
-    {
-    case ARTIST_NAME :
-        return VLC_ML_SORTING_ALPHA;
-    default :
-        return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 vlc_ml_sorting_criteria_t MLArtistModel::nameToCriteria(QByteArray name) const
 {
-    return M_names_to_criteria.value(name, VLC_ML_SORTING_DEFAULT);
-}
-
-QByteArray MLArtistModel::criteriaToName(vlc_ml_sorting_criteria_t criteria) const
-{
-    return M_names_to_criteria.key(criteria, "");
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        {"name", VLC_ML_SORTING_ALPHA},
+        {"nb_tracks", VLC_ML_SORTING_TRACKNUMBER},
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
 void MLArtistModel::onVlcMlEvent(const MLEvent &event)
@@ -113,33 +96,27 @@ void MLArtistModel::onVlcMlEvent(const MLEvent &event)
     MLBaseModel::onVlcMlEvent(event);
 }
 
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLArtistModel::createLoader() const
+std::unique_ptr<MLListCacheLoader>
+MLArtistModel::createMLLoader() const
 {
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLArtistModel::Loader>(*this));
 }
 
-size_t MLArtistModel::Loader::count(vlc_medialibrary_t* ml) const
+size_t MLArtistModel::Loader::count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const
 {
-    MLQueryParams params = getParams();
-    auto queryParams = params.toCQueryParams();
-
     if ( m_parent.id <= 0 )
-        return vlc_ml_count_artists(ml, &queryParams, false);
-    return vlc_ml_count_artists_of(ml, &queryParams, m_parent.type, m_parent.id );
+        return vlc_ml_count_artists(ml, queryParams, false);
+    return vlc_ml_count_artists_of(ml, queryParams, m_parent.type, m_parent.id );
 }
 
 std::vector<std::unique_ptr<MLItem>>
-MLArtistModel::Loader::load(vlc_medialibrary_t* ml, size_t index, size_t count) const
+MLArtistModel::Loader::load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const
 {
-    MLQueryParams params = getParams(index, count);
-    auto queryParams = params.toCQueryParams();
-
     ml_unique_ptr<vlc_ml_artist_list_t> artist_list;
     if ( m_parent.id <= 0 )
-        artist_list.reset( vlc_ml_list_artists(ml, &queryParams, false) );
+        artist_list.reset( vlc_ml_list_artists(ml, queryParams, false) );
     else
-        artist_list.reset( vlc_ml_list_artist_of(ml, &queryParams, m_parent.type, m_parent.id) );
+        artist_list.reset( vlc_ml_list_artist_of(ml, queryParams, m_parent.type, m_parent.id) );
     if ( artist_list == nullptr )
         return {};
     std::vector<std::unique_ptr<MLItem>> res;

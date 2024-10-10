@@ -15,18 +15,19 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-
-import org.videolan.vlc 0.1
-
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import QtQuick
 
 
-Widgets.IconControlButton {
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Dialogs
+
+Widgets.IconToolButton {
     id: extdSettingsBtn
 
-    iconText: VLCIcons.extended
+    text: VLCIcons.effect_filter
+
+    description: qsTr("Extended settings")
+
     onClicked: DialogsProvider.extendedDialog()
-    Accessible.name: I18n.qtr("Extended settings")
 }

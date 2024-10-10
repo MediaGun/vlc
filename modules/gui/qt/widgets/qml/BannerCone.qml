@@ -16,24 +16,26 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Util
 
 Image {
     id: root
 
     property var button: MainCtx.csdButtonModel.systemMenuButton
-    /* required */ property color color
+    required property color color
 
     sourceSize.width: VLCStyle.icon_normal
     sourceSize.height: VLCStyle.icon_normal
-    source: SVGColorImage.colorize("qrc:///misc/cone.svg")
-                    .accent(root.color)
-                    .uri()
+
+    mipmap: MainCtx.useXmasCone()
+    source: MainCtx.useXmasCone() ? "qrc:///logo/vlc48-xmas.png" // TODO: new xmas cone for designs?
+                                  : SVGColorImage.colorize("qrc:///misc/cone.svg").accent(root.color).uri()
 
     focus: false
 
@@ -52,18 +54,18 @@ Image {
                 target: root
 
                 // handles VLCStyle.scale changes
-                onXChanged: Qt.callLater(root.updateRect)
-                onYChanged: Qt.callLater(root.updateRect)
-                onWidthChanged: Qt.callLater(root.updateRect)
-                onHeightChanged: Qt.callLater(root.updateRect)
+                function onXChanged() { Qt.callLater(root.updateRect) }
+                function onYChanged() { Qt.callLater(root.updateRect) }
+                function onWidthChanged() { Qt.callLater(root.updateRect) }
+                function onHeightChanged() { Qt.callLater(root.updateRect) }
             }
 
             Connections {
                 target: VLCStyle
 
                 // handle window resize
-                onAppWidthChanged: Qt.callLater(root.updateRect)
-                onAppHeightChanged: Qt.callLater(root.updateRect)
+                function onAppWidthChanged() { Qt.callLater(root.updateRect) }
+                function onAppHeightChanged() { Qt.callLater(root.updateRect) }
             }
         }
     }

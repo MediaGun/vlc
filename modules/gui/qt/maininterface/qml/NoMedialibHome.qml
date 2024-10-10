@@ -15,17 +15,22 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.Dialogs
 
 FocusScope {
+    id: root
 
     Accessible.role: Accessible.Client
-    Accessible.name: I18n.qtr("Home view")
+    Accessible.name: qsTr("Home view")
+
+    //behave like a Page
+    property var pagePrefix: []
 
     ColorContext {
         id: theme
@@ -46,16 +51,17 @@ FocusScope {
 
         Widgets.MenuLabel {
             anchors .horizontalCenter: parent.horizontalCenter
-            text: I18n.qtr("Drop some content here")
+            text: qsTr("Drop some content here")
             color: theme.fg.secondary
         }
 
         Widgets.ActionButtonPrimary {
             id: openFileButton
-            text: I18n.qtr("Open File")
+            text: qsTr("Open File")
             focus: true
             anchors.horizontalCenter: parent.horizontalCenter
             onClicked: DialogsProvider.simpleOpenDialog()
+            Navigation.parentItem: root
         }
     }
 }

@@ -17,17 +17,9 @@
  *****************************************************************************/
 
 #include "mlalbummodel.hpp"
+#include "mlhelper.hpp"
 
 #include "util/vlctick.hpp"
-
-QHash<QByteArray, vlc_ml_sorting_criteria_t> MLAlbumModel::M_names_to_criteria = {
-    {"id", VLC_ML_SORTING_DEFAULT},
-    {"title", VLC_ML_SORTING_ALBUM},
-    {"release_year", VLC_ML_SORTING_RELEASEDATE},
-    {"main_artist", VLC_ML_SORTING_ARTIST},
-    //{"nb_tracks"},
-    {"duration", VLC_ML_SORTING_DURATION}
-};
 
 MLAlbumModel::MLAlbumModel(QObject *parent)
     : MLBaseModel(parent)
@@ -52,12 +44,14 @@ QHash<int, QByteArray> MLAlbumModel::roleNames() const
 
 vlc_ml_sorting_criteria_t MLAlbumModel::nameToCriteria(QByteArray name) const
 {
-    return M_names_to_criteria.value(name, VLC_ML_SORTING_DEFAULT);
-}
-
-QByteArray MLAlbumModel::criteriaToName(vlc_ml_sorting_criteria_t criteria) const
-{
-    return M_names_to_criteria.key(criteria, "");
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        {"id", VLC_ML_SORTING_DEFAULT},
+        {"title", VLC_ML_SORTING_ALPHA},
+        {"release_year", VLC_ML_SORTING_RELEASEDATE},
+        {"main_artist", VLC_ML_SORTING_ARTIST},
+        // {"nb_tracks"},
+        {"duration", VLC_ML_SORTING_DURATION},
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
 void MLAlbumModel::onVlcMlEvent(const MLEvent &event)
@@ -98,23 +92,6 @@ void MLAlbumModel::onVlcMlEvent(const MLEvent &event)
     MLBaseModel::onVlcMlEvent( event );
 }
 
-vlc_ml_sorting_criteria_t MLAlbumModel::roleToCriteria(int role) const
-{
-    switch (role)
-    {
-    case ALBUM_TITLE :
-        return VLC_ML_SORTING_ALPHA;
-    case ALBUM_RELEASE_YEAR :
-        return VLC_ML_SORTING_RELEASEDATE;
-    case ALBUM_MAIN_ARTIST :
-        return VLC_ML_SORTING_ARTIST;
-    case ALBUM_DURATION:
-        return VLC_ML_SORTING_DURATION;
-    default:
-        return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 QVariant MLAlbumModel::itemRoleData(MLItem *item, const int role) const
 {
     auto ml_item = static_cast<MLAlbum *>(item);
@@ -147,33 +124,27 @@ QVariant MLAlbumModel::itemRoleData(MLItem *item, const int role) const
     }
 }
 
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLAlbumModel::createLoader() const
+std::unique_ptr<MLListCacheLoader>
+MLAlbumModel::createMLLoader() const
 {
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLAlbumModel::Loader>(*this));
 }
 
-size_t MLAlbumModel::Loader::count(vlc_medialibrary_t* ml) const
+size_t MLAlbumModel::Loader::count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* query) const
 {
-    MLQueryParams params = getParams();
-    auto queryParams = params.toCQueryParams();
-
     if ( m_parent.id <= 0 )
-        return vlc_ml_count_albums(ml, &queryParams);
-    return vlc_ml_count_albums_of(ml, &queryParams, m_parent.type, m_parent.id);
+        return vlc_ml_count_albums(ml, query);
+    return vlc_ml_count_albums_of(ml, query, m_parent.type, m_parent.id);
 }
 
 std::vector<std::unique_ptr<MLItem>>
-MLAlbumModel::Loader::load(vlc_medialibrary_t* ml, size_t index, size_t count) const
+MLAlbumModel::Loader::load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* query) const
 {
-    MLQueryParams params = getParams(index, count);
-    auto queryParams = params.toCQueryParams();
-
     ml_unique_ptr<vlc_ml_album_list_t> album_list;
     if ( m_parent.id <= 0 )
-        album_list.reset( vlc_ml_list_albums(ml, &queryParams) );
+        album_list.reset( vlc_ml_list_albums(ml, query) );
     else
-        album_list.reset( vlc_ml_list_albums_of(ml, &queryParams, m_parent.type, m_parent.id ) );
+        album_list.reset( vlc_ml_list_albums_of(ml, query, m_parent.type, m_parent.id ) );
     if ( album_list == nullptr )
         return {};
     std::vector<std::unique_ptr<MLItem>> res;

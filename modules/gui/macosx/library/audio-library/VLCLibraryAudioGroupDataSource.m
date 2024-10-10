@@ -26,17 +26,171 @@
 
 #import "main/VLCMain.h"
 
+#import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
+#import "library/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.h"
+#import "library/VLCLibraryModel.h"
+#import "library/VLCLibraryRepresentedItem.h"
 #import "library/VLCLibraryWindow.h"
 
 #import "library/audio-library/VLCLibraryAlbumTableCellView.h"
-#import "library/audio-library/VLCLibraryCollectionViewAlbumSupplementaryDetailView.h"
+#import "library/audio-library/VLCLibraryAudioGroupHeaderView.h"
 
 #import "views/VLCSubScrollView.h"
 
+@interface VLCLibraryAudioGroupDataSource ()
+{
+    id<VLCMediaLibraryAudioGroupProtocol> _representedAudioGroup;
+}
+@property (readwrite, atomic, strong) NSArray<VLCMediaLibraryAlbum *> *representedListOfAlbums;
+
+@end
+
 @implementation VLCLibraryAudioGroupDataSource
+
+@synthesize currentParentType = _currentParentType;
+
++ (void)setupCollectionView:(NSCollectionView *)collectionView
+{
+    NSNib * const audioGroupHeaderView = [[NSNib alloc] initWithNibNamed:@"VLCLibraryAudioGroupHeaderView"
+                                                                  bundle:nil];
+    [collectionView registerNib:audioGroupHeaderView
+     forSupplementaryViewOfKind:NSCollectionElementKindSectionHeader
+                 withIdentifier:VLCLibraryAudioGroupHeaderViewIdentifier];
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        [self setup];
+    }
+    return self;
+}
+
+- (void)setup
+{
+    [self addObserver:self forKeyPath:@"collectionViews" options:NSKeyValueObservingOptionNew context:nil];
+    [self addObserver:self forKeyPath:@"tableViews" options:NSKeyValueObservingOptionNew context:nil];
+    [self connect];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary *)change
+                       context:(void *)context
+{
+    if (object != self) {
+        return;
+    }
+
+    if ([keyPath isEqualToString:@"collectionViews"]) {
+        [self reloadCollectionViews];
+    } else if ([keyPath isEqualToString:@"tableViews"]) {
+        [self reloadTableViews];
+    }
+}
+
+- (void)libraryModelAudioMediaItemsReset:(NSNotification *)notification
+{
+    [self updateRepresentedListOfAlbums];
+}
+
+- (void)connect
+{
+    NSNotificationCenter * const notificationCenter = NSNotificationCenter.defaultCenter;
+
+    [notificationCenter addObserver:self
+                           selector:@selector(libraryModelAudioMediaItemsReset:)
+                               name:VLCLibraryModelAudioMediaListReset
+                             object:nil];
+    // TODO: Handle item deletion, update
+
+    [self reloadData];
+}
+
+- (void)disconnect
+{
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)reloadTableViews
+{
+    NSArray<NSTableView *> * const tableViews = self.tableViews;
+    for (NSTableView * const tableView in tableViews) {
+        [tableView reloadData];
+    }
+}
+
+- (void)reloadCollectionViews
+{
+    NSArray<NSCollectionView *> * const collectionViews = self.collectionViews;
+    for (NSCollectionView * const collectionView in collectionViews) {
+        NSCollectionViewLayout * const collectionViewLayout = collectionView.collectionViewLayout;
+        if ([collectionViewLayout isKindOfClass:VLCLibraryCollectionViewFlowLayout.class]) {
+            [(VLCLibraryCollectionViewFlowLayout *)collectionViewLayout resetLayout];
+        }
+        [collectionView reloadData];
+    }
+}
+
+- (void)reloadData
+{
+    [self reloadTableViews];
+    [self reloadCollectionViews];
+}
+
+- (void)updateRepresentedListOfAlbums
+{
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+        VLCLibraryModel * const libraryModel = VLCMain.sharedInstance.libraryController.libraryModel;
+        if (self.representedAudioGroup == nil || self.currentParentType == VLCMediaLibraryParentGroupTypeUnknown) {
+            self.representedListOfAlbums = libraryModel.listOfAlbums;
+        } else if (self.representedAudioGroup.albums.count == 0) {
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                self.representedListOfAlbums = [libraryModel listAlbumsOfParentType:self.currentParentType forID:self.representedAudioGroup.libraryID];
+            });
+        } else {
+            self.representedListOfAlbums = self.representedAudioGroup.albums;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self reloadData];
+        });
+    });
+}
+
+- (id<VLCMediaLibraryAudioGroupProtocol>)representedAudioGroup
+{
+    @synchronized (self) {
+        return _representedAudioGroup;
+    }
+}
+
+- (void)setRepresentedAudioGroup:(VLCAbstractMediaLibraryAudioGroup *)representedAudioGroup
+{
+    @synchronized (self) {
+        if (_representedAudioGroup == representedAudioGroup) {
+            return;
+        }
+
+        _representedAudioGroup = representedAudioGroup;
+
+        if ([representedAudioGroup isKindOfClass:VLCMediaLibraryAlbum.class]) {
+            _currentParentType = VLCMediaLibraryParentGroupTypeAlbum;
+        } else if ([representedAudioGroup isKindOfClass:VLCMediaLibraryArtist.class]) {
+            _currentParentType = VLCMediaLibraryParentGroupTypeArtist;
+        } else if ([representedAudioGroup isKindOfClass:VLCMediaLibraryGenre.class]) {
+            _currentParentType = VLCMediaLibraryParentGroupTypeGenre;
+        } else {
+            NSAssert(1, @"Current parent type should be a valid audio group type");
+        }
+
+        [self updateRepresentedListOfAlbums];
+    }
+}
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView
 {
@@ -50,7 +204,30 @@
 - (id<VLCMediaLibraryItemProtocol>)libraryItemAtRow:(NSInteger)row
                                        forTableView:(NSTableView *)tableView
 {
+    if (row < 0 || row >= self.representedListOfAlbums.count) {
+        return nil;
+    }
+
     return self.representedListOfAlbums[row];
+}
+
+- (NSInteger)rowForLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem
+{
+    if (libraryItem == nil) {
+        return NSNotFound;
+    }
+
+    NSArray<id<VLCMediaLibraryItemProtocol>> * const libraryItems = self.representedListOfAlbums;
+    const NSUInteger itemCount = libraryItems.count;
+
+    for (NSUInteger i = 0; i < itemCount; ++i) {
+        const id<VLCMediaLibraryItemProtocol> collectionItem = [libraryItems objectAtIndex:i];
+        if (collectionItem.libraryID == libraryItem.libraryID) {
+            return i;
+        }
+    }
+
+    return NSNotFound;
 }
 
 - (NSInteger)collectionView:(NSCollectionView *)collectionView
@@ -67,8 +244,10 @@
 - (NSCollectionViewItem *)collectionView:(NSCollectionView *)collectionView
      itemForRepresentedObjectAtIndexPath:(NSIndexPath *)indexPath
 {
-    VLCLibraryCollectionViewItem *viewItem = [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
-    viewItem.representedItem = self.representedListOfAlbums[indexPath.item];
+    VLCLibraryCollectionViewItem * const viewItem = [collectionView makeItemWithIdentifier:VLCLibraryCellIdentifier forIndexPath:indexPath];
+    const id<VLCMediaLibraryItemProtocol> libraryItem = [self libraryItemAtIndexPath:indexPath forCollectionView:collectionView];
+    VLCLibraryRepresentedItem * const representedItem = [[VLCLibraryRepresentedItem alloc] initWithItem:libraryItem parentType:_currentParentType];
+    viewItem.representedItem = representedItem;
     return viewItem;
 }
 
@@ -76,18 +255,33 @@
 viewForSupplementaryElementOfKind:(NSCollectionViewSupplementaryElementKind)kind
                atIndexPath:(NSIndexPath *)indexPath
 {
-    if ([kind isEqualToString:VLCLibraryCollectionViewAlbumSupplementaryDetailViewKind]) {
+    if ([kind isEqualToString:VLCLibraryCollectionViewMediaItemListSupplementaryDetailViewKind]) {
+        NSArray<VLCMediaLibraryAlbum *> * const albums = self.representedListOfAlbums;
+        if (albums == nil || albums.count == 0 || indexPath.item >= albums.count) {
+            return nil;
+        }
 
-        VLCLibraryCollectionViewAlbumSupplementaryDetailView* albumSupplementaryDetailView = [collectionView makeSupplementaryViewOfKind:kind withIdentifier:VLCLibraryCollectionViewAlbumSupplementaryDetailViewKind forIndexPath:indexPath];
+        VLCLibraryCollectionViewMediaItemListSupplementaryDetailView * const albumSupplementaryDetailView =
+            [collectionView makeSupplementaryViewOfKind:kind
+                                         withIdentifier:VLCLibraryCollectionViewMediaItemListSupplementaryDetailViewKind
+                                           forIndexPath:indexPath];
 
-        VLCMediaLibraryAlbum * const album = self.representedListOfAlbums[indexPath.item];
-        albumSupplementaryDetailView.representedAlbum = album;
+        VLCMediaLibraryAlbum * const album = albums[indexPath.item];
+        VLCLibraryRepresentedItem * const representedItem = [[VLCLibraryRepresentedItem alloc] initWithItem:album parentType:_currentParentType];
+
+        albumSupplementaryDetailView.representedItem = representedItem;
         albumSupplementaryDetailView.selectedItem = [collectionView itemAtIndex:indexPath.item];
-        albumSupplementaryDetailView.parentScrollView = [VLCMain sharedInstance].libraryWindow.audioCollectionViewScrollView;
+        albumSupplementaryDetailView.parentScrollView = VLCMain.sharedInstance.libraryWindow.audioCollectionViewScrollView;
         albumSupplementaryDetailView.internalScrollView.scrollParentY = YES;
 
         return albumSupplementaryDetailView;
 
+    } else if ([kind isEqualToString:NSCollectionElementKindSectionHeader]) {
+        VLCLibraryAudioGroupHeaderView * const headerView = [collectionView makeSupplementaryViewOfKind:kind withIdentifier:VLCLibraryAudioGroupHeaderViewIdentifier forIndexPath:indexPath];
+
+        VLCLibraryRepresentedItem * const representedItem = [[VLCLibraryRepresentedItem alloc] initWithItem:_representedAudioGroup parentType:_currentParentType];
+        headerView.representedItem = representedItem;
+        return headerView;
     }
 
     return nil;
@@ -103,7 +297,46 @@ viewForSupplementaryElementOfKind:(NSCollectionViewSupplementaryElementKind)kind
 - (id<VLCMediaLibraryItemProtocol>)libraryItemAtIndexPath:(NSIndexPath *)indexPath
                                         forCollectionView:(NSCollectionView *)collectionView
 {
-    return self.representedListOfAlbums[indexPath.item];
+    const NSUInteger indexPathItem = indexPath.item;
+
+    if (indexPathItem < 0 || indexPathItem >= self.representedListOfAlbums.count) {
+        return nil;
+    }
+
+    return self.representedListOfAlbums[indexPathItem];
+}
+
+- (NSIndexPath *)indexPathForLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem
+{
+    if (libraryItem == nil) {
+        return nil;
+    }
+
+    const NSInteger arrayIdx = [self rowForLibraryItem:libraryItem];
+    return [NSIndexPath indexPathForItem:arrayIdx inSection:0];
+}
+
+- (NSArray<VLCLibraryRepresentedItem *> *)representedItemsAtIndexPaths:(NSSet<NSIndexPath *> *const)indexPaths
+                                                     forCollectionView:(NSCollectionView *)collectionView
+{
+    NSMutableArray<VLCLibraryRepresentedItem *> * const representedItems = 
+        [NSMutableArray arrayWithCapacity:indexPaths.count];
+    
+    for (NSIndexPath * const indexPath in indexPaths) {
+        const id<VLCMediaLibraryItemProtocol> libraryItem = 
+            [self libraryItemAtIndexPath:indexPath forCollectionView:collectionView];
+        VLCLibraryRepresentedItem * const representedItem = 
+            [[VLCLibraryRepresentedItem alloc] initWithItem:libraryItem 
+                                                 parentType:self.currentParentType];
+        [representedItems addObject:representedItem];
+    }
+
+    return representedItems;
+}
+
+- (NSString *)supplementaryDetailViewKind
+{
+    return VLCLibraryCollectionViewMediaItemListSupplementaryDetailViewKind;
 }
 
 @end

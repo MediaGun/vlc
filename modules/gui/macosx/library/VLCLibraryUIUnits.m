@@ -22,8 +22,17 @@
 
 #import "VLCLibraryUIUnits.h"
 
+#import "extensions/NSWindow+VLCAdditions.h"
+
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryCollectionViewItem.h"
+#import "library/VLCLibraryWindow.h"
+
+#import "main/VLCMain.h"
+
+#import "views/VLCBottomBarView.h"
+
+#import "windows/controlsbar/VLCControlsBarCommon.h"
 
 @implementation VLCLibraryUIUnits
 
@@ -62,9 +71,19 @@
     return 25;
 }
 
++ (const CGFloat)mediumDetailSupplementaryViewCollectionViewWidth
+{
+    return 600;
+}
+
 + (const CGFloat)mediumDetailSupplementaryViewCollectionViewHeight
 {
     return 300;
+}
+
++ (const CGFloat)largeDetailSupplementaryViewCollectionViewWidth
+{
+    return 800;
 }
 
 + (const CGFloat)largeDetailSupplementaryViewCollectionViewHeight
@@ -105,14 +124,14 @@
                                  withItemsAspectRatio:itemsAspectRatio
                                withNumberOfItemsInRow:numItemsInRow];
 
-    while (itemSize.width > [VLCLibraryUIUnits dynamicCollectionViewItemMaximumWidth]) {
+    while (itemSize.width > VLCLibraryUIUnits.dynamicCollectionViewItemMaximumWidth) {
         ++numItemsInRow;
         itemSize = [self itemSizeForCollectionView:collectionView
                                         withLayout:collectionViewLayout
                               withItemsAspectRatio:itemsAspectRatio
                             withNumberOfItemsInRow:numItemsInRow];
     }
-    while (itemSize.width < [VLCLibraryUIUnits dynamicCollectionViewItemMinimumWidth] && numItemsInRow > minItemsInRow) {
+    while (itemSize.width < VLCLibraryUIUnits.dynamicCollectionViewItemMinimumWidth && numItemsInRow > minItemsInRow) {
         --numItemsInRow;
         itemSize = [self itemSizeForCollectionView:collectionView
                                         withLayout:collectionViewLayout
@@ -143,24 +162,40 @@
 
     const CGFloat itemWidth = rowOfItemsWidth / numItemsInRow;
     const CGFloat itemHeight = itemsAspectRatio == VLCLibraryCollectionViewItemAspectRatioDefaultItem ?
-        itemWidth + [VLCLibraryCollectionViewItem bottomTextViewsHeight] :
-        (itemWidth * [VLCLibraryCollectionViewItem videoHeightAspectRatioMultiplier]) + [VLCLibraryCollectionViewItem bottomTextViewsHeight];
+        itemWidth + VLCLibraryCollectionViewItem.bottomTextViewsHeight :
+        (itemWidth * [VLCLibraryCollectionViewItem videoHeightAspectRatioMultiplier]) + VLCLibraryCollectionViewItem.bottomTextViewsHeight;
 
     return NSMakeSize(itemWidth, itemHeight);
 }
 
++ (const CGFloat)carouselViewVideoItemViewWidth
+{
+    return self.carouselViewItemViewHeight / 9 * 16;
+}
+
++ (const CGFloat)carouselViewItemViewHeight
+{
+    return 180;
+}
+
 + (const NSEdgeInsets)libraryViewScrollViewContentInsets
 {
-    return NSEdgeInsetsMake([VLCLibraryUIUnits mediumSpacing],
-                            [VLCLibraryUIUnits mediumSpacing],
-                            [VLCLibraryUIUnits mediumSpacing],
-                            [VLCLibraryUIUnits mediumSpacing]);
+    VLCLibraryWindow * const libraryWindow = VLCMain.sharedInstance.libraryWindow;
+    const CGFloat toolbarHeight = libraryWindow.titlebarHeight;
+
+    return NSEdgeInsetsMake(VLCLibraryUIUnits.mediumSpacing + toolbarHeight,
+                            VLCLibraryUIUnits.mediumSpacing,
+                            VLCLibraryUIUnits.mediumSpacing,
+                            VLCLibraryUIUnits.mediumSpacing);
 }
 
 + (const NSEdgeInsets)libraryViewScrollViewScrollerInsets
 {
+    VLCLibraryWindow * const libraryWindow = VLCMain.sharedInstance.libraryWindow;
+    const CGFloat toolbarHeight = libraryWindow.titlebarHeight;
+
     const NSEdgeInsets contentInsets = [self libraryViewScrollViewContentInsets];
-    return NSEdgeInsetsMake(-contentInsets.top,
+    return NSEdgeInsetsMake(-contentInsets.top + toolbarHeight,
                             -contentInsets.left,
                             -contentInsets.bottom,
                             -contentInsets.right);
@@ -171,9 +206,34 @@
     return 0.4f;
 }
 
++ (const CGFloat)librarySplitViewSelectionViewDefaultWidth
+{
+    return 180.;
+}
+
 + (const CGFloat)librarySplitViewMainViewMinimumWidth
 {
     return 400.;
+}
+
++ (const CGFloat)libraryWindowControlsBarHeight
+{
+    return 48.;
+}
+
++ (const CGFloat)libraryWindowNavSidebarMaxWidth
+{
+    return 300.;
+}
+
++ (const CGFloat)libraryWindowPlaylistSidebarMaxWidth
+{
+    return 400.;
+}
+
++ (const CGFloat)sliderTickThickness
+{
+    return 1.;
 }
 
 @end

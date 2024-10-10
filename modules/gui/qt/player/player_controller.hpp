@@ -23,16 +23,22 @@
 # include "config.h"
 #endif
 
-#include "qt.hpp"
+#include "../qt.hpp"
+#include <vlc_cxx_helpers.hpp>
 #include <QObject>
 #include <QEvent>
 #include <QScopedPointer>
 #include <QUrl>
-#include <vlc_cxx_helpers.hpp>
 #include "player/input_models.hpp"
 #include "util/audio_device_model.hpp"
 #include "util/varchoicemodel.hpp"
 #include "util/vlctick.hpp"
+
+
+using vlc_player_locker = vlc_locker<vlc_player_t, vlc_player_Lock, vlc_player_Unlock>;
+
+using SharedVOutThread = vlc_shared_data_ptr_type(vout_thread_t, vout_Hold, vout_Release);
+using SharedAOut = vlc_shared_data_ptr_type(audio_output_t, aout_Hold, aout_Release);
 
 class QSignalMapper;
 
@@ -89,15 +95,6 @@ public:
     };
     Q_ENUM(PlayingState)
 
-    enum MediaStopAction
-    {
-        MEDIA_STOPPED_CONTINUE = VLC_PLAYER_MEDIA_STOPPED_CONTINUE,
-        MEDIA_STOPPED_PAUSE = VLC_PLAYER_MEDIA_STOPPED_PAUSE,
-        MEDIA_STOPPED_STOP = VLC_PLAYER_MEDIA_STOPPED_STOP,
-        MEDIA_STOPPED_EXIT = VLC_PLAYER_MEDIA_STOPPED_EXIT
-    };
-    Q_ENUM(MediaStopAction)
-
     enum Telekeys{
         TELE_RED = VLC_PLAYER_TELETEXT_KEY_RED,
         TELE_GREEN = VLC_PLAYER_TELETEXT_KEY_GREEN,
@@ -109,15 +106,15 @@ public:
 
     //playback
     Q_PROPERTY(PlayingState playingState READ getPlayingState NOTIFY playingStateChanged FINAL)
-    Q_PROPERTY(bool isPlaying READ hasInput NOTIFY inputChanged FINAL)
+    Q_PROPERTY(bool isStarted READ isStarted NOTIFY playingStateChanged FINAL)
     Q_PROPERTY(QString name READ getName NOTIFY nameChanged FINAL)
     Q_PROPERTY(float buffering READ getBuffering  NOTIFY bufferingChanged FINAL)
     Q_PROPERTY(float rate READ getRate WRITE setRate NOTIFY rateChanged FINAL)
-    Q_PROPERTY(MediaStopAction mediaStopAction READ getMediaStopAction WRITE setMediaStopAction NOTIFY mediaStopActionChanged FINAL)
+    Q_PROPERTY(QUrl url READ getUrl NOTIFY inputChanged FINAL)
 
     Q_PROPERTY(VLCTick time READ getTime WRITE setTime NOTIFY timeChanged FINAL)
     Q_PROPERTY(VLCTick remainingTime READ getRemainingTime NOTIFY remainingTimeChanged FINAL)
-    Q_PROPERTY(float position READ getPosition WRITE setPosition NOTIFY positionChanged FINAL)
+    Q_PROPERTY(double position READ getPosition WRITE setPosition NOTIFY positionChanged FINAL)
     Q_PROPERTY(VLCTick length READ getLength NOTIFY lengthChanged FINAL)
 
     Q_PROPERTY(bool seekable READ isSeekable NOTIFY seekableChanged FINAL)
@@ -173,6 +170,7 @@ public:
     Q_PROPERTY(VLCVarChoiceModel* zoom READ getZoom CONSTANT FINAL)
     Q_PROPERTY(VLCVarChoiceModel* aspectRatio READ getAspectRatio CONSTANT FINAL)
     Q_PROPERTY(VLCVarChoiceModel* crop READ getCrop CONSTANT FINAL)
+    Q_PROPERTY(VLCVarChoiceModel* fit READ getFit CONSTANT FINAL)
     Q_PROPERTY(VLCVarChoiceModel* deinterlace READ getDeinterlace CONSTANT FINAL)
     Q_PROPERTY(VLCVarChoiceModel* deinterlaceMode READ getDeinterlaceMode CONSTANT FINAL)
     Q_PROPERTY(bool fullscreen READ isFullscreen WRITE setFullscreen NOTIFY fullscreenChanged FINAL)
@@ -209,7 +207,7 @@ public slots:
     void jumpFwd();
     void jumpBwd();
     void jumpToTime( VLCTick i_time );
-    void jumpToPos( float );
+    void jumpToPos( double );
     void frameNext();
 
     //title/chapters/menu
@@ -224,6 +222,13 @@ public slots:
 
     //programs
     void changeProgram( int );
+
+    //menu navigation
+    Q_INVOKABLE void navigateUp( );
+    Q_INVOKABLE void navigateDown( );
+    Q_INVOKABLE void navigateLeft( );
+    Q_INVOKABLE void navigateRight( );
+    Q_INVOKABLE void navigateActivate( );
 
     //vout properties
     void toggleFullscreen();
@@ -248,24 +253,17 @@ public:
     ~PlayerController();
 
 public:
-    static void vout_Hold_fct( vout_thread_t* vout ) { vout_Hold(vout); }
-    static void vout_Release_fct( vout_thread_t* vout ) { vout_Release(vout); }
-    typedef vlc_shared_data_ptr_type(vout_thread_t, PlayerController::vout_Hold_fct, PlayerController::vout_Release_fct) VoutPtr;
-
-    static void aout_Hold_fct( audio_output_t* aout ) { aout_Hold(aout); }
-    static void aout_Release_fct( audio_output_t* aout ) { aout_Release(aout); }
-    typedef vlc_shared_data_ptr_type(audio_output_t, PlayerController::aout_Hold_fct, PlayerController::aout_Release_fct) AoutPtr;
-    typedef QVector<VoutPtr> VoutPtrList;
+    using VOutThreadList = QVector<SharedVOutThread>;
 
 
 public:
     vlc_player_t * getPlayer() const;
 
-    input_item_t *getInput();
+    input_item_t *getInput() const;
 
-    VoutPtr getVout();
-    VoutPtrList getVouts() const;
-    PlayerController::AoutPtr getAout();
+    SharedVOutThread getVout();
+    VOutThreadList getVouts() const;
+    SharedAOut getAout();
     int AddAssociatedMedia(enum es_format_category_e cat, const QString& uri, bool select, bool notify, bool check_ext);
 
     void requestArtUpdate( input_item_t *p_item, bool b_forced );
@@ -278,18 +276,17 @@ public:
 public slots:
     //playback
     PlayingState getPlayingState() const;
+    bool isStarted() const;
     bool hasInput() const;
     QString getName() const;
     float getBuffering() const;
     float getRate() const;
     void setRate( float );
-    MediaStopAction getMediaStopAction() const;
-    void setMediaStopAction(MediaStopAction );
     VLCTick getTime() const;
     void setTime(VLCTick);
     VLCTick getRemainingTime() const;
-    float getPosition() const;
-    void setPosition(float);
+    double getPosition() const;
+    void setPosition(double);
     VLCTick getLength() const;
     bool isSeekable() const;
     bool isRewindable() const;
@@ -301,6 +298,7 @@ public slots:
     void restorePlaybackPos();
     void openVLsub();
     void acknowledgeRestoreCallback();
+    QUrl getUrl() const;
 
     //tracks
     TrackListModel* getVideoTracks();
@@ -309,10 +307,13 @@ public slots:
 
     VLCTick getAudioDelay() const;
     void setAudioDelay( VLCTick );
+    Q_INVOKABLE void addAudioDelay( VLCTick );
     VLCTick getSubtitleDelay() const;
     VLCTick getSecondarySubtitleDelay() const;
     void setSubtitleDelay( VLCTick );
+    Q_INVOKABLE void addSubtitleDelay( VLCTick );
     void setSecondarySubtitleDelay( VLCTick );
+    Q_INVOKABLE void addSecondarySubtitleDelay( VLCTick );
     int getAudioDelayMS() const;
     void setAudioDelayMS( int );
     int getSubtitleDelayMS() const;
@@ -350,6 +351,7 @@ public slots:
     VLCVarChoiceModel* getZoom();
     VLCVarChoiceModel* getAspectRatio();
     VLCVarChoiceModel* getCrop();
+    VLCVarChoiceModel* getFit();
     VLCVarChoiceModel* getDeinterlace();
     VLCVarChoiceModel* getDeinterlaceMode();
     bool isFullscreen() const;
@@ -399,14 +401,13 @@ signals:
     void nameChanged( const QString& );
     void bufferingChanged( float );
     void rateChanged( float );
-    void mediaStopActionChanged( MediaStopAction );
 
     void timeChanged( VLCTick );
     void remainingTimeChanged( VLCTick );
-    void positionChanged( float );
+    void positionChanged( double );
     void lengthChanged( VLCTick );
-    void positionUpdated( float , VLCTick, int );
-    void seekRequested( float pos ); //not exposed through Q_PROPERTY
+    void positionUpdated( double , VLCTick, int );
+    void seekRequested( double pos ); //not exposed through Q_PROPERTY
 
     void seekableChanged( bool );
     void rewindableChanged( bool );
@@ -480,16 +481,9 @@ private slots:
     void menusUpdateAudio( const QString& );
 
 private:
-    bool isCurrentItemSynced();
-
     Q_DECLARE_PRIVATE(PlayerController)
     QScopedPointer<PlayerControllerPrivate> d_ptr;
     QSignalMapper *menusAudioMapper; //used by VLCMenuBar
-
-    /* updateArt gui request */
-    struct vlc_metadata_cbs input_preparser_cbs;
-    static void onArtFetchEnded_callback(input_item_t *, bool fetched, void *userdata);
-    void onArtFetchEnded(input_item_t *, bool fetched);
 };
 
 #endif

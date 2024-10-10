@@ -27,6 +27,7 @@
 
 #include <qconfig.h>
 #include <QtPlugin>
+#include <QQuickStyle>
 
 QT_BEGIN_NAMESPACE
 #include "plugins.hpp"
@@ -51,6 +52,16 @@ extern "C" char **environ;
 #include <QMutex>
 #include <QtQuickControls2/QQuickStyle>
 #include <QLoggingCategory>
+#include <QQmlError>
+#include <QList>
+#include <QTranslator>
+#ifdef _WIN32
+#include <QOperatingSystemVersion>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+#include <rhi/qrhi.h>
+#include <QOffscreenSurface>
+#endif
+#endif
 
 #include "qt.hpp"
 
@@ -60,6 +71,7 @@ extern "C" char **environ;
 #include "dialogs/dialogs/dialogmodel.hpp"
 #ifdef _WIN32
 # include "maininterface/mainctx_win32.hpp"
+#include "maininterface/win32windoweffects_module.hpp"
 #else
 # include "maininterface/mainctx.hpp"   /* MainCtx creation */
 #endif
@@ -69,6 +81,13 @@ extern "C" char **environ;
 #include "dialogs/help/help.hpp"     /* Launch Update */
 #include "util/dismiss_popup_event_filter.hpp"
 #include "maininterface/compositor.hpp"
+#include "util/vlctick.hpp"
+#include "util/shared_input_item.hpp"
+#include "network/networkmediamodel.hpp"
+#include "playlist/playlist_common.hpp"
+#include "playlist/playlist_item.hpp"
+#include "dialogs/dialogs/dialogmodel.hpp"
+#include "medialibrary/mlqmltypes.hpp"
 
 #include <QVector>
 #include "playlist/playlist_item.hpp"
@@ -78,7 +97,7 @@ extern "C" char **environ;
 #include <vlc_window.h>
 #include <vlc_player.h>
 #include <vlc_threads.h>
-#include <vlc_cxx_helpers.hpp>
+#include <vlc_messages.h>
 
 #include <QQuickWindow>
 
@@ -235,6 +254,16 @@ static void ShowDialog   ( intf_thread_t *, int, int, intf_dialog_args_t * );
                                "to ensure the visibility of the user interface on a constrained " \
                                "viewport" )
 
+#define VERBOSE_TEXT N_( "Print Qt's important internal messages" )
+#define VERBOSE_LONGTEXT N_( "Enable Qt's all own messaging categories except the debug category." )
+
+#define HIDE_WINDOW_ON_CLOSE_TEXT N_( "Hide the window on close" )
+#define HIDE_WINDOW_ON_CLOSE_LONGTEXT N_( "Instead of closing the application, hide the window. This setting is only applicable when system tray icon is enabled." )
+
+#define BACKDROP_BLUR_FILTER_TEXT N_( "Enable backdrop blur filter for the main window if possible" )
+#define BACKDROP_BLUR_FILTER_LONGTEXT N_( "If backdrop blur filter is available, use translucency in the backgrounds of certain parts of the user interface " \
+    "instead of a solid color. This setting impairs readibility of text." )
+
 static const int initial_prefs_view_list[] = { 0, 1, 2 };
 static const char *const initial_prefs_view_list_texts[] =
     { N_("Simple"), N_("Advanced"), N_("Expert") };
@@ -258,9 +287,13 @@ static const char *const compositor_vlc[] = {
 #ifdef HAVE_DCOMP_H
     "dcomp",
 #endif
+    "platform",
     "win7",
 #endif
-#ifdef QT5_HAS_X11_COMPOSITOR
+#ifdef QT_HAS_WAYLAND_COMPOSITOR
+    "wayland",
+#endif
+#ifdef QT_HAS_X11_COMPOSITOR
     "x11",
 #endif
     "dummy"
@@ -271,9 +304,13 @@ static const char *const compositor_user[] = {
 #ifdef HAVE_DCOMP_H
     "Direct Composition",
 #endif
+    "Platform Composition",
     "Windows 7",
 #endif
-#ifdef QT5_HAS_X11_COMPOSITOR
+#ifdef QT_HAS_WAYLAND_COMPOSITOR
+    "Wayland",
+#endif
+#ifdef QT_HAS_X11_COMPOSITOR
     N_("X11"),
 #endif
     N_("Dummy"),
@@ -348,7 +385,6 @@ vlc_module_begin ()
               QT_DISABLE_VOLUME_KEYS_LONGTEXT      /* longtext */)
 #endif
 
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
     add_bool( "qt-titlebar",
 #ifdef _WIN32
               false                              /* use CSD by default on windows */,
@@ -356,7 +392,6 @@ vlc_module_begin ()
               true                               /* but not on linux */,
 #endif
               QT_CLIENT_SIDE_DECORATION_TEXT, QT_CLIENT_SIDE_DECORATION_LONGTEXT )
-#endif
 
     add_bool( "qt-menubar", false, QT_MENUBAR_TEXT, QT_MENUBAR_LONGTEXT )
 
@@ -401,6 +436,12 @@ vlc_module_begin ()
 
     add_bool( "qt-smooth-scrolling", true, SMOOTH_SCROLLING_TEXT, SMOOTH_SCROLLING_LONGTEXT )
 
+    add_bool( "qt-verbose", false, VERBOSE_TEXT, VERBOSE_LONGTEXT )
+
+    add_bool( "qt-close-to-system-tray", false, HIDE_WINDOW_ON_CLOSE_TEXT, HIDE_WINDOW_ON_CLOSE_LONGTEXT )
+
+    add_bool( "qt-backdrop-blur", true, BACKDROP_BLUR_FILTER_TEXT, BACKDROP_BLUR_FILTER_LONGTEXT )
+
     add_float_with_range( "qt-safe-area", 0, 0, 100.0, SAFE_AREA_TEXT, SAFE_AREA_LONGTEXT )
 
     cannot_unload_broken_library()
@@ -421,6 +462,12 @@ vlc_module_begin ()
         set_callback( WindowsThemeProviderOpen )
         set_description( "Qt Windows theme" )
         add_shortcut("qt-themeprovider-windows")
+
+    add_submodule ()
+        add_shortcut( "QtWin32WindowEffects" )
+        set_description( "Provides window effects on Windows." )
+        set_capability( "qtwindoweffects", 10 )
+        set_callback( QtWin32WindowEffectsOpen )
 #endif
     add_submodule()
         set_capability("qt theme provider", 1)
@@ -430,6 +477,8 @@ vlc_module_begin ()
 vlc_module_end ()
 
 /*****************************************/
+
+Q_DECLARE_METATYPE(QQmlError)
 
 /* Ugly, but the Qt interface assumes single instance anyway */
 static qt_intf_t* g_qtIntf = nullptr;
@@ -453,9 +502,31 @@ static inline void triggerQuit()
 {
     QMetaObject::invokeMethod(qApp, []() {
             qApp->closeAllWindows();
-            qApp->quit();
+            //at this point both UI and Vout have ended, stop Qt mainloop
+            qApp->exit();
         }, Qt::QueuedConnection);
 }
+
+class Translator : public QTranslator
+{
+public:
+    explicit Translator(QObject* parent) : QTranslator(parent) { }
+
+    bool isEmpty() const override { return false; };
+
+    QString translate(const char *context,
+                      const char *sourceText,
+                      const char *disambiguation = nullptr,
+                      int n = -1) const override
+    {
+        Q_UNUSED(context);
+        Q_UNUSED(disambiguation);
+        Q_UNUSED(n);
+        const char* const text = vlc_gettext(sourceText);
+        assert(text);
+        return QString::fromUtf8(text);
+    }
+};
 
 /*****************************************************************************
  * Module callbacks
@@ -467,8 +538,10 @@ static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason );
 #ifdef Q_OS_MAC
 /* Used to abort the app.exec() on OSX after libvlc_Quit is called */
 #include "../../../lib/libvlc_internal.h" /* libvlc_SetExitHandler */
+#include <CoreFoundation/CFRunLoop.h>
 static void Abort( void *obj )
 {
+    (void)obj;
     triggerQuit();
 }
 #endif
@@ -508,7 +581,6 @@ static int OpenInternal( qt_intf_t *p_intf )
     /* Get the playlist before the lock to avoid a lock-order-inversion */
     vlc_playlist_t *playlist = vlc_intf_GetMainPlaylist(p_intf->intf);
 
-#ifndef Q_OS_MAC
     vlc::threads::mutex_locker locker (lock);
     if (busy || open_state == OPEN_STATE_ERROR)
     {
@@ -516,7 +588,6 @@ static int OpenInternal( qt_intf_t *p_intf )
             msg_Err (p_intf, "cannot start Qt multiple times");
         return VLC_EGENERIC;
     }
-#endif
 
     p_intf->p_mi = NULL;
 
@@ -528,7 +599,10 @@ static int OpenInternal( qt_intf_t *p_intf )
 #ifdef Q_OS_MAC
     /* Run mainloop on the main thread as Cocoa requires */
     libvlc_SetExitHandler( vlc_object_instance(p_intf), Abort, p_intf );
-    Thread( (void *)p_intf );
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), kCFRunLoopDefaultMode, ^{
+        Thread(static_cast<void*>(p_intf));
+    });
+    CFRunLoopWakeUp(CFRunLoopGetMain());
 #else
     if( vlc_clone( &p_intf->thread, Thread, p_intf ) )
     {
@@ -539,10 +613,8 @@ static int OpenInternal( qt_intf_t *p_intf )
     /* Wait for the interface to be ready. This prevents the main
      * LibVLC thread from starting video playback before we can create
      * an embedded video window. */
-#ifndef Q_OS_MAC
     while (open_state == OPEN_STATE_INIT)
         wait_ready.wait(lock);
-#endif
 
     if (open_state == OPEN_STATE_ERROR)
     {
@@ -586,6 +658,8 @@ static int OpenIntfCommon( vlc_object_t *p_this, bool dialogProvider )
 {
     auto intfThread = reinterpret_cast<intf_thread_t*>(p_this);
     libvlc_int_t *libvlc = vlc_object_instance( p_this );
+
+    /* Ensure initialization of objects in qt_intf_t. */
     auto p_intf = vlc_object_create<qt_intf_t>( libvlc );
     if (!p_intf)
         return VLC_ENOMEM;
@@ -599,6 +673,7 @@ static int OpenIntfCommon( vlc_object_t *p_this, bool dialogProvider )
     p_intf->b_isDialogProvider = dialogProvider;
     p_intf->isShuttingDown = false;
     p_intf->refCount = 1;
+
     int ret = OpenInternal(p_intf);
     if (ret != VLC_SUCCESS)
     {
@@ -660,17 +735,58 @@ static void Close( vlc_object_t *p_this )
     }
 }
 
-static inline void qRegisterMetaTypes()
+static inline void registerMetaTypes()
 {
-    // register all types used by signal/slots
-    qRegisterMetaType<size_t>("size_t");
-    qRegisterMetaType<ssize_t>("ssize_t");
-    qRegisterMetaType<vlc_tick_t>("vlc_tick_t");
+    qRegisterMetaType<size_t>();
+    qRegisterMetaType<ssize_t>();
+    qRegisterMetaType<vlc_tick_t>();
+
+    qRegisterMetaType<VLCTick>();
+    qRegisterMetaType<SharedInputItem>();
+    qRegisterMetaType<NetworkTreeItem>();
+    qRegisterMetaType<Playlist>();
+    qRegisterMetaType<PlaylistItem>();
+    qRegisterMetaType<DialogId>();
+    qRegisterMetaType<MLItemId>();
+    qRegisterMetaType<QVector<MLItemId>>();
+    qRegisterMetaType<QList<QQmlError>>();
 }
 
 static void *Thread( void *obj )
 {
     qt_intf_t *p_intf = (qt_intf_t *)obj;
+
+    {
+        QString filterRules;
+
+        const int verbosity = var_InheritInteger(p_intf, "verbose");
+        if (verbosity < VLC_MSG_DBG)
+        {
+            filterRules += QStringLiteral("*.debug=false\n");
+            if (verbosity < VLC_MSG_WARN)
+            {
+                filterRules += QStringLiteral("*.warning=false\n");
+                if (verbosity < VLC_MSG_ERR)
+                {
+                    filterRules += QStringLiteral("*.critical=false\n");
+                    if (verbosity < VLC_MSG_INFO)
+                    {
+                        filterRules += QStringLiteral("*.info=false\n");
+                    }
+                }
+            }
+        }
+
+        if (var_InheritBool(p_intf, "qt-verbose"))
+        {
+            filterRules += QStringLiteral("*=true\n" /* Qt by default does not enable some info and error messages */
+                                          "qt.*.debug=false\n" /* Qt's own debug messages are way too much verbose */
+                                          "qt.widgets.painting=false\n" /* Not necessary */);
+        }
+
+        QLoggingCategory::setFilterRules(filterRules);
+    }
+
     char vlc_name[] = "vlc"; /* for WM_CLASS */
     char *argv[3] = { nullptr };
     int argc = 0;
@@ -700,33 +816,134 @@ static void *Thread( void *obj )
 #endif
     argv[argc] = NULL;
 
-    Q_INIT_RESOURCE( vlc );
+    //qml modules are always statically linked
+    Q_INIT_RESOURCE( dialogs_assets );
+    Q_INIT_RESOURCE( maininterface_assets );
+    Q_INIT_RESOURCE( menus_assets );
+    Q_INIT_RESOURCE( maininterface_assets );
+    Q_INIT_RESOURCE( medialibrary_assets );
+    Q_INIT_RESOURCE( network_assets );
+    Q_INIT_RESOURCE( player_assets );
+    Q_INIT_RESOURCE( playercontrols_assets );
+    Q_INIT_RESOURCE( playlist_assets );
+    Q_INIT_RESOURCE( style_assets );
+    Q_INIT_RESOURCE( util_assets );
+    Q_INIT_RESOURCE( widgets_assets );
+
+#ifdef QT_USE_QMLCACHEGEN
+    Q_INIT_RESOURCE( dialogs_cachegen );
+    Q_INIT_RESOURCE( maininterface_cachegen );
+    Q_INIT_RESOURCE( menus_cachegen );
+    Q_INIT_RESOURCE( maininterface_cachegen );
+    Q_INIT_RESOURCE( medialibrary_cachegen );
+    Q_INIT_RESOURCE( network_cachegen );
+    Q_INIT_RESOURCE( player_cachegen );
+    Q_INIT_RESOURCE( playercontrols_cachegen );
+    Q_INIT_RESOURCE( playlist_cachegen );
+    Q_INIT_RESOURCE( style_cachegen );
+    Q_INIT_RESOURCE( util_cachegen );
+    Q_INIT_RESOURCE( widgets_cachegen );
+#endif
+
+#ifdef QT_STATIC
+    Q_INIT_RESOURCE( assets );
+#ifdef _WIN32
+    Q_INIT_RESOURCE( windows );
+#endif
+    Q_INIT_RESOURCE( shaders );
+
+    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects );
+    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects_private );
+    Q_INIT_RESOURCE( qmake_QtQml );
+    Q_INIT_RESOURCE( qmake_QtQml_Base );
+    Q_INIT_RESOURCE( qmake_QtQml_Models );
+    Q_INIT_RESOURCE( qmake_QtQml_WorkerScript );
+    Q_INIT_RESOURCE( qmake_QtQuick );
+    Q_INIT_RESOURCE( qmake_QtQuick_Window );
+    Q_INIT_RESOURCE( qmake_QtQuick_Controls );
+    Q_INIT_RESOURCE( qmake_QtQuick_Controls_impl );
+    Q_INIT_RESOURCE( qmake_QtQuick_Controls_Basic );
+    Q_INIT_RESOURCE( qmake_QtQuick_Controls_Basic_impl );
+    Q_INIT_RESOURCE( qmake_QtQuick_Layouts );
+    Q_INIT_RESOURCE( qmake_QtQuick_Templates );
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    Q_INIT_RESOURCE( QuickControls2Basic_raw_qml_0 );
+    Q_INIT_RESOURCE( qtquickcontrols2basicstyle );
+#else
+    Q_INIT_RESOURCE( qtquickcontrols2basicstyleplugin_raw_qml_0 );
+    Q_INIT_RESOURCE( qtquickcontrols2basicstyleplugin );
+#endif
+
+    Q_INIT_RESOURCE( qtgraphicaleffectsplugin_raw_qml_0 );
+    Q_INIT_RESOURCE( qtgraphicaleffectsprivate_raw_qml_0 );
+    Q_INIT_RESOURCE( qtgraphicaleffectsshaders );
+    // Q_INIT_RESOURCE( qtquickshapes_shaders );
+#endif
 
     auto compositor = var_InheritString(p_intf, "qt-compositor");
     vlc::CompositorFactory compositorFactory(p_intf, compositor);
     free(compositor);
 
-    compositorFactory.preInit();
-
-    QApplication::setAttribute( Qt::AA_EnableHighDpiScaling );
-    QApplication::setAttribute( Qt::AA_UseHighDpiPixmaps );
-
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
-    QApplication::setHighDpiScaleFactorRoundingPolicy( Qt::HighDpiScaleFactorRoundingPolicy::RoundPreferFloor );
-#endif
     // at the moment, the vout is created in another thread than the rendering thread
     QApplication::setAttribute( Qt::AA_DontCheckOpenGLContextThreadAffinity );
     QQuickWindow::setDefaultAlphaBuffer(true);
+
+#ifdef QT_STATIC
+    QQuickStyle::setStyle(QLatin1String("Basic"));
+#endif
 
     /* Start the QApplication here */
     QApplication app( argc, argv );
     app.setProperty("initialStyle", app.style()->objectName());
 
-#if QT_VERSION >= QT_VERSION_CHECK(5,15,1)
-    //suppress deprecation warnings about QML 'Connections' syntax
-    //legacy connection syntax is required to keep compatibility with Qt <= 5.14
-    QLoggingCategory::setFilterRules("qt.qml.connections.warning=false");
+#if defined(_WIN32)
+    // NOTE: Qt Quick does not have a cross-API RHI fallback procedure (as of Qt 6.7.1).
+    //       We have to manually pick a graphics api here, since the default graphics
+    //       api (Direct3D 11.2) may not be supported.
+
+    if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND") &&
+        qEnvironmentVariableIsEmpty("QT_QUICK_BACKEND") &&
+        (QT_VERSION < QT_VERSION_CHECK(6, 4, 0) || !uint(qEnvironmentVariableIntValue("QSG_RHI_PREFER_SOFTWARE_RENDERER"))))
+    {
+        // If OS version is lower than Windows 8.1, and Qt version is lower than
+        // 6.6.0, do not take risk and use OpenGL (since probing is not available).
+        // If OS version is greater than or equal to Windows 8.1, and Qt version is
+        // lower than 6.6.0, take risk and do not use the fallback procedure.
+        // Qt in the contribs is already version 6.7.0, so this should not be a
+        // concern.
+        if ((QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows8_1) ||
+            (QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)))
+        {
+            // TODO: Probe D3D12 when it becomes the default.
+            // If probing is not available, use OpenGL as a compromise:
+            QSGRendererInterface::GraphicsApi graphicsApi = QSGRendererInterface::OpenGL;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+            QRhiD3D11InitParams params;
+            if (QRhi::probe(QRhi::D3D11, &params))
+                graphicsApi = QSGRendererInterface::Direct3D11;
+            else
+            {
+                QRhiGles2InitParams params1;
+                params1.fallbackSurface = QRhiGles2InitParams::newFallbackSurface();
+                if (!QRhi::probe(QRhi::OpenGLES2, &params1))
+                    graphicsApi = QSGRendererInterface::Software;
+                delete params1.fallbackSurface;
+            }
 #endif
+            QQuickWindow::setGraphicsApi(graphicsApi);
+        }
+    }
+#endif
+
+    {
+        // Install custom translator:
+        const auto translator = new Translator(&app);
+        const auto ret = QCoreApplication::installTranslator(translator);
+        assert(ret);
+    }
+
+    registerMetaTypes();
 
     //app.setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
 
@@ -769,23 +986,7 @@ static void *Thread( void *obj )
     /* Initialize the Dialog Provider and the Main Input Manager */
     DialogsProvider::getInstance( p_intf );
     p_intf->p_mainPlayerController = new PlayerController(p_intf);
-    p_intf->p_mainPlaylistController = new vlc::playlist::PlaylistControllerModel(p_intf->p_playlist);
-
-#ifdef UPDATE_CHECK
-    /* Checking for VLC updates */
-    if( var_InheritBool( p_intf, "qt-updates-notif" ) &&
-        !var_InheritBool( p_intf, "qt-privacy-ask" ) )
-    {
-        int interval = var_InheritInteger( p_intf, "qt-updates-days" );
-        if( QDate::currentDate() >
-             getSettings()->value( "updatedate" ).toDate().addDays( interval ) )
-        {
-            /* The constructor of the update Dialog will do the 1st request */
-            UpdateDialog::getInstance( p_intf );
-            getSettings()->setValue( "updatedate", QDate::currentDate() );
-        }
-    }
-#endif
+    p_intf->p_mainPlaylistController = new vlc::playlist::PlaylistController(p_intf->p_playlist);
 
     /* Create the normal interface in non-DP mode */
 #ifdef _WIN32
@@ -798,15 +999,14 @@ static void *Thread( void *obj )
     {
         bool ret = false;
         do {
-            p_intf->p_compositor = compositorFactory.createCompositor();
+            p_intf->p_compositor.reset(compositorFactory.createCompositor());
             if (! p_intf->p_compositor)
                 break;
             ret = p_intf->p_compositor->makeMainInterface(p_intf->p_mi);
             if (!ret)
             {
                 p_intf->p_compositor->destroyMainInterface();
-                delete p_intf->p_compositor;
-                p_intf->p_compositor = nullptr;
+                p_intf->p_compositor.reset();
             }
         } while(!ret);
 
@@ -824,18 +1024,13 @@ static void *Thread( void *obj )
         bool known_type = true;
 
         const QString& platform = app.platformName();
-        if( platform == QLatin1String("xcb") )
-            p_intf->voutWindowType = VLC_WINDOW_TYPE_XID;
-        else if( platform == QLatin1String("wayland") || platform == QLatin1String("wayland-egl") ) {
-            p_intf->voutWindowType = VLC_WINDOW_TYPE_WAYLAND;
-
+        if( platform == QLatin1String("xcb") ) { }
+        else if( platform.startsWith( QLatin1String("wayland") ) ) {
             // Workaround for popup widgets not closing on mouse press on wayland:
             app.installEventFilter(new DismissPopupEventFilter(&app));
         }
-        else if( platform == QLatin1String("windows") )
-            p_intf->voutWindowType = VLC_WINDOW_TYPE_HWND;
-        else if( platform == QLatin1String("cocoa") )
-            p_intf->voutWindowType = VLC_WINDOW_TYPE_NSOBJECT;
+        else if( platform == QLatin1String("windows") || platform == QLatin1String("direct2d") ) { }
+        else if( platform == QLatin1String("cocoa") ) { }
         else
         {
             msg_Err( p_intf, "unknown Qt platform: %s", qtu(platform) );
@@ -859,15 +1054,6 @@ static void *Thread( void *obj )
         open_state = OPEN_STATE_OPENED;
         wait_ready.signal();
     }
-#ifdef Q_OS_MAC
-    /* We took over main thread, register and start here */
-    if( !p_intf->b_isDialogProvider )
-    {
-        vlc_playlist_Lock( p_intf->p_playlist );
-        vlc_playlist_Start( p_intf->p_playlist );
-        vlc_playlist_Unlock( p_intf->p_playlist );
-    }
-#endif
 
     /* Last settings */
     app.setQuitOnLastWindowClosed( false );
@@ -876,8 +1062,6 @@ static void *Thread( void *obj )
     QString s_style = getSettings()->value( "MainWindow/QtStyle", "" ).toString();
     if( s_style.compare("") != 0 )
         QApplication::setStyle( s_style );
-
-    qRegisterMetaTypes();
 
     /* Launch */
     app.exec();
@@ -889,15 +1073,11 @@ static void *Thread( void *obj )
 static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason )
 {
     {
-#ifndef Q_OS_MAC
         vlc::threads::mutex_locker locker (lock);
-#endif
         if( cleanupReason == CLEANUP_ERROR )
         {
             open_state = OPEN_STATE_ERROR;
-#ifndef Q_OS_MAC
             wait_ready.signal();
-#endif
         }
         else
             open_state = OPEN_STATE_INIT;
@@ -920,8 +1100,7 @@ static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason )
             delete p_intf->mainSettings;
             p_intf->mainSettings = nullptr;
 
-            delete p_intf->p_compositor;
-            p_intf->p_compositor = nullptr;
+            p_intf->p_compositor.reset();
         }
     }
 
@@ -1011,13 +1190,13 @@ static int WindowOpen( vlc_window_t *p_wnd )
         if (p_intf->isShuttingDown)
             return VLC_EGENERIC;
 
-        switch( p_intf->voutWindowType )
         {
-            case VLC_WINDOW_TYPE_XID:
-            case VLC_WINDOW_TYPE_HWND:
+            const QString& platform = qApp->platformName();
+            if (platform == QLatin1String("windows") || platform == QLatin1String("direct2d"))
+            {
                 if( var_InheritBool( p_wnd, "video-wallpaper" ) )
                     return VLC_EGENERIC;
-                break;
+            }
         }
 
         bool ret = p_intf->p_compositor->setupVoutWindow( p_wnd, &WindowCloseCb );
@@ -1025,15 +1204,4 @@ static int WindowOpen( vlc_window_t *p_wnd )
             p_intf->refCount += 1;
         return ret ? VLC_SUCCESS : VLC_EGENERIC;
     }
-}
-
-vlc_player_locker::vlc_player_locker( vlc_player_t* p_player )
-    : p_player( p_player )
-{
-    vlc_player_Lock( p_player );
-}
-
-vlc_player_locker::~vlc_player_locker()
-{
-    vlc_player_Unlock( p_player );
 }

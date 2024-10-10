@@ -16,15 +16,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
 
-Widgets.KeyNavigableTableView {
+Widgets.TableViewExt {
     id: root
 
     displayMarginEnd: g_mainDisplay.displayMargin
 
-    enableEndFade: (g_mainDisplay.hasMiniPlayer === false)
+    fadingEdge.enableEndFade: (g_mainDisplay.hasMiniPlayer === false)
 }

@@ -21,6 +21,7 @@
 #include "widgets/native/viewblockingrectangle.hpp"
 #include <QMutex>
 #include <QRunnable>
+#include <QPointer>
 #include "qt.hpp"
 
 #include <vlc_threads.h>
@@ -28,6 +29,8 @@
 extern "C" {
     typedef struct vlc_window vlc_window_t;
 }
+
+Q_MOC_INCLUDE( "maininterface/mainctx.hpp")
 
 class MainCtx;
 
@@ -95,38 +98,34 @@ protected:
 class VideoSurface : public ViewBlockingRectangle
 {
     Q_OBJECT
-    Q_PROPERTY(MainCtx* ctx READ getCtx WRITE setCtx NOTIFY ctxChanged FINAL)
+    Q_PROPERTY(VideoSurfaceProvider* videoSurfaceProvider READ videoSurfaceProvider WRITE setVideoSurfaceProvider NOTIFY videoSurfaceProviderChanged FINAL)
     Q_PROPERTY(Qt::CursorShape cursorShape READ getCursorShape WRITE setCursorShape RESET unsetCursor FINAL)
 
 public:
     VideoSurface( QQuickItem* parent = nullptr );
 
-    MainCtx* getCtx();
-    void setCtx(MainCtx* ctx);
+    VideoSurfaceProvider* videoSurfaceProvider() const { return m_provider; };
+    void setVideoSurfaceProvider(VideoSurfaceProvider *newVideoSurfaceProvider);
 
 protected:
     int qtMouseButton2VLC( Qt::MouseButton qtButton );
 
-    virtual void mousePressEvent(QMouseEvent *event) override;
-    virtual void mouseReleaseEvent(QMouseEvent *event) override;
-    virtual void mouseMoveEvent(QMouseEvent *event) override;
-    virtual void hoverMoveEvent(QHoverEvent *event) override;
-    virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
-    virtual void keyPressEvent(QKeyEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void hoverMoveEvent(QHoverEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 #if QT_CONFIG(wheelevent)
-    virtual void wheelEvent(QWheelEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 #endif
-
-    virtual void geometryChanged(const QRectF &newGeometry,
-                                 const QRectF &oldGeometry) override;
 
     Qt::CursorShape getCursorShape() const;
     void setCursorShape(Qt::CursorShape);
 
-    virtual QSGNode* updatePaintNode(QSGNode *, QQuickItem::UpdatePaintNodeData *) override;
+    void updatePolish() override;
 
 signals:
-    void ctxChanged(MainCtx*);
     void surfaceSizeChanged(QSizeF);
     void surfacePositionChanged(QPointF);
 
@@ -137,18 +136,24 @@ signals:
     void keyPressed(int key, Qt::KeyboardModifiers modifier);
     void mouseWheeled(const QWheelEvent& event);
 
+    void videoSurfaceProviderChanged();
+
 protected slots:
-    void onProviderVideoChanged(bool);
-    void onSurfaceSizeChanged();
-    void onSurfacePositionChanged();
-    void updatePositionAndSize();
+    void updateSurfacePosition();
+    void updateSurfaceSize();
+    void updateSurfacePositionAndSize();
+
+    void updateParentChanged();
 
 private:
-    MainCtx* m_ctx = nullptr;
-
     QPointF m_oldHoverPos;
 
-    VideoSurfaceProvider* m_provider = nullptr;
+    QPointer<VideoSurfaceProvider> m_provider;
+
+    std::vector<QPointer<QQuickItem>> m_parentList;
+
+    bool m_sizeDirty = false;
+    bool m_positionDirty = false;
 };
 
 #endif // VIDEOSURFACE_HPP

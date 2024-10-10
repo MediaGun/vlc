@@ -66,7 +66,7 @@ static NSString *VLCRecentlyPlayedMediaListKey = @"recentlyPlayedMediaList";
 {
     self = [super init];
     if (self) {
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(inputItemChanged:)
                                    name:VLCPlayerCurrentMediaItemChanged
@@ -83,11 +83,11 @@ static NSString *VLCRecentlyPlayedMediaListKey = @"recentlyPlayedMediaList";
 {
     msg_Dbg(getIntf(), "Deinitializing input manager");
 
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 
     if (_currentInput) {
         /* continue playback where you left off */
-        [self storePlaybackPositionForItem:_currentInput player:[VLCMain sharedInstance].playlistController.playerController];
+        [self storePlaybackPositionForItem:_currentInput player:VLCMain.sharedInstance.playlistController.playerController];
     }
 }
 
@@ -110,7 +110,7 @@ static NSString *VLCRecentlyPlayedMediaListKey = @"recentlyPlayedMediaList";
 {
     // On shutdown, input might not be dead yet. Cleanup actions like itunes playback
     // and playback positon are done in different code paths (dealloc and appWillTerminate:).
-    if ([[VLCMain sharedInstance] isTerminating]) {
+    if ([VLCMain.sharedInstance isTerminating]) {
         return;
     }
 

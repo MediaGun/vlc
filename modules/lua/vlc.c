@@ -95,6 +95,18 @@ static int file_compare( const char **a, const char **b )
     return strcmp( *a, *b );
 }
 
+/* Function to parse the trusted property of a file */
+static bool file_is_playlist( lua_State *L )
+{
+    bool trusted = false;
+    lua_getfield(L, -1, "trusted");
+    if( !lua_isnil(L, -1) && lua_isboolean(L, -1) )
+        trusted = lua_toboolean(L, -1);
+
+    lua_pop( L, 1 );
+    return trusted;
+}
+
 static char **vlclua_dir_list_append( char **restrict list, char *basedir,
                                       const char *luadirname )
 {
@@ -246,6 +258,8 @@ char *vlclua_find_file( const char *psz_luadirname, const char *psz_name )
 void vlclua_read_meta_data( vlc_object_t *p_this, lua_State *L,
                             input_item_t *p_input )
 {
+    vlc_meta_priority_t priority = file_is_playlist( L )? VLC_META_PRIORITY_PLAYLIST:
+                                                          VLC_META_PRIORITY_BASIC;
 #define TRY_META( a, b )                                        \
     lua_getfield( L, -1, a );                                   \
     if( lua_isstring( L, -1 ) &&                                \
@@ -254,16 +268,20 @@ void vlclua_read_meta_data( vlc_object_t *p_this, lua_State *L,
         char *psz_value = strdup( lua_tostring( L, -1 ) );      \
         EnsureUTF8( psz_value );                                \
         msg_Dbg( p_this, #b ": %s", psz_value );                \
-        input_item_Set ## b ( p_input, psz_value );             \
+        vlc_meta_SetWithPriority( p_input->p_meta,              \
+                                  vlc_meta_ ## b,               \
+                                  psz_value,                    \
+                                  priority );                   \
         free( psz_value );                                      \
     }                                                           \
     lua_pop( L, 1 ); /* pop a */
+    vlc_mutex_lock( &p_input->lock );
     TRY_META( "title", Title );
     TRY_META( "artist", Artist );
     TRY_META( "genre", Genre );
     TRY_META( "copyright", Copyright );
     TRY_META( "album", Album );
-    TRY_META( "tracknum", TrackNum );
+    TRY_META( "tracknum", TrackNumber );
     TRY_META( "description", Description );
     TRY_META( "rating", Rating );
     TRY_META( "date", Date );
@@ -273,13 +291,14 @@ void vlclua_read_meta_data( vlc_object_t *p_this, lua_State *L,
     TRY_META( "nowplaying", NowPlaying );
     TRY_META( "publisher",  Publisher );
     TRY_META( "encodedby",  EncodedBy );
-    TRY_META( "arturl",     ArtURL );
+    TRY_META( "arturl",     ArtworkURL );
     TRY_META( "trackid",    TrackID );
     TRY_META( "director",   Director );
     TRY_META( "season",     Season );
     TRY_META( "episode",    Episode );
     TRY_META( "show_name",  ShowName );
     TRY_META( "actors",     Actors );
+    vlc_mutex_unlock( &p_input->lock );
 }
 
 #undef vlclua_read_custom_meta_data
@@ -311,7 +330,9 @@ void vlclua_read_custom_meta_data( vlc_object_t *p_this, lua_State *L,
             const char *psz_key = lua_tostring( L, -2 );
             const char *psz_value = lua_tostring( L, -1 );
 
-            vlc_meta_AddExtra( p_input->p_meta, psz_key, psz_value );
+            vlc_meta_priority_t priority = file_is_playlist( L )? VLC_META_PRIORITY_PLAYLIST:
+                                                                  VLC_META_PRIORITY_BASIC;
+            vlc_meta_SetExtraWithPriority( p_input->p_meta, psz_key, psz_value, priority );
 
             lua_pop( L, 1 ); /* pop "value" */
         }

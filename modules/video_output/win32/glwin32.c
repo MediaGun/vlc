@@ -66,15 +66,20 @@ typedef struct vout_display_sys_t
 
     vlc_gl_t              *gl;
     vout_display_opengl_t *vgl;
+    vlc_viewpoint_t       viewpoint;
 } vout_display_sys_t;
 
-static void           Prepare(vout_display_t *, picture_t *, subpicture_t *, vlc_tick_t);
+static void           Prepare(vout_display_t *, picture_t *, const vlc_render_subpicture *, vlc_tick_t);
 static void           Display(vout_display_t *, picture_t *);
 
 static int SetViewpoint(vout_display_t *vd, const vlc_viewpoint_t *vp)
 {
     vout_display_sys_t *sys = vd->sys;
-    return vout_display_opengl_SetViewpoint(sys->vgl, vp);
+    int ret = vout_display_opengl_SetViewpoint(sys->vgl, vp);
+    if (ret != VLC_SUCCESS)
+        return ret;
+    sys->viewpoint = *vp;
+    return VLC_SUCCESS;
 }
 
 static int Control(vout_display_t *vd, int query)
@@ -102,12 +107,39 @@ static vlc_window_t *EmbedVideoWindow_Create(vout_display_t *vd)
     return wnd;
 }
 
+static int
+UpdateFormat(vout_display_t *vd, const video_format_t *fmt,
+             vlc_video_context *vctx)
+{
+    vout_display_sys_t *sys = vd->sys;
+
+    int ret = vlc_gl_MakeCurrent(sys->gl);
+    if (ret != VLC_SUCCESS)
+        return ret;
+
+    ret = vout_display_opengl_UpdateFormat(sys->vgl, fmt, vctx);
+
+    // /* Force to recompute the viewport on next picture */
+    sys->area.place_changed = true;
+
+    /* Restore viewpoint */
+    int vp_ret = vout_display_opengl_SetViewpoint(sys->vgl, &sys->viewpoint);
+    /* The viewpoint previously applied is necessarily valid */
+    assert(vp_ret == VLC_SUCCESS);
+    (void) vp_ret;
+
+    vlc_gl_ReleaseCurrent(sys->gl);
+
+    return ret;
+}
+
 static const struct vlc_display_operations ops = {
     .close = Close,
     .prepare = Prepare,
     .display = Display,
     .control = Control,
     .set_viewpoint = SetViewpoint,
+    .update_format = UpdateFormat,
 };
 
 /**
@@ -161,6 +193,8 @@ static int Open(vout_display_t *vd,
     if (!sys->vgl)
         goto error;
 
+    sys->viewpoint = vd->cfg->viewpoint;
+
     /* Setup vout_display now that everything is fine */
     vd->info.subpicture_chromas = subpicture_chromas;
 
@@ -200,7 +234,8 @@ static void Close(vout_display_t *vd)
 }
 
 /* */
-static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpicture,
+static void Prepare(vout_display_t *vd, picture_t *picture,
+                    const vlc_render_subpicture *subpicture,
                     vlc_tick_t date)
 {
     VLC_UNUSED(date);
@@ -210,22 +245,14 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         return;
     if (sys->area.place_changed)
     {
-        struct vout_display_placement place_cfg = vd->cfg->display;
-        vout_display_place_t place;
+        vout_display_place_t place = *vd->place;
 
         /* Reverse vertical alignment as the GL tex are Y inverted */
-        if (place_cfg.align.vertical == VLC_VIDEO_ALIGN_TOP)
-            place_cfg.align.vertical = VLC_VIDEO_ALIGN_BOTTOM;
-        else if (place_cfg.align.vertical == VLC_VIDEO_ALIGN_BOTTOM)
-            place_cfg.align.vertical = VLC_VIDEO_ALIGN_TOP;
+        place.y = vd->cfg->display.height - (place.y + place.height);
 
-        vout_display_PlacePicture(&place, vd->source, &place_cfg);
-
-        const int width  = place.width;
-        const int height = place.height;
-        vlc_gl_Resize (sys->gl, width, height);
-        vout_display_opengl_SetOutputSize(sys->vgl, width, height);
-        vout_display_opengl_Viewport(sys->vgl, place.x, place.y, width, height);
+        vlc_gl_Resize (sys->gl, place.width, place.height);
+        vout_display_opengl_SetOutputSize(sys->vgl, vd->cfg->display.width, vd->cfg->display.height);
+        vout_display_opengl_Viewport(sys->vgl, place.x, place.y, place.width, place.height);
         sys->area.place_changed = false;
     }
     vout_display_opengl_Prepare (sys->vgl, picture, subpicture);

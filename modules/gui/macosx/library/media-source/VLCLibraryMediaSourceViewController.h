@@ -22,26 +22,28 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "library/VLCLibraryAbstractSegmentViewController.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
 @class VLCInputNodePathControl;
 @class VLCLibraryWindow;
 @class VLCMediaSourceBaseDataSource;
 
-@interface VLCLibraryMediaSourceViewController : NSObject
+@interface VLCLibraryMediaSourceViewController : VLCLibraryAbstractSegmentViewController
 
-@property (readonly) NSView *libraryTargetView;
-@property (readonly) NSView *mediaSourceView;
-@property (readonly) NSTableView *mediaSourceTableView;
-@property (readonly) NSCollectionView *collectionView;
-@property (readonly) NSScrollView *collectionViewScrollView;
-@property (readonly) NSTableView *tableView;
-@property (readonly) NSScrollView *tableViewScrollView;
-@property (readonly) NSButton *homeButton;
-@property (readonly) VLCInputNodePathControl *pathControl;
-@property (readonly) NSLayoutConstraint *pathControlBottomTableViewScrollViewConstraint;
-@property (readonly) NSLayoutConstraint *pathControlBottomCollectionViewScrollViewConstraint;
-@property (readonly) NSSegmentedControl *gridVsListSegmentedControl;
+@property (readonly, weak) NSView *mediaSourceView;
+@property (readonly, weak) NSTableView *mediaSourceTableView;
+@property (readonly, weak) NSCollectionView *collectionView;
+@property (readonly, weak) NSScrollView *collectionViewScrollView;
+@property (readonly, weak) NSTableView *tableView;
+@property (readonly, weak) NSScrollView *tableViewScrollView;
+@property (readonly, weak) NSButton *homeButton;
+@property (readonly, weak) VLCInputNodePathControl *pathControl;
+@property (readonly, weak) NSVisualEffectView *pathControlVisualEffectView;
+@property (readonly, weak) NSSegmentedControl *gridVsListSegmentedControl;
+@property (readonly) NSTextField *browsePlaceholderLabel; // Use library window's placeholder views?
+@property (readonly, weak) NSLayoutConstraint *pathControlViewTopConstraintToSuperview;
 
 @property (readonly) VLCMediaSourceBaseDataSource *baseDataSource;
 
@@ -49,6 +51,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)presentBrowseView;
 - (void)presentStreamsView;
+- (void)presentLocalFolderMrl:(NSString *)mrl;
 
 @end
 

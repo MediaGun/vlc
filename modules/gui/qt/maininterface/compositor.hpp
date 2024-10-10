@@ -48,6 +48,7 @@ class QWindow;
 class QQuickItem;
 class QQuickView;
 class QQuickWindow;
+struct WindowEffectsModule;
 
 namespace vlc {
 
@@ -58,7 +59,9 @@ public:
         DummyCompositor,
         Win7Compositor,
         DirectCompositionCompositor,
-        X11Compositor
+        X11Compositor,
+        WaylandCompositor,
+        PlatformCompositor
     };
 
     typedef void (*VoutDestroyCb)(vlc_window_t *p_wnd);
@@ -66,14 +69,28 @@ public:
 public:
     virtual ~Compositor() = default;
 
-    virtual bool init() = 0;
+    [[nodiscard]] virtual bool init() = 0;
 
-    virtual bool makeMainInterface(MainCtx* intf) = 0;
+    [[nodiscard]] virtual bool makeMainInterface(MainCtx* intf) = 0;
+
+    /**
+     * @brief destroyMainInterface must released all resources, this is called before
+     * destroying the compositor
+     */
     virtual void destroyMainInterface() = 0;
 
+    /**
+     * @brief unloadGUI must destroy the resources associated to the UI part,
+     * this includes QML resources.
+     * Resources that are dependencies of the video surfaces should not be
+     * destroyed as the video window may be destroyed after the interface.
+     *
+     * this means that if your video depends on a QQuickView, you must unload
+     * the QML content but keep the QQuickView
+     */
     virtual void unloadGUI() = 0;
 
-    virtual bool setupVoutWindow(vlc_window_t *p_wnd, VoutDestroyCb destroyCb) = 0;
+    [[nodiscard]] virtual bool setupVoutWindow(vlc_window_t *p_wnd, VoutDestroyCb destroyCb) = 0;
 
     virtual Type type() const = 0;
 
@@ -92,7 +109,8 @@ public:
     enum Flag : unsigned
     {
         CAN_SHOW_PIP = 1,
-        HAS_ACRYLIC = 2
+        HAS_ACRYLIC = 2,
+        HAS_EXTENDED_FRAME = 4,
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -124,14 +142,30 @@ protected:
     void commonWindowEnable();
     void commonWindowDisable();
 
+    bool setBlurBehind(QWindow* window, bool enable = true);
+
 protected:
-    bool commonGUICreate(QWindow* window, QWidget* rootWidget, QmlUISurface* , CompositorVideo::Flags flags);
-    bool commonGUICreate(QWindow* window, QWidget* rootWidget, QQuickView* , CompositorVideo::Flags flags);
+    /**
+     * @brief commonGUICreate setup the QML view for video composition
+     * this should be called from makeMainInterface specialisation
+     */
+    bool commonGUICreate(QWindow* window, QmlUISurface* , CompositorVideo::Flags flags);
+    bool commonGUICreate(QWindow* window, QQuickView* , CompositorVideo::Flags flags);
+
+    /**
+     * @brief commonIntfDestroy release GUI resources allocated by commonGUICreate
+     * this should be called from unloadGUI specialisation
+     */
     void commonGUIDestroy();
+
+    /**
+     * @brief commonIntfDestroy release interface resources allocated by commonGUICreate
+     * this should be called from destroyMainInterface specialisation
+     */
     void commonIntfDestroy();
 
 private:
-    bool commonGUICreateImpl(QWindow* window, QWidget* rootWidget, CompositorVideo::Flags flags);
+    bool commonGUICreateImpl(QWindow* window, CompositorVideo::Flags flags);
 
 protected slots:
     virtual void onSurfacePositionChanged(const QPointF&) {}
@@ -152,6 +186,10 @@ protected:
 #ifdef _WIN32
     std::unique_ptr<WinTaskbarWidget> m_taskbarWidget;
 #endif
+
+    bool m_blurBehind = false;
+    WindowEffectsModule* m_windowEffectsModule = nullptr;
+    bool m_failedToLoadWindowEffectsModule = false;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(CompositorVideo::Flags)
@@ -164,9 +202,6 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(CompositorVideo::Flags)
  *
  * the usual scenario is:
  *
- *   - call to preInit that will try to preInit compositors from list until we find
- *     a matching candidate
- *
  *   - start Qt main loop
  *
  *   - call to createCompositor to instantiate the compositor, if it fails it will
@@ -176,18 +211,6 @@ class CompositorFactory {
 public:
 
     CompositorFactory(qt_intf_t *p_intf, const char* compositor = "auto");
-
-    /**
-     * @brief preInit will check whether a compositor can be used, before starting Qt,
-     * each candidate may perform some basic checks and can setup Qt environment variable if required
-     *
-     * @note if a compositor return true on preinit but fails to initialize afterwards, next
-     * compositor in chain will be initialized without the preinit phaze (as Qt will be already started)
-     * this might lead to an unstable configuration if incompatible operations are done in the preInit phase
-     *
-     * @return true if a compositor can be instantiated
-     */
-    bool preInit();
 
     /**
      * @brief createCompositor will instantiate a compositor

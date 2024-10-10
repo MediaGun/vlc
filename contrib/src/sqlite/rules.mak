@@ -1,7 +1,7 @@
 # sqlite
 
-SQLITE_VERSION := 3340100
-SQLITE_URL := https://www.sqlite.org/2021/sqlite-autoconf-$(SQLITE_VERSION).tar.gz
+SQLITE_VERSION := 3460100
+SQLITE_URL := https://www.sqlite.org/2024/sqlite-autoconf-$(SQLITE_VERSION).tar.gz
 
 PKGS += sqlite
 
@@ -22,6 +22,7 @@ $(TARBALLS)/sqlite-autoconf-$(SQLITE_VERSION).tar.gz:
 
 sqlite: sqlite-autoconf-$(SQLITE_VERSION).tar.gz .sum-sqlite
 	$(UNPACK)
+	$(call update_autoconfig,.)
 	$(call pkg_static, "sqlite3.pc.in")
 	$(MOVE)
 

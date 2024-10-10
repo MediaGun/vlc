@@ -1,3 +1,9 @@
+rtp_lib = static_library('rtp',
+    files('rtpfmt.c', 'session.c', 'rtp.h'),
+    include_directories: [vlc_include_dirs],
+    install: false,
+    pic: true)
+
 if libgcrypt_dep.found()
     srtp_lib = static_library('srtp',
                     files('srtp.c', 'srtp.h'),
@@ -14,17 +20,15 @@ vlc_modules += {
     'sources': 
         files(
             'input.c',
-            'session.c',
             'sdp.c',
             'sdp.h',
-            'rtpfmt.c',
             'datagram.c',
             'vlc_dtls.h',
             'rtp.c',
             'rtp.h',
         ),
     'dependencies': [socket_libs],
-    'link_with': srtp_lib,
+    'link_with': [rtp_lib, srtp_lib],
     'c_args': srtp_rtp_c_args,
 }
 
@@ -50,7 +54,12 @@ vlc_modules += {
 
 vlc_modules += {
     'name': 'rtp_h264',
-    'sources': files('h264.c')
+    'sources': files('h264.c', 'h26x.h'),
+}
+
+vlc_modules += {
+    'name': 'rtp_h265',
+    'sources': files('h265.c', 'h26x.h'),
 }
 
 vlc_modules += {

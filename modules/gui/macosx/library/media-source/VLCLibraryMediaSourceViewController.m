@@ -23,10 +23,16 @@
 #import "VLCLibraryMediaSourceViewController.h"
 
 #import "VLCMediaSourceBaseDataSource.h"
+#import "VLCMediaSourceDataSource.h"
+
+#import "extensions/NSFont+VLCAdditions.h"
+#import "extensions/NSString+Helpers.h"
+#import "extensions/NSWindow+VLCAdditions.h"
 
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryController.h"
+#import "library/VLCLibrarySegment.h"
 #import "library/VLCLibraryUIUnits.h"
 #import "library/VLCLibraryWindow.h"
 
@@ -36,12 +42,24 @@
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow
 {
-    self = [super init];
+    self = [super initWithLibraryWindow:libraryWindow];
     if (self) {
         [self setupPropertiesFromLibraryWindow:libraryWindow];
         [self setupBaseDataSource];
         [self setupCollectionView];
         [self setupMediaSourceLibraryViews];
+        [self setupPlaceholderLabel];
+        [self setupPathControlView];
+
+        NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
+        [defaultCenter addObserver:self 
+                          selector:@selector(updatePlaceholderLabel:) 
+                              name:VLCMediaSourceBaseDataSourceNodeChanged 
+                            object:nil];
+        [defaultCenter addObserver:self 
+                          selector:@selector(updatePlaceholderLabel:) 
+                              name:VLCMediaSourceDataSourceNodeChanged 
+                            object:nil];
     }
     return self;
 }
@@ -49,7 +67,6 @@
 - (void)setupPropertiesFromLibraryWindow:(VLCLibraryWindow *)libraryWindow
 {
     NSParameterAssert(libraryWindow);
-    _libraryTargetView = libraryWindow.libraryTargetView;
     _mediaSourceView = libraryWindow.mediaSourceView;
     _mediaSourceTableView = libraryWindow.mediaSourceTableView;
     _collectionView = libraryWindow.mediaSourceCollectionView;
@@ -58,8 +75,7 @@
     _tableViewScrollView = libraryWindow.mediaSourceTableViewScrollView;
     _homeButton = libraryWindow.mediaSourceHomeButton;
     _pathControl = libraryWindow.mediaSourcePathControl;
-    _pathControlBottomTableViewScrollViewConstraint = libraryWindow.mediaSourcePathControlTableViewScrollViewBottomConstraint;
-    _pathControlBottomCollectionViewScrollViewConstraint = libraryWindow.mediaSourcePathControlCollectionViewScrollViewBottomConstraint;
+    _pathControlVisualEffectView = libraryWindow.mediaSourcePathControlVisualEffectView;
     _gridVsListSegmentedControl = libraryWindow.gridVsListSegmentedControl;
 }
 
@@ -70,31 +86,25 @@
     _baseDataSource.collectionViewScrollView = _collectionViewScrollView;
     _baseDataSource.homeButton = _homeButton;
     _baseDataSource.pathControl = _pathControl;
-    _baseDataSource.pathControlBottomTableViewScrollViewConstraint = _pathControlBottomTableViewScrollViewConstraint;
-    _baseDataSource.pathControlBottomCollectionViewScrollViewConstraint = _pathControlBottomCollectionViewScrollViewConstraint;
+    _baseDataSource.pathControlVisualEffectView = _pathControlVisualEffectView;
     _baseDataSource.tableView = _tableView;
+    _baseDataSource.tableViewScrollView = _tableViewScrollView;
     [_baseDataSource setupViews];
 }
 
 - (void)setupCollectionView
 {
-    const CGFloat collectionItemSpacing = [VLCLibraryUIUnits collectionViewItemSpacing];
-    const NSEdgeInsets collectionViewSectionInset = [VLCLibraryUIUnits collectionViewSectionInsets];
-    
-    NSCollectionViewFlowLayout *mediaSourceCollectionViewLayout = [[VLCLibraryCollectionViewFlowLayout alloc] init];
+    VLCLibraryCollectionViewFlowLayout * const mediaSourceCollectionViewLayout = VLCLibraryCollectionViewFlowLayout.standardLayout;
     _collectionView.collectionViewLayout = mediaSourceCollectionViewLayout;
-    mediaSourceCollectionViewLayout.itemSize = [VLCLibraryCollectionViewItem defaultSize];
-    mediaSourceCollectionViewLayout.minimumLineSpacing = collectionItemSpacing;
-    mediaSourceCollectionViewLayout.minimumInteritemSpacing = collectionItemSpacing;
-    mediaSourceCollectionViewLayout.sectionInset = collectionViewSectionInset;
+    mediaSourceCollectionViewLayout.itemSize = VLCLibraryCollectionViewItem.defaultSize;
 }
 
 - (void)setupMediaSourceLibraryViews
 {
-    _mediaSourceTableView.rowHeight = [VLCLibraryUIUnits mediumTableViewRowHeight];
+    _mediaSourceTableView.rowHeight = VLCLibraryUIUnits.mediumTableViewRowHeight;
 
-    const NSEdgeInsets defaultInsets = [VLCLibraryUIUnits libraryViewScrollViewContentInsets];
-    const NSEdgeInsets scrollerInsets = [VLCLibraryUIUnits libraryViewScrollViewScrollerInsets];
+    const NSEdgeInsets defaultInsets = VLCLibraryUIUnits.libraryViewScrollViewContentInsets;
+    const NSEdgeInsets scrollerInsets = VLCLibraryUIUnits.libraryViewScrollViewScrollerInsets;
 
     _collectionViewScrollView.automaticallyAdjustsContentInsets = NO;
     _collectionViewScrollView.contentInsets = defaultInsets;
@@ -103,6 +113,47 @@
     _tableViewScrollView.automaticallyAdjustsContentInsets = NO;
     _tableViewScrollView.contentInsets = defaultInsets;
     _tableViewScrollView.scrollerInsets = scrollerInsets;
+}
+
+- (void)setupPlaceholderLabel
+{
+    if (@available(macOS 10.12, *)) {
+        _browsePlaceholderLabel = [NSTextField labelWithString:_NS("No files")];
+    } else {
+        _browsePlaceholderLabel = [[NSTextField alloc] init];
+        self.browsePlaceholderLabel.stringValue = _NS("No files");
+        self.browsePlaceholderLabel.editable = NO;
+    }
+    self.browsePlaceholderLabel.font = NSFont.VLClibrarySectionHeaderFont;
+    self.browsePlaceholderLabel.textColor = NSColor.secondaryLabelColor;
+    self.browsePlaceholderLabel.alignment = NSTextAlignmentCenter;
+    self.browsePlaceholderLabel.backgroundColor = NSColor.clearColor;
+    self.browsePlaceholderLabel.bezeled = NO;
+    self.browsePlaceholderLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.mediaSourceView addSubview:self.browsePlaceholderLabel];
+    [self.mediaSourceView addConstraints:@[
+        [self.browsePlaceholderLabel.centerXAnchor constraintEqualToAnchor:self.mediaSourceView.centerXAnchor],
+        [self.browsePlaceholderLabel.centerYAnchor constraintEqualToAnchor:self.mediaSourceView.centerYAnchor],
+    ]];
+    [self updatePlaceholderLabel:nil];
+}
+
+- (void)setupPathControlView
+{
+    _pathControlViewTopConstraintToSuperview = [NSLayoutConstraint constraintWithItem:self.pathControlVisualEffectView
+                                                                                    attribute:NSLayoutAttributeTop
+                                                                                    relatedBy:NSLayoutRelationEqual
+                                                                                       toItem:self.mediaSourceView
+                                                                                    attribute:NSLayoutAttributeTop
+                                                                                   multiplier:1.
+                                                                                     constant:self.libraryWindow.titlebarHeight];
+    [self.mediaSourceView addConstraint:_pathControlViewTopConstraintToSuperview];
+    _pathControlViewTopConstraintToSuperview.active = YES;
+}
+
+- (void)updatePlaceholderLabel:(NSNotification *)notification
+{
+    self.browsePlaceholderLabel.hidden = self.mediaSourceTableView.numberOfRows > 0;
 }
 
 - (void)presentBrowseView
@@ -115,20 +166,17 @@
     [self presentMediaSourceView:VLCLibraryStreamsSegment];
 }
 
-- (void)presentMediaSourceView:(VLCLibrarySegment)viewSegment
+- (void)presentMediaSourceView:(VLCLibrarySegmentType)viewSegment
 {
-    _libraryTargetView.subviews = @[];
-
-    if (_mediaSourceView.superview == nil) {
-        _mediaSourceView.translatesAutoresizingMaskIntoConstraints = NO;
-        _libraryTargetView.subviews = @[_mediaSourceView];
-        NSDictionary *dict = NSDictionaryOfVariableBindings(_mediaSourceView);
-        [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[_mediaSourceView(>=572.)]|" options:0 metrics:0 views:dict]];
-        [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[_mediaSourceView(>=444.)]|" options:0 metrics:0 views:dict]];
-    }
-
+    [self.libraryWindow displayLibraryView:self.mediaSourceView];
     _baseDataSource.mediaSourceMode = viewSegment == VLCLibraryBrowseSegment ? VLCMediaSourceModeLAN : VLCMediaSourceModeInternet;
     [_baseDataSource reloadViews];
+}
+
+- (void)presentLocalFolderMrl:(NSString *)mrl
+{
+    [self presentBrowseView];
+    [self.baseDataSource presentLocalFolderMrl:mrl];
 }
 
 @end

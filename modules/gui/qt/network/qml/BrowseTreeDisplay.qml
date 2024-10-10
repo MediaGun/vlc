@@ -15,83 +15,73 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///util/" as Util
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///widgets/" as Widgets
-import "qrc:///main/" as MainInterface
-import "qrc:///style/"
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Network
 
-MainInterface.MainViewLoader {
+MainViewLoader {
     id: root
 
     // Properties
 
-    property var providerModel
     property var contextMenu
-    property var tree
 
     readonly property var currentIndex: _currentView.currentIndex
 
-    readonly property bool isViewMultiView: true
+    readonly property int contentLeftMargin: currentItem?.contentLeftMargin ?? 0
+    readonly property int contentRightMargin: currentItem?.contentRightMargin ?? 0
 
-     // 'parsingPending' property is not available with NetworkDevicesModel
-    readonly property bool parsing: Helpers.get(providerModel, "parsingPending", false)
-
-    property var sortModel: [
-        { text: I18n.qtr("Alphabetic"), criteria: "name"},
-        { text: I18n.qtr("Url"), criteria: "mrl" },
-        { text: I18n.qtr("File size"), criteria: "fileSizeRaw64" },
-        { text: I18n.qtr("File modified"), criteria: "fileModified" }
-    ]
+    readonly property int headerLeftPadding: (contentLeftMargin > 0)
+                                             ? contentLeftMargin : VLCStyle.dynamicAppMargins(width)
+    readonly property int headerRightPadding: (contentRightMargin > 0)
+                                              ? contentRightMargin : VLCStyle.dynamicAppMargins(width)
 
     // fixme remove this
     property Item _currentView: currentItem
 
     signal browse(var tree, int reason)
 
+    // Settings
+
+    isSearchable: true
+
+    sortModel: [
+        { text: qsTr("Alphabetic"), criteria: "name"},
+        { text: qsTr("Url"), criteria: "mrl" },
+        { text: qsTr("File size"), criteria: "fileSizeRaw64" },
+        { text: qsTr("File modified"), criteria: "fileModified" }
+    ]
+
+    grid: gridComponent
+    list: tableComponent
+
+    loadingComponent: busyIndicatorComponent
+
+    emptyLabel: emptyLabelComponent
+
     Navigation.cancelAction: function() {
-        History.previous()
+        History.previous(Qt.BacktabFocusReason)
     }
-
-    model: SortFilterProxyModel {
-        id: filterModel
-
-        sourceModel: providerModel
-        searchRole: "name"
-    }
-
-    // override the default currentComponent assignment from MainViewLoader
-    // because we need to show empty label when model is parsing
-    currentComponent: {
-        if (filterModel.count == 0 || root.parsing)
-            return emptyLabelComponent
-        else if (MainCtx.gridView)
-            return gridComponent
-        else
-            return tableComponent
-    }
-
-
-    onTreeChanged: providerModel.tree = tree
 
     function playSelected() {
-        providerModel.addAndPlay(filterModel.mapIndexesToSource(selectionModel.selectedIndexes))
+        model.addAndPlay(selectionModel.selectedIndexes)
     }
 
     function playAt(index) {
-        providerModel.addAndPlay(filterModel.mapIndexToSource(index))
+        model.addAndPlay(index)
     }
 
     function _actionAtIndex(index) {
         if ( selectionModel.selectedIndexes.length > 1 ) {
             playSelected()
         } else {
-            const data = filterModel.getDataAt(index)
+            const data = model.getDataAt(index)
             if (data.type === NetworkMediaModel.TYPE_DIRECTORY
                     || data.type === NetworkMediaModel.TYPE_NODE)  {
                 browse(data.tree, Qt.TabFocusReason)
@@ -106,62 +96,54 @@ MainInterface.MainViewLoader {
 
         indexes: selectionModel.selectedIndexes
 
-        titleRole: "name"
-
-        defaultText:  I18n.qtr("Unknown Share")
+        defaultText:  qsTr("Unknown Share")
 
         coverProvider: function(index, data) {
-            // this is used to provide context to NetworkCustomCover
-            // indexData is networkModel (model data) for this index
-            // cover is our custom cover that will be loaded insted of default DragItem cover
-            return {"indexData": data, "cover": custom_cover}
-        }
+            const fallbackImage = SVGColorImage.colorize(data.artworkFallback)
+                .background(networkDragItem.colorContext.bg.secondary)
+                .color1(networkDragItem.colorContext.fg.primary)
+                .accent(networkDragItem.colorContext.accent)
+                .uri()
 
-        onRequestData: {
-            setData(identifier, selectionModel.selectedIndexes.map(function (x){
-                return filterModel.getDataAt(x.row)
-            }))
-        }
-
-        function getSelectedInputItem(cb) {
-            //directly call the callback
-            cb(providerModel.getItemsForIndexes(filterModel.mapIndexesToSource(selectionModel.selectedIndexes)))
-        }
-
-        Component {
-            id: custom_cover
-
-            NetworkCustomCover {
-                networkModel: model.indexData
-
-                width: networkDragItem.coverSize
-                height: networkDragItem.coverSize
-
-                // we can not change the size of cover and shodows from here,
-                // so for best visual use scale image to fit
-                fillMode: Image.PreserveAspectCrop
-
-                bgColor: networkDragItem.colorContext.bg.secondary
-                color1: networkDragItem.colorContext.fg.primary
-                accent: networkDragItem.colorContext.accent
+            return {
+                artwork: data.artwork,
+                fallback: fallbackImage
             }
+        }
+
+        onRequestData: (indexes, resolve, reject) => {
+            resolve(
+                indexes.map(x => model.getDataAt(x.row))
+            )
+        }
+
+        onRequestInputItems: (indexes, data, resolve, reject) => {
+            resolve(
+                model.getItemsForIndexes(indexes)
+            )
         }
     }
 
     Component{
         id: gridComponent
 
-        MainInterface.MainGridView {
+        Widgets.ExpandGridItemView {
             id: gridView
 
-            selectionDelegateModel: selectionModel
-            model: filterModel
+            basePictureWidth: VLCStyle.gridCover_network_width
+            basePictureHeight: VLCStyle.gridCover_network_height
+            subtitleHeight: 0
+
+            maxNbItemPerRow: 12
+
+            selectionModel: root.selectionModel
+            model: root.model
 
             headerDelegate: BrowseTreeHeader {
-                providerModel: root.providerModel
+                providerModel: root.model
 
-                // align header content with grid content
-                leftPadding: gridView.rowX
+                leftPadding: root.headerLeftPadding
+                rightPadding: root.headerRightPadding
 
                 width: gridView.width
 
@@ -172,18 +154,22 @@ MainInterface.MainViewLoader {
                 }
             }
 
-            cellWidth: VLCStyle.gridItem_network_width
-            cellHeight: VLCStyle.gridCover_network_height + VLCStyle.margin_xsmall + VLCStyle.fontHeight_normal
-
             delegate: NetworkGridItem {
                 id: delegateGrid
 
+                width: gridView.cellWidth;
+                height: gridView.cellHeight;
+
+                pictureWidth: gridView.maxPictureWidth
+                pictureHeight: gridView.maxPictureHeight
+
                 subtitle: ""
-                height: VLCStyle.gridCover_network_height + VLCStyle.margin_xsmall + VLCStyle.fontHeight_normal
                 dragItem: networkDragItem
 
                 onPlayClicked: playAt(index)
-                onItemClicked : gridView.leftClickOnItem(modifier, index)
+                onItemClicked : (modifier) => {
+                    gridView.leftClickOnItem(modifier, index)
+                }
 
                 onItemDoubleClicked: {
                     if (model.type === NetworkMediaModel.TYPE_NODE || model.type === NetworkMediaModel.TYPE_DIRECTORY)
@@ -192,13 +178,13 @@ MainInterface.MainViewLoader {
                         playAt(index)
                 }
 
-                onContextMenuButtonClicked: {
+                onContextMenuButtonClicked: (_, globalMousePos) => {
                     gridView.rightClickOnItem(index)
-                    contextMenu.popup(filterModel.mapIndexesToSource(selectionModel.selectedIndexes), globalMousePos)
+                    contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
                 }
             }
 
-            onActionAtIndex: _actionAtIndex(index)
+            onActionAtIndex: (index) => { _actionAtIndex(index) }
 
             Navigation.parentItem: root
             Navigation.upItem: gridView.headerItem
@@ -208,27 +194,15 @@ MainInterface.MainViewLoader {
     Component{
         id: tableComponent
 
-        MainInterface.MainTableView {
+        MainTableView {
             id: tableView
 
-            readonly property int _nbCols: VLCStyle.gridColumnsForWidth(tableView.availableRowWidth)
-            readonly property int _nameColSpan: Math.max((_nbCols - 1) / 2, 1)
-            property Component thumbnailHeader: Widgets.IconLabel {
-                height: VLCStyle.listAlbumCover_height
-                width: VLCStyle.listAlbumCover_width
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                font.pixelSize: VLCStyle.icon_tableHeader
-                text: VLCIcons.album_cover
-                color: tableView.colorContext.fg.secondary
-            }
-
             property Component thumbnailColumn: NetworkThumbnailItem {
-                onPlayClicked: playAt(index)
+                onPlayClicked: index => playAt(index)
             }
 
             property var _modelSmall: [{
-                size: Math.max(2, _nbCols),
+                weight: 1,
 
                 model: ({
                     criteria: "name",
@@ -237,9 +211,9 @@ MainInterface.MainViewLoader {
 
                     subCriterias: [ "mrl" ],
 
-                    text: I18n.qtr("Name"),
+                    text: qsTr("Name"),
 
-                    headerDelegate: thumbnailHeader,
+                    headerDelegate: tableColumns.titleHeaderDelegate,
                     colDelegate: thumbnailColumn
                 })
             }]
@@ -250,39 +224,53 @@ MainInterface.MainViewLoader {
                 model: {
                     criteria: "thumbnail",
 
-                    text: I18n.qtr("Cover"),
+                    text: qsTr("Cover"),
 
-                    headerDelegate: thumbnailHeader,
+                    isSortable: false,
+
+                    headerDelegate: tableColumns.titleHeaderDelegate,
                     colDelegate: thumbnailColumn
                 }
             }, {
-                size: tableView._nameColSpan,
+                weight: 1,
 
                 model: {
                     criteria: "name",
 
-                    text: I18n.qtr("Name")
+                    text: qsTr("Name")
                 }
             }, {
-                size: Math.max(_nbCols - _nameColSpan - 1, 1),
+                weight: 1,
 
                 model: {
                     criteria: "mrl",
 
-                    text: I18n.qtr("Url"),
+                    text: qsTr("Url"),
 
                     showContextButton: true
+                }
+            }, {
+                size: 1,
+
+                model: {
+                    criteria: "duration",
+
+                    text: qsTr("Duration"),
+
+                    showContextButton: true,
+                    headerDelegate: tableColumns.timeHeaderDelegate,
+                    colDelegate: tableColumns.timeColDelegate
                 }
             }]
 
             dragItem: networkDragItem
 
-            model: filterModel
+            model: root.model
 
             sortModel: (availableRowWidth < VLCStyle.colWidth(4)) ? _modelSmall
                                                                   : _modelMedium
 
-            selectionDelegateModel: selectionModel
+            selectionModel: root.selectionModel
             focus: true
 
             Navigation.parentItem: root
@@ -291,7 +279,10 @@ MainInterface.MainViewLoader {
             rowHeight: VLCStyle.tableCoverRow_height
 
             header: BrowseTreeHeader {
-                providerModel: root.providerModel
+                providerModel: root.model
+
+                leftPadding: root.contentLeftPadding
+                rightPadding: root.contentRightPadding
 
                 width: tableView.width
 
@@ -302,103 +293,139 @@ MainInterface.MainViewLoader {
                 }
             }
 
-            onActionForSelection: _actionAtIndex(selection[0].row)
-            onItemDoubleClicked: _actionAtIndex(index)
-            onContextMenuButtonClicked: contextMenu.popup(filterModel.mapIndexesToSource(selectionModel.selectedIndexes), globalMousePos)
-            onRightClick: contextMenu.popup(filterModel.mapIndexesToSource(selectionModel.selectedIndexes), globalMousePos)
+            onActionForSelection: (selection) => _actionAtIndex(selection[0].row)
+            onItemDoubleClicked: (index, model) => _actionAtIndex(index)
+            onContextMenuButtonClicked: (_,_,globalMousePos) => {
+                contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
+            }
+            onRightClick: (_,_,globalMousePos) => {
+                contextMenu.popup(selectionModel.selectedIndexes, globalMousePos)
+            }
+
+            Widgets.TableColumns {
+                id: tableColumns
+
+                titleCover_width: VLCStyle.listAlbumCover_width
+                titleCover_height: VLCStyle.listAlbumCover_height
+
+                showTitleText: false
+            }
         }
     }
 
     Component {
         id: emptyLabelComponent
 
-        FocusScope {
-            id: focusScope
+        StandardView {
+            view: Widgets.EmptyLabelButton {
+                id: emptyLabel
 
-            Navigation.navigable: layout.Navigation.navigable || (emptyLabel.visible && emptyLabel.button.enabled)
+                visible: !root.isLoading
 
-            // used by MainDisplay to transfer focus
-            function setCurrentItemFocus(reason) {
-                if (!focusScope.Navigation.navigable)
-                    return
+                // FIXME: find better cover
+                cover: VLCStyle.noArtVideoCover
+                coverWidth : VLCStyle.dp(182, VLCStyle.scale)
+                coverHeight: VLCStyle.dp(114, VLCStyle.scale)
 
-                if (header.Navigation.navigable)
-                    header.forceActiveFocus(reason)
-                else
-                    emptyLabel.forceActiveFocus(reason)
+                text: qsTr("Nothing to see here, go back.")
+
+                button.iconTxt: VLCIcons.back
+                button.text: qsTr("Back")
+                button.enabled: !History.previousEmpty
+                button.width: button.implicitWidth
+
+                function onNavigate(reason) {
+                    History.previous(reason)
+                }
+
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+
+                Navigation.parentItem: root
             }
+        }
+    }
 
-            ColumnLayout {
-                id: layout
+    Component {
+        id: busyIndicatorComponent
 
-                anchors.fill: parent
+        StandardView {
+            view: Item {
+                Navigation.navigable: false
 
-                BrowseTreeHeader {
-                    id: header
+                visible: root.isLoading
 
-                    focus: true
+                Layout.fillHeight: true
+                Layout.fillWidth: true
 
-                    providerModel: root.providerModel
+                Widgets.BusyIndicatorExt {
+                    id: busyIndicator
 
-                    Layout.fillWidth: true
-
-                    Navigation.parentItem: root
-                    Navigation.downItem: emptyLabel
-                }
-
-                Widgets.EmptyLabelButton {
-                    id: emptyLabel
-
-                    visible: !root.parsing
-
-                    // FIXME: find better cover
-                    cover: VLCStyle.noArtVideoCover
-                    coverWidth : VLCStyle.dp(182, VLCStyle.scale)
-                    coverHeight: VLCStyle.dp(114, VLCStyle.scale)
-
-                    text: I18n.qtr("Nothing to see here, go back.")
-
-                    button.iconTxt: VLCIcons.back
-                    button.text: I18n.qtr("Back")
-                    button.enabled: !History.previousEmpty
-                    button.width: button.implicitWidth
-
-                    function onNavigate() {
-                        History.previous()
-                    }
-
-                    Layout.fillHeight: true
-                    Layout.fillWidth: true
-
-                    Navigation.parentItem: root
-                    Navigation.upAction: function () {
-                        // FIXME: for some reason default navigation flow doesn't work
-                        // i.e setting Navigtaion.upItem doesn't fallthrough to parent's
-                        // action if Navigtaion.upItem.Navigtaion.navigble is false
-
-                        if (header.Navigation.navigable)
-                            header.forceActiveFocus(Qt.TabFocusReason)
-                        else
-                            return false // fallthrough default action
-                    }
-                }
-
-                Item {
-                    visible: root.parsing
-
-                    Layout.fillHeight: true
-                    Layout.fillWidth: true
-
-                    Widgets.BusyIndicatorExt {
-                        id: busyIndicator
-
-                        runningDelayed: root.parsing
-                        anchors.centerIn: parent
-                        z: 1
-                    }
+                    runningDelayed: root.isLoading
+                    anchors.centerIn: parent
+                    z: 1
                 }
             }
         }
+    }
 
+    // Helper view i.e a ColumnLayout with BrowseHeader
+    component StandardView : FocusScope {
+        required property Item view
+
+        // NOTE: This is required to pass the focusReason when the current view changes in
+        //       MainViewLoader.
+        property int focusReason: (header.activeFocus) ? header.focusReason
+                                                       : view?.focusReason ?? Qt.NoFocusReason
+
+        // used by MainDisplay to transfer focus
+        function setCurrentItemFocus(reason) {
+            if (!Navigation.navigable)
+                return
+
+            if (header.Navigation.navigable)
+                Helpers.enforceFocus(header, reason)
+            else
+                Helpers.enforceFocus(view, reason)
+        }
+
+        onViewChanged: {
+            if (layout.children.length === 2)
+                layout.children.pop()
+
+            layout.children.push(view)
+            view.Navigation.upAction = function () {
+                // FIXME: for some reason default navigation flow doesn't work
+                // i.e setting Navigtaion.upItem doesn't fallthrough to parent's
+                // action if it's navigable is false
+
+                if (header.Navigation.navigable)
+                    header.forceActiveFocus(Qt.BacktabFocusReason)
+                else
+                    return false // fallthrough default action
+            }
+        }
+
+        ColumnLayout {
+            id: layout
+
+            anchors.fill: parent
+
+            BrowseTreeHeader {
+                id: header
+
+                focus: true
+
+                leftPadding: root.headerLeftPadding
+                rightPadding: root.headerRightPadding
+
+                providerModel: root.model
+
+                Layout.fillWidth: true
+
+                Navigation.parentItem: root
+                Navigation.downItem: (view.Navigation.navigable) ? view : null
+            }
+        }
     }
 }

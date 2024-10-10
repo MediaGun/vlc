@@ -39,10 +39,14 @@ download_pkg = $(call download,$(VIDEOLAN)/$(2)/$(lastword $(subst /, ,$(@)))) |
 	( $(call download,$(1)) && echo "Please upload this package $(lastword $(subst /, ,$(@))) to our FTP" )  \
 	&& grep $(@) $(TOOLS)/SHA512SUMS| $(SHA512SUM)
 
+ifeq ($(V),1)
+TAR_VERBOSE := v
+endif
+
 UNPACK = $(RM) -R $@ \
-    $(foreach f,$(filter %.tar.gz %.tgz,$^), && tar xvzfo $(f)) \
-    $(foreach f,$(filter %.tar.bz2,$^), && tar xvjfo $(f)) \
-    $(foreach f,$(filter %.tar.xz,$^), && tar xvJfo $(f)) \
+    $(foreach f,$(filter %.tar.gz %.tgz,$^), && tar $(TAR_VERBOSE)xzfo $(f)) \
+    $(foreach f,$(filter %.tar.bz2,$^), && tar $(TAR_VERBOSE)xjfo $(f)) \
+    $(foreach f,$(filter %.tar.xz,$^), && tar $(TAR_VERBOSE)xJfo $(f)) \
     $(foreach f,$(filter %.zip,$^), && unzip $(f))
 
 UNPACK_DIR = $(patsubst %.tar,%,$(basename $(notdir $<)))
@@ -92,7 +96,7 @@ DISTCLEAN_PKG += cmake-$(CMAKE_VERSION).tar.gz
 help2man-$(HELP2MAN_VERSION).tar.xz:
 	$(call download_pkg,$(HELP2MAN_URL),help2man)
 
-help2man: help2man-$(HELP2MAN_VERSION).tar.xz
+help2man: help2man-$(HELP2MAN_VERSION).tar.xz .xz .tar
 	$(UNPACK)
 	$(MOVE)
 
@@ -117,6 +121,7 @@ libtool: libtool-$(LIBTOOL_VERSION).tar.gz
 	$(APPLY) $(TOOLS)/libtool-2.4.7-response-files.patch
 	$(APPLY) $(TOOLS)/libtool-2.4.7-lpthread.patch
 	$(APPLY) $(TOOLS)/libtool-2.4.7-embed-bitcode.patch
+	$(APPLY) $(TOOLS)/libtool-2.4.7-emscripten-dlinker.patch
 	$(MOVE)
 
 .buildlibtool: libtool .automake .help2man
@@ -139,7 +144,7 @@ tar: tar-$(TAR_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
 
-.buildtar: tar
+.buildtar: .xz tar
 	(cd $<; ./configure --prefix=$(PREFIX) && $(MAKE) && $(MAKE) install)
 	touch $@
 
@@ -164,16 +169,43 @@ CLEAN_PKG += xz
 DISTCLEAN_PKG += xz-$(XZ_VERSION).tar.bz2
 CLEAN_FILE += .buildxz
 
+# config.guess
+
+config.guess-$(CONFIGGUESS_VERSION):
+	$(call download_pkg,$(CONFIGGUESS_URL),config.guess)
+
+config.sub-$(CONFIGSUB_VERSION):
+	$(call download_pkg,$(CONFIGSUB_URL),config.sub)
+
+config.guess: UNPACK_DIR=.
+config.guess: config.guess-$(CONFIGGUESS_VERSION)
+	cp -f $< $@
+	$(APPLY) $(TOOLS)/config.guess-config-add-support-for-arm64_32.patch
+
+config.sub:UNPACK_DIR=.
+config.sub: config.sub-$(CONFIGSUB_VERSION)
+	cp -f $< $@
+	$(APPLY) $(TOOLS)/config.sub-config-add-support-for-arm64_32.patch
+
+.buildconfigguess: config.guess config.sub
+	# install in a dummy autoconf so that VLC contribs pick it
+	install -d           "$(PREFIX)/share/autoconf-vlc/build-aux"
+	install config.guess "$(PREFIX)/share/autoconf-vlc/build-aux"
+	install config.sub   "$(PREFIX)/share/autoconf-vlc/build-aux"
+	touch $@
+
 # autoconf
 
 autoconf-$(AUTOCONF_VERSION).tar.gz:
 	$(call download_pkg,$(AUTOCONF_URL),autoconf)
 
-autoconf: autoconf-$(AUTOCONF_VERSION).tar.gz
+autoconf: autoconf-$(AUTOCONF_VERSION).tar.gz .configguess
 	$(UNPACK)
+	@-cp config.guess $(UNPACK_DIR)/build-aux
+	@-cp config.sub $(UNPACK_DIR)/build-aux
 	$(MOVE)
 
-.buildautoconf: autoconf .pkg-config
+.buildautoconf: autoconf .pkg-config .m4
 	(cd $<; ./configure --prefix=$(PREFIX) && $(MAKE) && $(MAKE) install)
 	touch $@
 
@@ -186,12 +218,16 @@ DISTCLEAN_PKG += autoconf-$(AUTOCONF_VERSION).tar.gz
 automake-$(AUTOMAKE_VERSION).tar.gz:
 	$(call download_pkg,$(AUTOMAKE_URL),automake)
 
-automake: automake-$(AUTOMAKE_VERSION).tar.gz
+automake: automake-$(AUTOMAKE_VERSION).tar.gz .configguess
 	$(UNPACK)
+	$(APPLY) $(TOOLS)/automake-disable-documentation.patch
 	$(APPLY) $(TOOLS)/automake-clang.patch
+	@-cp config.guess $(UNPACK_DIR)/lib
+	@-cp config.sub $(UNPACK_DIR)/lib
 	$(MOVE)
 
 .buildautomake: automake .autoconf
+	(cd $<; ./bootstrap)
 	(cd $<; ./configure --prefix=$(PREFIX) && $(MAKE) && $(MAKE) install)
 	touch $@
 
@@ -233,24 +269,6 @@ pkgconfig: pkg-config-$(PKGCFG_VERSION).tar.gz
 CLEAN_FILE += .buildpkg-config
 CLEAN_PKG += pkgconfig
 DISTCLEAN_PKG += pkg-config-$(PKGCFG_VERSION).tar.gz
-
-# Ragel State Machine Compiler
-ragel-$(RAGEL_VERSION).tar.gz:
-	$(call download_pkg,$(RAGEL_URL),ragel)
-
-ragel: ragel-$(RAGEL_VERSION).tar.gz
-	$(UNPACK)
-	$(APPLY) $(TOOLS)/ragel-6.8-javacodegen.patch
-	$(MOVE)
-
-
-.buildragel: ragel
-	(cd ragel; ./configure --prefix=$(PREFIX) --disable-shared --enable-static --disable-dependency-tracking && $(MAKE) && $(MAKE) install)
-	touch $@
-
-CLEAN_FILE += .buildragel
-CLEAN_PKG += ragel
-DISTCLEAN_PKG += ragel-$(RAGEL_VERSION).tar.gz
 
 # GNU sed
 
@@ -295,7 +313,7 @@ CLEAN_FILE += .buildant
 bison-$(BISON_VERSION).tar.xz:
 	$(call download_pkg,$(BISON_URL),bison)
 
-bison: bison-$(BISON_VERSION).tar.xz
+bison: bison-$(BISON_VERSION).tar.xz .xz .tar
 	$(UNPACK)
 	$(MOVE)
 
@@ -387,6 +405,23 @@ ninja: ninja-$(NINJA_VERSION).tar.gz
 CLEAN_PKG += ninja
 DISTCLEAN_PKG += ninja-$(NINJA_VERSION).tar.gz
 CLEAN_FILE += .buildninja
+
+# gperf
+
+gperf-$(GPERF_VERSION).tar.gz:
+	$(call download_pkg,$(GPERF_URL),gperf)
+
+gperf: gperf-$(GPERF_VERSION).tar.gz
+	$(UNPACK)
+	$(MOVE)
+
+.buildgperf: gperf
+	(cd $<; ./configure --prefix=$(PREFIX) && $(MAKE) && $(MAKE) install)
+	touch $@
+
+CLEAN_PKG += gperf
+DISTCLEAN_PKG += gperf-$(GPERF_VERSION).tar.gz
+CLEAN_FILE += .buildgperf
 
 #
 #

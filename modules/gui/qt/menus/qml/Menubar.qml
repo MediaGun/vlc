@@ -15,15 +15,15 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Controls.impl 2.12
-import QtQuick.Templates 2.12 as T
-import org.videolan.vlc 0.1
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.impl 
+import QtQuick.Templates as T
+import QtQuick.Layouts
 
-import "qrc:///style/"
-
+import VLC.MainInterface
+import VLC.Style
+import VLC.Menus
 
 Item {
     id: root
@@ -38,14 +38,14 @@ Item {
         colorSet: ColorContext.MenuBar
     }
 
-    Action{ id: mediaMenu;    text: I18n.qtr("&Media")    ; onTriggered: menubar.popupMediaMenu(source);   }
-    Action{ id: playbackMenu; text: I18n.qtr("&Playback") ; onTriggered: menubar.popupPlaybackMenu(source);}
-    Action{ id: videoMenu;    text: I18n.qtr("&Video")    ; onTriggered: menubar.popupVideoMenu(source);   }
-    Action{ id: audioMenu;    text: I18n.qtr("&Audio")    ; onTriggered: menubar.popupAudioMenu(source);   }
-    Action{ id: subtitleMenu; text: I18n.qtr("&Subtitle") ; onTriggered: menubar.popupSubtitleMenu(source);}
-    Action{ id: toolMenu;     text: I18n.qtr("&Tools")    ; onTriggered: menubar.popupToolsMenu(source);   }
-    Action{ id: viewMenu;     text: I18n.qtr("V&iew")     ; onTriggered: menubar.popupViewMenu(source);    }
-    Action{ id: helpMenu;     text: I18n.qtr("&Help")     ; onTriggered: menubar.popupHelpMenu(source);    }
+    Action{ id: mediaMenu;    text: qsTr("&Media")    ; onTriggered: (source) => menubar.popupMediaMenu(source);   }
+    Action{ id: playbackMenu; text: qsTr("&Playback") ; onTriggered: (source) => menubar.popupPlaybackMenu(source);}
+    Action{ id: videoMenu;    text: qsTr("&Video")    ; onTriggered: (source) => menubar.popupVideoMenu(source);   }
+    Action{ id: audioMenu;    text: qsTr("&Audio")    ; onTriggered: (source) => menubar.popupAudioMenu(source);   }
+    Action{ id: subtitleMenu; text: qsTr("&Subtitle") ; onTriggered: (source) => menubar.popupSubtitleMenu(source);}
+    Action{ id: toolMenu;     text: qsTr("&Tools")    ; onTriggered: (source) => menubar.popupToolsMenu(source);   }
+    Action{ id: viewMenu;     text: qsTr("V&iew")     ; onTriggered: (source) => menubar.popupViewMenu(source);    }
+    Action{ id: helpMenu;     text: qsTr("&Help")     ; onTriggered: (source) => menubar.popupHelpMenu(source);    }
 
     property var toolbarModel: [
         mediaMenu,
@@ -83,13 +83,13 @@ Item {
         id: menubar
         ctx: MainCtx
         menubar: menubarLayout
+        playerViewVisible: History.match(History.viewPath, ["player"])
 
         onMenuClosed: _menuIndex = -1
-        onNavigateMenu: {
+        onNavigateMenu: (direction) => {
             const i =  (root._menuIndex + root.toolbarModel.length + direction) % root.toolbarModel.length
             root.openMenu(menubarLayout.visibleChildren[i], root.toolbarModel[i], i)
         }
-
     }
 
     RowLayout {

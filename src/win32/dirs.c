@@ -36,7 +36,7 @@
 #include "../libvlc.h"
 #include <vlc_charset.h>
 #include <vlc_configuration.h>
-#include "config/configuration.h"
+#include "../config/configuration.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -143,7 +143,7 @@ static char *config_GetAppDir (void)
     return psz_dir;
 }
 
-char *config_GetUserDir (vlc_userdir_t type)
+char *platform_GetUserDir (vlc_userdir_t type)
 {
     switch (type)
     {
@@ -164,6 +164,8 @@ char *config_GetUserDir (vlc_userdir_t type)
             return config_GetUserDir(VLC_HOME_DIR);
         case VLC_MUSIC_DIR:
             return config_GetKnownFolder (FOLDERID_Music);
+        case VLC_SNAPSHOTS_DIR:
+            return config_GetKnownFolder (FOLDERID_Screenshots);
         case VLC_PICTURES_DIR:
             return config_GetKnownFolder (FOLDERID_Pictures);
         case VLC_VIDEOS_DIR:

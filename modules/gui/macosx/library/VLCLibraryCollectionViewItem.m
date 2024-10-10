@@ -27,11 +27,14 @@
 #import "extensions/NSColor+VLCAdditions.h"
 #import "extensions/NSView+VLCAdditions.h"
 
+#import "library/VLCLibraryCollectionViewDataSource.h"
+#import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryImageCache.h"
 #import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryMenuController.h"
+#import "library/VLCLibraryRepresentedItem.h"
 #import "library/VLCLibraryUIUnits.h"
 
 #import "main/VLCMain.h"
@@ -48,9 +51,7 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 @interface VLCLibraryCollectionViewItem()
 {
-    VLCLibraryController *_libraryController;
     VLCLibraryMenuController *_menuController;
-
     NSLayoutConstraint *_videoImageViewAspectRatioConstraint;
 }
 
@@ -60,15 +61,15 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 + (const NSSize)defaultSize
 {
-    const CGFloat width = [VLCLibraryCollectionViewItem defaultWidth];
-    return CGSizeMake(width, width + [self bottomTextViewsHeight]);
+    const CGFloat width = VLCLibraryCollectionViewItem.defaultWidth;
+    return CGSizeMake(width, width + self.bottomTextViewsHeight);
 }
 
 + (const NSSize)defaultVideoItemSize
 {
-    const CGFloat width = [VLCLibraryCollectionViewItem defaultWidth];
+    const CGFloat width = VLCLibraryCollectionViewItem.defaultWidth;
     const CGFloat imageViewHeight = width * [VLCLibraryCollectionViewItem videoHeightAspectRatioMultiplier];
-    return CGSizeMake(width, imageViewHeight + [self bottomTextViewsHeight]);
+    return CGSizeMake(width, imageViewHeight + self.bottomTextViewsHeight);
 }
 
 + (const CGFloat)defaultWidth
@@ -78,11 +79,11 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 + (const CGFloat)bottomTextViewsHeight
 {
-    return [VLCLibraryUIUnits smallSpacing] +
+    return VLCLibraryUIUnits.smallSpacing +
            16 +
-           [VLCLibraryUIUnits smallSpacing] +
+           VLCLibraryUIUnits.smallSpacing +
            16 +
-           [VLCLibraryUIUnits smallSpacing];
+           VLCLibraryUIUnits.smallSpacing;
 }
 
 + (const CGFloat)videoHeightAspectRatioMultiplier
@@ -94,7 +95,7 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(mediaItemThumbnailGenerated:)
                                    name:VLCLibraryModelMediaItemThumbnailGenerated
@@ -105,14 +106,15 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     if (@available(macOS 10.14, *)) {
-        [[NSApplication sharedApplication] removeObserver:self forKeyPath:@"effectiveAppearance"];
+        [NSApplication.sharedApplication removeObserver:self forKeyPath:@"effectiveAppearance"];
     }
 }
 
 - (void)awakeFromNib
 {
+    _deselectWhenClickedIfSelected = YES;
     _videoImageViewAspectRatioConstraint = [NSLayoutConstraint constraintWithItem:_mediaImageView
                                                                         attribute:NSLayoutAttributeHeight
                                                                         relatedBy:NSLayoutRelationEqual
@@ -124,17 +126,17 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
     _videoImageViewAspectRatioConstraint.active = NO;
 
     [(VLCTrackingView *)self.view setViewToHide:self.playInstantlyButton];
-    self.secondaryInfoTextField.textColor = [NSColor VLClibrarySubtitleColor];
-    self.annotationTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
-    self.annotationTextField.textColor = [NSColor VLClibraryAnnotationColor];
-    self.annotationTextField.backgroundColor = [NSColor VLClibraryAnnotationBackgroundColor];
+    self.secondaryInfoTextField.textColor = NSColor.VLClibrarySubtitleColor;
+    self.annotationTextField.font = NSFont.VLCLibraryItemAnnotationFont;
+    self.annotationTextField.textColor = NSColor.VLClibraryAnnotationColor;
+    self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
     self.unplayedIndicatorTextField.stringValue = _NS("NEW");
     self.unplayedIndicatorTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
-    self.highlightBox.borderColor = [NSColor VLCAccentColor];
-    self.unplayedIndicatorTextField.textColor = [NSColor VLCAccentColor];
+    self.highlightBox.borderColor = NSColor.VLCAccentColor;
+    self.unplayedIndicatorTextField.textColor = NSColor.VLCAccentColor;
 
     if (@available(macOS 10.14, *)) {
-        [[NSApplication sharedApplication] addObserver:self
+        [NSApplication.sharedApplication addObserver:self
                                             forKeyPath:@"effectiveAppearance"
                                                options:NSKeyValueObservingOptionNew
                                                context:nil];
@@ -165,7 +167,7 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
         isDark = [appearance.name isEqualToString:NSAppearanceNameDarkAqua] || [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
     }
 
-    self.mediaTitleTextField.textColor = isDark ? [NSColor VLClibraryDarkTitleColor] : [NSColor VLClibraryLightTitleColor];
+    self.mediaTitleTextField.textColor = isDark ? NSColor.VLClibraryDarkTitleColor : NSColor.VLClibraryLightTitleColor;
 }
 
 #pragma mark - view representation
@@ -184,12 +186,8 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
     [self setUnplayedIndicatorHidden:YES];
 }
 
-- (void)setRepresentedItem:(id<VLCMediaLibraryItemProtocol>)representedItem
+- (void)setRepresentedItem:(VLCLibraryRepresentedItem *)representedItem
 {
-    if (!_libraryController) {
-        _libraryController = [[VLCMain sharedInstance] libraryController];
-    }
-
     _representedItem = representedItem;
     [self updateRepresentation];
 }
@@ -215,23 +213,22 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 - (void)updateRepresentation
 {
-    if (_representedItem == nil) {
-        NSAssert(1, @"no item assigned for collection view item", nil);
-        return;
-    }
+    NSAssert(self.representedItem != nil, @"no item assigned for collection view item", nil);
 
-    _mediaTitleTextField.stringValue = _representedItem.displayString;
-    _secondaryInfoTextField.stringValue = _representedItem.detailString;
+    const id<VLCMediaLibraryItemProtocol> actualItem = self.representedItem.item;
+    self.mediaTitleTextField.stringValue = actualItem.displayString;
+    self.secondaryInfoTextField.stringValue = actualItem.primaryDetailString;
 
-    [VLCLibraryImageCache thumbnailForLibraryItem:_representedItem withCompletion:^(NSImage * const thumbnail) {
-        self->_mediaImageView.image = thumbnail;
+    [VLCLibraryImageCache thumbnailForLibraryItem:actualItem
+                                   withCompletion:^(NSImage * const thumbnail) {
+        self.mediaImageView.image = thumbnail;
     }];
 
-    // TODO: Add handling for the other types
-    if([_representedItem isKindOfClass:[VLCMediaLibraryMediaItem class]]) {
-        VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)_representedItem;
+    if ([actualItem isKindOfClass:VLCMediaLibraryMediaItem.class]) {
+        VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)actualItem;
 
-        if (mediaItem.mediaType == VLC_ML_MEDIA_TYPE_VIDEO) {
+        if (mediaItem.mediaType == VLC_ML_MEDIA_TYPE_VIDEO || 
+            mediaItem.mediaType == VLC_ML_MEDIA_TYPE_UNKNOWN) {
             VLCMediaLibraryTrack * const videoTrack = mediaItem.firstVideoTrack;
             [self showVideoSizeIfNeededForWidth:videoTrack.videoWidth
                                       andHeight:videoTrack.videoHeight];
@@ -241,14 +238,18 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
         }
 
         const CGFloat position = mediaItem.progress;
-        if (position > VLCLibraryCollectionViewItemMinimalDisplayedProgress && position < VLCLibraryCollectionViewItemMaximumDisplayedProgress) {
-            _progressIndicator.progress = position;
-            _progressIndicator.hidden = NO;
+        if (position > VLCLibraryCollectionViewItemMinimalDisplayedProgress &&
+            position < VLCLibraryCollectionViewItemMaximumDisplayedProgress) {
+            self.progressIndicator.progress = position;
+            self.progressIndicator.hidden = NO;
         }
 
         if (mediaItem.playCount == 0) {
             [self setUnplayedIndicatorHidden:NO];
         }
+    } else {
+        self.progressIndicator.hidden = YES;
+        _videoImageViewAspectRatioConstraint.active = NO;
     }
 }
 
@@ -279,57 +280,80 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
 - (IBAction)playInstantly:(id)sender
 {
-    if (!_libraryController) {
-        _libraryController = [[VLCMain sharedInstance] libraryController];
-    }
-
-    // We want to add all the tracks to the playlist but only play the first one immediately,
-    // otherwise we will skip straight to the last track of the last album from the artist
-    __block BOOL playImmediately = YES;
-    [_representedItem iterateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem* mediaItem) {
-        [_libraryController appendItemToPlaylist:mediaItem playImmediately:playImmediately];
-
-        if(playImmediately) {
-            playImmediately = NO;
-        }
-    }];
+    [self.representedItem play];
 }
 
 - (IBAction)addToPlaylist:(id)sender
 {
-    if (!_libraryController) {
-        _libraryController = [[VLCMain sharedInstance] libraryController];
-    }
-
-    [_representedItem iterateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem* mediaItem) {
-        [_libraryController appendItemToPlaylist:mediaItem playImmediately:NO];
-    }];
+    [self.representedItem queue];
 }
 
--(void)mouseDown:(NSEvent *)theEvent
-{
-    if (theEvent.modifierFlags & NSControlKeyMask) {
-        if (!_menuController) {
-            _menuController = [[VLCLibraryMenuController alloc] init];
-        }
-
-        [_menuController setRepresentedItem:_representedItem];
-        [_menuController popupMenuWithEvent:theEvent forView:self.view];
-    }
-
-    [super mouseDown:theEvent];
-}
-
-- (void)rightMouseDown:(NSEvent *)theEvent
+- (void)openContextMenu:(NSEvent *)event
 {
     if (!_menuController) {
         _menuController = [[VLCLibraryMenuController alloc] init];
     }
 
-    [_menuController setRepresentedItem:_representedItem];
-    [_menuController popupMenuWithEvent:theEvent forView:self.view];
+    NSCollectionView * const collectionView = self.collectionView;
+    Protocol * const vlcDataSourceProtocol = @protocol(VLCLibraryCollectionViewDataSource);
 
-    [super rightMouseDown:theEvent];
+    if([collectionView.dataSource conformsToProtocol:vlcDataSourceProtocol]) {
+        NSObject<VLCLibraryCollectionViewDataSource> * const dataSource = 
+            (NSObject<VLCLibraryCollectionViewDataSource> *)collectionView.dataSource;
+        NSSet<NSIndexPath *> * const indexPaths = collectionView.selectionIndexPaths;
+        NSArray<VLCLibraryRepresentedItem *> * const selectedItems =
+            [dataSource representedItemsAtIndexPaths:indexPaths forCollectionView:collectionView];
+        const NSInteger representedItemIndex = [selectedItems indexOfObjectPassingTest:^BOOL(
+            VLCLibraryRepresentedItem * const repItem, const NSUInteger idx, BOOL * const stop
+        ) {
+            return repItem.item.libraryID == self.representedItem.item.libraryID;
+        }];
+        NSArray<VLCLibraryRepresentedItem *> *items = nil;
+
+        if (representedItemIndex == NSNotFound) {
+            items = @[self.representedItem];
+        } else {
+            items = selectedItems;
+        }
+
+        _menuController.representedItems = items;
+    } else {
+        _menuController.representedItems = @[self.representedItem];
+    }
+
+    [_menuController popupMenuWithEvent:event forView:self.view];
+}
+
+-(void)mouseDown:(NSEvent *)event
+{
+    if (event.modifierFlags & NSEventModifierFlagControl) {
+        [self openContextMenu:event];
+    } else if (self.deselectWhenClickedIfSelected && 
+               self.selected &&
+               [self.collectionView.dataSource conformsToProtocol:@protocol(VLCLibraryCollectionViewDataSource)]) {
+        NSObject<VLCLibraryCollectionViewDataSource> * const dataSource = (NSObject<VLCLibraryCollectionViewDataSource> *)self.collectionView.dataSource;
+        NSIndexPath * const indexPath = [dataSource indexPathForLibraryItem:self.representedItem.item];
+        if (indexPath == nil) {
+            NSLog(@"Received nil indexPath for item %@!", self.representedItem.item.displayString);
+            return;
+        }
+
+        NSSet<NSIndexPath *> * const indexPathSet = [NSSet setWithObject:indexPath];
+        [self.collectionView deselectItemsAtIndexPaths:indexPathSet];
+        
+        if ([self.collectionView.collectionViewLayout isKindOfClass:[VLCLibraryCollectionViewFlowLayout class]]) {
+            VLCLibraryCollectionViewFlowLayout * const flowLayout = (VLCLibraryCollectionViewFlowLayout *)self.collectionView.collectionViewLayout;
+            [flowLayout collapseDetailSectionAtIndex:indexPath];
+        }
+    }
+
+    [super mouseDown:event];
+}
+
+- (void)rightMouseDown:(NSEvent *)event
+{
+    [self openContextMenu:event];
+    [super rightMouseDown:event];
 }
 
 @end

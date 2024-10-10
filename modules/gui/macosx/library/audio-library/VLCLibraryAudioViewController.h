@@ -22,47 +22,43 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "library/VLCLibrarySegment.h"
+#import "library/VLCLibraryAbstractSegmentViewController.h"
+
 @class VLCLibraryAudioDataSource;
 @class VLCLibraryAudioGroupDataSource;
 @class VLCLibraryWindow;
 
+@protocol VLCMediaLibraryItemProtocol;
+
 NS_ASSUME_NONNULL_BEGIN
 
-@interface VLCLibraryAudioViewController : NSObject
+@interface VLCLibraryAudioViewController : VLCLibraryAbstractSegmentViewController
 
-@property (readonly) VLCLibraryWindow *libraryWindow;
-@property (readonly) NSView *libraryTargetView;
-@property (readonly) NSView *audioLibraryView;
-@property (readonly) NSSplitView *audioLibrarySplitView;
-@property (readonly) NSScrollView *audioCollectionSelectionTableViewScrollView;
-@property (readonly) NSTableView *audioCollectionSelectionTableView;
-@property (readonly) NSScrollView *audioGroupSelectionTableViewScrollView;
-@property (readonly) NSTableView *audioGroupSelectionTableView;
-@property (readonly) NSScrollView *audioSongTableViewScrollView;
-@property (readonly) NSTableView *audioSongTableView;
-@property (readonly) NSScrollView *audioCollectionViewScrollView;
-@property (readonly) NSCollectionView *audioLibraryCollectionView;
-@property (readonly) NSSplitView *audioLibraryGridModeSplitView;
-@property (readonly) NSScrollView *audioLibraryGridModeSplitViewListTableViewScrollView;
-@property (readonly) NSTableView *audioLibraryGridModeSplitViewListTableView;
-@property (readonly) NSScrollView *audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView;
-@property (readonly) NSCollectionView *audioLibraryGridModeSplitViewListSelectionCollectionView;
-@property (readonly) NSSegmentedControl *audioSegmentedControl;
-@property (readonly) NSSegmentedControl *segmentedTitleControl;
-@property (readonly) NSImageView *placeholderImageView;
-@property (readonly) NSTextField *placeholderLabel;
-@property (readonly) NSView *emptyLibraryView;
-@property (readonly) NSVisualEffectView *optionBarView;
+@property (readonly, weak) NSView *audioLibraryView;
+@property (readonly, weak) NSSplitView *audioLibrarySplitView;
+@property (readonly, weak) NSScrollView *audioCollectionSelectionTableViewScrollView;
+@property (readonly, weak) NSTableView *audioCollectionSelectionTableView;
+@property (readonly, weak) NSScrollView *audioGroupSelectionTableViewScrollView;
+@property (readonly, weak) NSTableView *audioGroupSelectionTableView;
+@property (readonly, weak) NSScrollView *audioSongTableViewScrollView;
+@property (readonly, weak) NSTableView *audioSongTableView;
+@property (readonly, weak) NSScrollView *audioCollectionViewScrollView;
+@property (readonly, weak) NSCollectionView *audioLibraryCollectionView;
+@property (readonly, weak) NSSplitView *audioLibraryGridModeSplitView;
+@property (readonly, weak) NSScrollView *audioLibraryGridModeSplitViewListTableViewScrollView;
+@property (readonly, weak) NSTableView *audioLibraryGridModeSplitViewListTableView;
+@property (readonly, weak) NSScrollView *audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView;
+@property (readonly, weak) NSCollectionView *audioLibraryGridModeSplitViewListSelectionCollectionView;
 
 @property (readonly) VLCLibraryAudioDataSource *audioDataSource;
 @property (readonly) VLCLibraryAudioGroupDataSource *audioGroupDataSource;
 
-@property (readonly) NSArray<NSLayoutConstraint *> *audioPlaceholderImageViewSizeConstraints;
-
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow;
-- (IBAction)segmentedControlAction:(id)sender;
+
 - (void)presentAudioView;
 - (void)reloadData;
+- (void)presentLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem;
 
 @end
 

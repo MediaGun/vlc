@@ -683,6 +683,7 @@ static int Open( vlc_object_t * p_this )
                 {
                     tk->fmt.i_codec           =
                     tk->fmt.i_original_fourcc = FOURCC_XVID;
+                    tk->fmt.b_packetized = false;
                 }
 
                 if( IsQNAPCodec( p_vids->p_bih->biCompression ) )
@@ -1636,7 +1637,7 @@ static int Seek( demux_t *p_demux, vlc_tick_t i_date, double f_ratio, bool b_acc
             for( unsigned i = 0; i < p_sys->i_track; i++ )
             {
                 avi_track_t *p_track = p_sys->track[i];
-                if( !p_track->b_activated || p_stream->fmt.i_cat == SPU_ES )
+                if( !p_track->b_activated || p_track->fmt.i_cat == SPU_ES )
                     continue;
 
                 p_stream = p_track;
@@ -2952,7 +2953,7 @@ static void AVI_MetaLoad( demux_t *p_demux,
             continue;
 
         if( *psz_value )
-            vlc_meta_AddExtra( p_meta, p_strz->p_type, psz_value );
+            vlc_meta_SetExtra( p_meta, p_strz->p_type, psz_value );
         free( psz_value );
     }
 }

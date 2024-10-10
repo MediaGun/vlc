@@ -28,7 +28,6 @@
 #include "mainctx_win32.hpp"
 
 #include "maininterface/compositor.hpp"
-#include "player/player_controller.hpp"
 #include "playlist/playlist_controller.hpp"
 #include "dialogs/dialogs_provider.hpp"
 #include "widgets/native/interface_widgets.hpp"
@@ -40,8 +39,11 @@
 #include <cassert>
 
 #include <QWindow>
-#include QPNI_HEADER
 
+#ifndef QT_GUI_PRIVATE
+#warning "qplatformnativeinterface.h header is required for MainCtxWin32"
+#endif
+#include <QtGui/qpa/qplatformnativeinterface.h>
 #include <dwmapi.h>
 
 #define WM_APPCOMMAND 0x0319
@@ -169,7 +171,7 @@ public:
 
         const int action = TrackPopupMenu(hmenu, (TPM_RETURNCMD | alignment)
                                           , screenPoints.x(), screenPoints.y()
-                                          , NULL, hwnd, 0);
+                                          , 0, hwnd, nullptr);
 
         // unlike native system menu which sends WM_SYSCOMMAND, TrackPopupMenu sends WM_COMMAND
         // imitate native system menu by sending the action manually as WM_SYSCOMMAND
@@ -217,7 +219,6 @@ class CSDWin32EventHandler : public QObject, public QAbstractNativeEventFilter
 public:
     CSDWin32EventHandler(MainCtx* mainctx, QWindow *window, QObject *parent)
         : QObject {parent}
-        , m_mainctx(mainctx)
         , m_useClientSideDecoration {mainctx->useClientSideDecoration()}
         , m_window {window}
         , m_buttonmodel {mainctx->csdButtonModel()}
@@ -244,7 +245,7 @@ public:
             return qRound(static_cast<qreal>(8) * window->devicePixelRatio());
     }
 
-    bool nativeEventFilter(const QByteArray &, void *message, long *result) override
+    bool nativeEventFilter(const QByteArray &, void *message, qintptr *result) override
     {
         MSG* msg = static_cast<MSG*>( message );
 
@@ -332,8 +333,8 @@ public:
                     || point.x > (m_window->width() * m_window->devicePixelRatio() - resizeBorderWidth(m_window))))
                 return false;
 
-            //getIntfScaleFactor uses logicalDotsPerInch, here we want the actual window DPR
-            double scaleFactor = m_mainctx->getIntfUserScaleFactor() * m_window->devicePixelRatio();
+            const double scaleFactor = m_window->devicePixelRatio();
+
             //divide by scale factor as buttons coordinates will be in dpr
             const QPoint qtPoint {static_cast<int>(point.x / scaleFactor), static_cast<int>(point.y / scaleFactor)};
             auto button = overlappingButton(qtPoint);
@@ -525,7 +526,6 @@ private:
         }
     }
 
-    MainCtx* m_mainctx = nullptr;
     bool m_useClientSideDecoration;
     QWindow *m_window;
     CSDButtonModel *m_buttonmodel;
@@ -542,7 +542,7 @@ WinTaskbarWidget::WinTaskbarWidget(qt_intf_t *_p_intf, QWindow* windowHandle, QO
     taskbar_wmsg = RegisterWindowMessage(TEXT("TaskbarButtonCreated"));
     if (taskbar_wmsg == 0)
         msg_Warn( p_intf, "Failed to register TaskbarButtonCreated message" );
-    connect(THEMPL, &PlaylistControllerModel::countChanged,
+    connect(THEMPL, &PlaylistController::countChanged,
             this, &WinTaskbarWidget::playlistItemCountChanged);
     connect(THEMIM, &PlayerController::fullscreenChanged,
             this, &WinTaskbarWidget::onVideoFullscreenChanged);
@@ -553,9 +553,7 @@ WinTaskbarWidget::~WinTaskbarWidget()
 {
     if( himl )
         ImageList_Destroy( himl );
-    if(p_taskbl)
-        p_taskbl->Release();
-    CoUninitialize();
+    p_taskbl.Reset();
 }
 
 Q_GUI_EXPORT HBITMAP qt_pixmapToWinHBITMAP(const QPixmap &p, int hbitmapFormat = 0);
@@ -572,27 +570,30 @@ void WinTaskbarWidget::createTaskBarButtons()
     /*Here is the code for the taskbar thumb buttons
     FIXME:We need pretty buttons in 16x16 px that are handled correctly by masks in Qt
     */
-    p_taskbl = NULL;
     himl = NULL;
 
     auto winId = WinId(m_window);
     if (!winId)
         return;
 
-    HRESULT hr = CoInitializeEx( NULL, COINIT_APARTMENTTHREADED );
-    if( FAILED(hr) )
-        return;
-
-    void *pv;
-    hr = CoCreateInstance( CLSID_TaskbarList, NULL, CLSCTX_INPROC_SERVER,
-                           IID_ITaskbarList3, &pv);
-    if( FAILED(hr) )
+    try
     {
-        CoUninitialize();
+        m_comHolder = ComHolder();
+    }
+    catch( const std::exception& exception )
+    {
+        msg_Err( p_intf, "%s", exception.what() );
         return;
     }
 
-    p_taskbl = (ITaskbarList3 *)pv;
+    HRESULT hr = CoCreateInstance( __uuidof(TaskbarList), NULL, CLSCTX_INPROC_SERVER,
+                                   IID_PPV_ARGS(p_taskbl.ReleaseAndGetAddressOf()));
+    if( FAILED(hr) )
+    {
+        m_comHolder.reset();
+        return;
+    }
+
     p_taskbl->HrInit();
 
     int iconX = GetSystemMetrics(SM_CXSMICON);
@@ -601,9 +602,8 @@ void WinTaskbarWidget::createTaskBarButtons()
                              4 /*cInitial*/, 0 /*cGrow*/);
     if( himl == NULL )
     {
-        p_taskbl->Release();
-        p_taskbl = NULL;
-        CoUninitialize();
+        p_taskbl.Reset();
+        m_comHolder.reset();
         return;
     }
 
@@ -658,13 +658,13 @@ void WinTaskbarWidget::createTaskBarButtons()
     }
     connect( THEMIM, &PlayerController::playingStateChanged,
              this, &WinTaskbarWidget::changeThumbbarButtons);
-    connect( THEMPL, &vlc::playlist::PlaylistControllerModel::countChanged,
+    connect( THEMPL, &vlc::playlist::PlaylistController::countChanged,
             this, &WinTaskbarWidget::playlistItemCountChanged );
     if( THEMIM->getPlayingState() == PlayerController::PLAYING_STATE_PLAYING )
         changeThumbbarButtons( THEMIM->getPlayingState() );
 }
 
-bool WinTaskbarWidget::nativeEventFilter(const QByteArray &, void *message, long* /* result */)
+bool WinTaskbarWidget::nativeEventFilter(const QByteArray &, void *message, qintptr* /* result */)
 {
     MSG * msg = static_cast<MSG*>( message );
     if (msg->hwnd != WinId(m_window))
@@ -794,13 +794,9 @@ void MainCtxWin32::reloadPrefs()
 
 // InterfaceWindowHandlerWin32
 
-InterfaceWindowHandlerWin32::InterfaceWindowHandlerWin32(qt_intf_t *_p_intf, MainCtx* mainCtx, QWindow* window, QWidget* widget, QObject *parent)
-    : InterfaceWindowHandler(_p_intf, mainCtx, window, widget, parent)
-
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
+InterfaceWindowHandlerWin32::InterfaceWindowHandlerWin32(qt_intf_t *_p_intf, MainCtx* mainCtx, QWindow* window, QObject *parent)
+    : InterfaceWindowHandler(_p_intf, mainCtx, window, parent)
     , m_CSDWindowEventHandler(new CSDWin32EventHandler(mainCtx, window, window))
-#endif
-
 {
     auto systemMenuButton = std::make_shared<WinSystemMenuButton>(mainCtx->intfMainWindow(), nullptr);
     mainCtx->csdButtonModel()->setSystemMenuButton(systemMenuButton);
@@ -904,7 +900,7 @@ bool InterfaceWindowHandlerWin32::eventFilter(QObject* obj, QEvent* ev)
     return ret;
 }
 
-bool InterfaceWindowHandlerWin32::nativeEventFilter(const QByteArray &, void *message, long *result)
+    bool InterfaceWindowHandlerWin32::nativeEventFilter(const QByteArray &, void *message, qintptr *result)
 {
     MSG* msg = static_cast<MSG*>( message );
 
@@ -983,9 +979,7 @@ bool InterfaceWindowHandlerWin32::nativeEventFilter(const QByteArray &, void *me
 
 
 
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
 void InterfaceWindowHandlerWin32::updateCSDWindowSettings()
 {
     static_cast<CSDWin32EventHandler *>(m_CSDWindowEventHandler)->setUseClientSideDecoration(m_mainCtx->useClientSideDecoration());
 }
-#endif

@@ -34,9 +34,9 @@
 #include <QPushButton>
 
 MLFoldersEditor::MLFoldersEditor(QWidget *parent)
-    : QTableWidget(0, 2, parent)
+    : QTableWidget(0, 3, parent)
 {
-    setHorizontalHeaderLabels({ qtr("Path"), qtr("Remove") });
+    setHorizontalHeaderLabels({ qtr("Path"), qtr("Remove"), qtr("Reload") });
     horizontalHeader()->setMinimumSectionSize( 100 );
     horizontalHeader()->setSectionResizeMode( 0 , QHeaderView::Stretch );
     horizontalHeader()->setFixedHeight( 24 );
@@ -129,28 +129,55 @@ void MLFoldersEditor::newRow(const QUrl &mrl)
     col1->setFlags( Qt::ItemIsEnabled | Qt::ItemIsSelectable );
     setItem( row, 0, col1 );
 
-    QWidget *wid = new QWidget( this );
-    QBoxLayout* layout = new QBoxLayout( QBoxLayout::LeftToRight , wid );
-    QPushButton *pb = new QPushButton( "-" , wid );
-    pb->setFixedSize( 16 , 16 );
-
-    layout->addWidget( pb , Qt::AlignCenter );
-    wid->setLayout( layout );
-
-    connect( pb , &QPushButton::clicked , this, [this, col1]()
+    auto buttonCol = [&, this] (const int col, const QString &icon, const QString &accessibleName
+                                , std::function<void (MLFoldersEditor *editor, int row)> action)
     {
-        int row = col1->row();
-        vlc_assert( row >= 0 );
+        QWidget *wid = new QWidget( this );
+        QBoxLayout* layout = new QBoxLayout( QBoxLayout::LeftToRight , wid );
 
-        const QUrl mrl = col1->data( Qt::UserRole ).toUrl();
-        const auto index = m_newEntries.indexOf( mrl );
-        if ( index == -1 )
-            m_removeEntries.push_back( mrl );
-        else
-            m_newEntries.remove( index );
+        QPushButton *pb = new QPushButton( icon , wid );
+        pb->setFixedSize( 18 , 18 );
+        pb->setAccessibleName(accessibleName);
 
-        removeRow( row );
-    });
+        layout->addWidget( pb , Qt::AlignCenter );
+        wid->setLayout( layout );
+        connect( pb, &QPushButton::clicked, this, [this, col1, action]()
+        {
+            action(this, col1->row());
+        });
 
-    setCellWidget( row, 1, wid );
+        setCellWidget( row, col, wid );
+    };
+
+    buttonCol( 1, "-", qtr("Remove"), &MLFoldersEditor::markRemoved );
+
+    buttonCol( 2, "⟳", qtr("Reload"), &MLFoldersEditor::reloadUrl );
+}
+
+QUrl MLFoldersEditor::url(int row)
+{
+    const QTableWidgetItem *col1 = item(row, 0);
+    return col1->data( Qt::UserRole ).toUrl();
+}
+
+void MLFoldersEditor::markRemoved(int row)
+{
+    const QUrl mrl = url( row );
+    const auto index = m_newEntries.indexOf( mrl );
+    if ( index == -1 )
+        m_removeEntries.push_back( mrl );
+    else
+        m_newEntries.remove( index );
+
+    removeRow( row );
+}
+
+void MLFoldersEditor::reloadUrl(int row)
+{
+    const QUrl mrl = url( row );
+    if ( m_newEntries.contains(mrl)
+        || m_removeEntries.contains(mrl) )
+        return;
+
+    m_foldersModel->reload( row );
 }

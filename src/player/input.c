@@ -23,7 +23,6 @@
 #endif
 
 #include <vlc_common.h>
-#include <vlc_interface.h>
 #include <vlc_memstream.h>
 #include "player.h"
 
@@ -59,25 +58,27 @@ vlc_player_input_HandleAtoBLoop(struct vlc_player_input *input, vlc_tick_t time,
 }
 
 vlc_tick_t
-vlc_player_input_GetTime(struct vlc_player_input *input)
+vlc_player_input_GetTime(struct vlc_player_input *input, bool seeking,
+                         vlc_tick_t system_now)
 {
     vlc_player_t *player = input->player;
     vlc_tick_t ts;
 
     if (input == player->input
-     && vlc_player_GetTimerPoint(player, vlc_tick_now(), &ts, NULL) == 0)
+     && vlc_player_GetTimerPoint(player, seeking, system_now, &ts, NULL) == 0)
         return ts;
     return input->time;
 }
 
 double
-vlc_player_input_GetPos(struct vlc_player_input *input)
+vlc_player_input_GetPos(struct vlc_player_input *input, bool seeking,
+                        vlc_tick_t system_now)
 {
     vlc_player_t *player = input->player;
     double pos;
 
     if (input == player->input
-     && vlc_player_GetTimerPoint(player, vlc_tick_now(), NULL, &pos) == 0)
+     && vlc_player_GetTimerPoint(player, seeking, system_now, NULL, &pos) == 0)
         return pos;
     return input->position;
 }
@@ -86,8 +87,12 @@ static void
 vlc_player_input_UpdateTime(struct vlc_player_input *input)
 {
     if (input->abloop_state[0].set && input->abloop_state[1].set)
-        vlc_player_input_HandleAtoBLoop(input, vlc_player_input_GetTime(input),
-                                        vlc_player_input_GetPos(input));
+    {
+        vlc_tick_t now = vlc_tick_now();
+        vlc_player_input_HandleAtoBLoop(input,
+                                        vlc_player_input_GetTime(input, false, now),
+                                        vlc_player_input_GetPos(input, false, now));
+    }
 }
 
 int
@@ -98,6 +103,85 @@ vlc_player_input_Start(struct vlc_player_input *input)
         return ret;
     input->started = true;
     return ret;
+}
+
+static inline void
+vlc_player_assert_seek_params(enum vlc_player_seek_speed speed,
+                              enum vlc_player_whence whence)
+{
+    assert(speed == VLC_PLAYER_SEEK_PRECISE
+        || speed == VLC_PLAYER_SEEK_FAST);
+    assert(whence == VLC_PLAYER_WHENCE_ABSOLUTE
+        || whence == VLC_PLAYER_WHENCE_RELATIVE);
+    (void) speed; (void) whence;
+}
+
+void
+vlc_player_input_SeekByPos(struct vlc_player_input *input, double position,
+                           enum vlc_player_seek_speed speed,
+                           enum vlc_player_whence whence)
+{
+    vlc_player_t *player = input->player;
+    vlc_player_assert_seek_params(speed, whence);
+
+    if (whence != VLC_PLAYER_WHENCE_ABSOLUTE)
+        position += vlc_player_input_GetPos(input, true, vlc_tick_now());
+
+    if (position < 0)
+        position = 0;
+    else if (position > 1)
+        position = 1;
+
+    vlc_player_UpdateTimerSeekState(player, VLC_TICK_INVALID, position);
+
+    int ret = input_ControlPush(input->thread, INPUT_CONTROL_SET_POSITION,
+        &(input_control_param_t) {
+            .pos.f_val = position,
+            .pos.b_fast_seek = speed == VLC_PLAYER_SEEK_FAST,
+    });
+
+    if (ret == VLC_SUCCESS)
+        vlc_player_osd_Position(player, input, VLC_TICK_INVALID, position);
+}
+
+void
+vlc_player_input_SeekByTime(struct vlc_player_input *input, vlc_tick_t time,
+                            enum vlc_player_seek_speed speed,
+                            enum vlc_player_whence whence)
+{
+    vlc_player_t *player = input->player;
+    vlc_player_assert_seek_params(speed, whence);
+
+    if (whence != VLC_PLAYER_WHENCE_ABSOLUTE)
+        time += vlc_player_input_GetTime(input, true, vlc_tick_now());
+
+    if (time < VLC_TICK_0)
+        time = VLC_TICK_0;
+
+    vlc_player_UpdateTimerSeekState(player, time, -1);
+
+    int ret = input_ControlPush(input->thread, INPUT_CONTROL_SET_TIME,
+        &(input_control_param_t) {
+            .time.i_val = time,
+            .time.b_fast_seek = speed == VLC_PLAYER_SEEK_FAST,
+    });
+
+    if (ret == VLC_SUCCESS)
+        vlc_player_osd_Position(player, input, time, -1);
+}
+
+void
+vlc_player_input_UpdateViewpoint(struct vlc_player_input *input,
+                                 const vlc_viewpoint_t *viewpoint,
+                                 enum vlc_player_whence whence)
+{
+    input_control_param_t param = { .viewpoint = *viewpoint };
+    if (whence == VLC_PLAYER_WHENCE_ABSOLUTE)
+        input_ControlPush(input->thread, INPUT_CONTROL_SET_VIEWPOINT,
+                          &param);
+    else
+        input_ControlPush(input->thread, INPUT_CONTROL_UPDATE_VIEWPOINT,
+                          &param);
 }
 
 static bool
@@ -167,66 +251,48 @@ vlc_player_input_HandleState(struct vlc_player_input *input,
                     player->eos_burst_count = 0;
             }
 
-            vlc_player_WaitRetryDelay(player);
+            if (player->started)
+                vlc_player_WaitRetryDelay(player);
 
             /* Assign the current date after the wait */
             player->last_eos = vlc_tick_now();
 
             if (!player->deleting)
+            {
                 vlc_player_OpenNextMedia(player);
+                /* It is possible to open several medias in a stopped state */
+                if (player->input && player->started)
+                    vlc_player_input_Start(player->input);
+            }
             if (!player->input)
                 player->started = false;
 
-            /* If the last input was not even started, always play the next
-             * media */
-            enum vlc_player_media_stopped_action stopped_action;
-            if (last_state == VLC_PLAYER_STATE_STOPPED)
-                stopped_action = VLC_PLAYER_MEDIA_STOPPED_CONTINUE;
-            else
-                stopped_action = player->media_stopped_action;
-
-            switch (stopped_action)
-            {
-                case VLC_PLAYER_MEDIA_STOPPED_EXIT:
-                    if (player->input && player->started)
-                        vlc_player_input_Start(player->input);
-                    else
-                        libvlc_Quit(vlc_object_instance(player));
-                    break;
-                case VLC_PLAYER_MEDIA_STOPPED_CONTINUE:
-                    if (player->input && player->started)
-                        vlc_player_input_Start(player->input);
-                    break;
-                default:
-                    break;
-            }
-
-            send_event = !player->started;
+            send_event = !player->started && last_state != VLC_PLAYER_STATE_STOPPED;
             break;
         case VLC_PLAYER_STATE_STOPPING:
             input->started = false;
 
-            vlc_player_UpdateTimerState(player, NULL,
-                                        VLC_PLAYER_TIMER_STATE_DISCONTINUITY,
+            vlc_player_UpdateTimerEvent(player, NULL,
+                                        VLC_PLAYER_TIMER_EVENT_DISCONTINUITY,
+                                        VLC_TICK_INVALID);
+
+            vlc_player_UpdateTimerEvent(player, NULL,
+                                        VLC_PLAYER_TIMER_EVENT_STOPPING,
                                         VLC_TICK_INVALID);
 
             if (input == player->input)
                 player->input = NULL;
 
-            if (player->started)
-            {
-                vlc_player_PrepareNextMedia(player);
-                if (!player->next_media)
-                    player->started = false;
-            }
+            if (player->started && !player->next_media)
+                player->started = false;
             send_event = !player->started;
             break;
         case VLC_PLAYER_STATE_PLAYING:
             input->pause_date = VLC_TICK_INVALID;
-            vlc_player_UpdateTimerState(player, NULL,
-                                        VLC_PLAYER_TIMER_STATE_PLAYING,
+            vlc_player_UpdateTimerEvent(player, NULL,
+                                        VLC_PLAYER_TIMER_EVENT_PLAYING,
                                         input->pause_date);
-            /* fallthrough */
+            /* fall through */
         case VLC_PLAYER_STATE_STARTED:
             if (player->started &&
                 player->global_state == VLC_PLAYER_STATE_PLAYING)
@@ -238,8 +304,8 @@ vlc_player_input_HandleState(struct vlc_player_input *input,
             assert(state_date != VLC_TICK_INVALID);
             input->pause_date = state_date;
 
-            vlc_player_UpdateTimerState(player, NULL,
-                                        VLC_PLAYER_TIMER_STATE_PAUSED,
+            vlc_player_UpdateTimerEvent(player, NULL,
+                                        VLC_PLAYER_TIMER_EVENT_PAUSED,
                                         input->pause_date);
             break;
         default:
@@ -248,6 +314,7 @@ vlc_player_input_HandleState(struct vlc_player_input *input,
 
     if (send_event)
     {
+        assert(player->global_state != input->state);
         player->global_state = input->state;
         vlc_player_SendEvent(player, on_state_changed, player->global_state);
     }
@@ -573,6 +640,7 @@ vlc_player_input_HandleEsEvent(struct vlc_player_input *input,
             {
                 trackpriv->t.selected = true;
                 trackpriv->selected_by_user = ev->forced;
+                trackpriv->vout_order = ev->vout_order;
                 vlc_player_SendEvent(player, on_track_selection_changed,
                                      NULL, trackpriv->t.es_id);
                 vlc_player_input_HandleTeletextMenu(input, ev, trackpriv);
@@ -724,11 +792,77 @@ vlc_player_input_HandleVoutEvent(struct vlc_player_input *input,
 }
 
 static void
+vlc_player_input_NavigationFallback(struct vlc_player_input *input, int nav_type)
+{
+    vlc_player_t *player = input->player;
+
+    /* Handle Up/Down/Left/Right if the demux can't navigate */
+    vlc_viewpoint_t vp = { 0 };
+    int vol_direction = 0;
+    int seek_direction = 0;
+    switch (nav_type)
+    {
+        case INPUT_CONTROL_NAV_UP:
+            vol_direction = 1;
+            vp.pitch = -1.f;
+            break;
+        case INPUT_CONTROL_NAV_DOWN:
+            vol_direction = -1;
+            vp.pitch = 1.f;
+            break;
+        case INPUT_CONTROL_NAV_LEFT:
+            seek_direction = -1;
+            vp.yaw = -1.f;
+            break;
+        case INPUT_CONTROL_NAV_RIGHT:
+            seek_direction = 1;
+            vp.yaw = 1.f;
+            break;
+        case INPUT_CONTROL_NAV_ACTIVATE:
+        case INPUT_CONTROL_NAV_POPUP:
+        case INPUT_CONTROL_NAV_MENU:
+            return;
+        default:
+            vlc_assert_unreachable();
+    }
+
+    /* Try to change the viewpoint if possible */
+    bool viewpoint_ch = false;
+    size_t vout_count;
+    vout_thread_t **vouts = vlc_player_vout_HoldAll(input->player, &vout_count);
+    for (size_t i = 0; i < vout_count; ++i)
+    {
+        if (!viewpoint_ch && var_GetBool(vouts[i], "viewpoint-changeable"))
+            viewpoint_ch = true;
+        vout_Release(vouts[i]);
+    }
+    free(vouts);
+
+    if (viewpoint_ch)
+        vlc_player_input_UpdateViewpoint(input, &vp, VLC_PLAYER_WHENCE_RELATIVE);
+    else if (seek_direction != 0)
+    {
+        /* Seek or change volume if the input doesn't have navigation or viewpoint */
+        vlc_tick_t it = vlc_tick_from_sec(seek_direction
+                      * var_InheritInteger(player, "short-jump-size"));
+        vlc_player_input_SeekByTime(input, it, VLC_PLAYER_SEEK_PRECISE,
+                                    VLC_PLAYER_WHENCE_RELATIVE);
+    }
+    else
+    {
+        assert(vol_direction != 0);
+        if (input == player->input)
+            vlc_player_aout_IncrementVolume(player, vol_direction, NULL);
+    }
+}
+
+static void
 input_thread_Events(input_thread_t *input_thread,
                     const struct vlc_input_event *event, void *user_data)
 {
     struct vlc_player_input *input = user_data;
     vlc_player_t *player = input->player;
+    input_thread_private_t *priv = input_priv(input_thread);
 
     assert(input_thread == input->thread);
 
@@ -748,12 +882,12 @@ input_thread_Events(input_thread_t *input_thread,
                                    event->output_clock.master, &point,
                                    VLC_TICK_INVALID,
                                    event->output_clock.frame_rate,
-                                   event->output_clock.frame_rate_base);
+                                   event->output_clock.frame_rate_base, 0);
         }
         else
         {
-            vlc_player_UpdateTimerState(player, event->output_clock.id,
-                                        VLC_PLAYER_TIMER_STATE_DISCONTINUITY,
+            vlc_player_UpdateTimerEvent(player, event->output_clock.id,
+                                        VLC_PLAYER_TIMER_EVENT_DISCONTINUITY,
                                         VLC_TICK_INVALID);
         }
         return;
@@ -783,6 +917,7 @@ input_thread_Events(input_thread_t *input_thread,
         {
             bool changed = false;
             vlc_tick_t system_date = VLC_TICK_INVALID;
+            vlc_tick_t duration = input_GetItemDuration(input->thread, event->times.length);
 
             if (event->times.time != VLC_TICK_INVALID
              && (input->time != event->times.time
@@ -797,17 +932,16 @@ input_thread_Events(input_thread_t *input_thread,
 
                 vlc_player_input_UpdateTime(input);
             }
-            if (input->length != event->times.length)
+            if (input->length != duration)
             {
-                input->length = event->times.length;
-                input_item_SetDuration(input_GetItem(input->thread), event->times.length);
+                input->length = duration;
+                input_item_SetDuration(input_GetItem(input->thread), duration);
                 vlc_player_SendEvent(player, on_length_changed, input->length);
                 changed = true;
             }
 
             if (input->normal_time != event->times.normal_time)
             {
-                assert(event->times.normal_time != VLC_TICK_INVALID);
                 input->normal_time = event->times.normal_time;
                 changed = true;
             }
@@ -817,12 +951,12 @@ input_thread_Events(input_thread_t *input_thread,
                 const struct vlc_player_timer_point point = {
                     .position = input->position,
                     .rate = input->rate,
-                    .ts = input->time + input->normal_time,
+                    .ts = input->time,
                     .length = input->length,
                     .system_date = system_date,
                 };
                 vlc_player_UpdateTimer(player, NULL, false, &point,
-                                       input->normal_time, 0, 0);
+                                       input->normal_time, 0, 0, priv->i_start);
             }
             break;
         }
@@ -853,6 +987,10 @@ input_thread_Events(input_thread_t *input_thread,
                                  input->signal_quality, input->signal_strength);
             break;
         case INPUT_EVENT_CACHE:
+            if (event->cache == 0.0f)
+                vlc_player_UpdateTimerEvent(player, NULL,
+                                            VLC_PLAYER_TIMER_EVENT_DISCONTINUITY,
+                                            VLC_TICK_INVALID);
             input->cache = event->cache;
             vlc_player_SendEvent(player, on_buffering_changed, event->cache);
             break;
@@ -860,6 +998,7 @@ input_thread_Events(input_thread_t *input_thread,
             vlc_player_input_HandleVoutEvent(input, &event->vout);
             break;
         case INPUT_EVENT_ITEM_META:
+        case INPUT_EVENT_ITEM_INFO:
             vlc_player_SendEvent(player, on_media_meta_changed,
                                  input_GetItem(input->thread));
             break;
@@ -886,6 +1025,15 @@ input_thread_Events(input_thread_t *input_thread,
             input->teletext_transparent = event->vbi_transparent;
             vlc_player_SendEvent(player, on_teletext_transparency_changed,
                                  input->teletext_transparent);
+            break;
+        case INPUT_EVENT_ATTACHMENTS:
+            vlc_player_SendEvent(player, on_media_attachments_added,
+                                 input_GetItem(input->thread),
+                                 event->attachments.array,
+                                 event->attachments.count);
+            break;
+        case INPUT_EVENT_NAV_FAILED:
+            vlc_player_input_NavigationFallback(input, event->nav_type);
             break;
         default:
             break;
@@ -988,9 +1136,19 @@ vlc_player_input_New(vlc_player_t *player, input_item_t *item)
     input->ml.pos = -1.f;
     input->ml.has_audio_tracks = input->ml.has_video_tracks = false;
 
-    input->thread = input_Create(player, input_thread_Events, input, item,
-                                 INPUT_TYPE_NONE, player->resource,
-                                 player->renderer);
+    static const struct vlc_input_thread_callbacks cbs = {
+        .on_event = input_thread_Events,
+    };
+
+    const struct vlc_input_thread_cfg cfg = {
+        .type = INPUT_TYPE_PLAYBACK,
+        .resource = player->resource,
+        .renderer = player->renderer,
+        .cbs = &cbs,
+        .cbs_data = input,
+    };
+
+    input->thread = input_Create(player, item, &cfg);
     if (!input->thread)
     {
         free(input);

@@ -15,14 +15,14 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Widgets as Widgets
 
-import "qrc:///style/"
+import VLC.Style
 
 T.ToolButton {
     id: control
@@ -43,7 +43,7 @@ T.ToolButton {
 
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
     //Accessible
     Accessible.onPressAction: control.clicked()
@@ -62,12 +62,10 @@ T.ToolButton {
         width: control.sourceSize.width
         height: control.sourceSize.height
 
-        active: control.visualFocus
-        animate: theme.initialized
+        enabled: theme.initialized
 
-        backgroundColor: theme.bg.primary
-        foregroundColor: theme.fg.primary
-        activeBorderColor: theme.visualFocus
+        color: theme.bg.primary
+        border.color: control.visualFocus ? theme.visualFocus : "transparent"
     }
 
     contentItem: Image {

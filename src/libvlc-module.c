@@ -48,6 +48,15 @@
 
 #include "clock/clock.h"
 
+#ifdef HAVE_DYNAMIC_PLUGINS
+#define VLC_META_EXPORT_DECL( name, value ) \
+    VLC_API const char * CDECL_SYMBOL \
+    VLC_SYMBOL(vlc_entry_ ## name)(void); \
+
+VLC_META_EXPORT_DECL(copyright, VLC_MODULE_COPYRIGHT)
+VLC_META_EXPORT_DECL(license, VLC_MODULE_LICENSE)
+#endif
+
 static const char *const ppsz_snap_formats[] =
 { "png", "jpg", "tiff", "webp" };
 
@@ -490,20 +499,10 @@ static const char *const fit_descriptions[] = {
     "pixels (1:1). If you have a 16:9 screen, you might need to change this " \
     "to 4:3 in order to keep proportions.")
 
-#define SKIP_FRAMES_TEXT N_("Skip frames")
-#define SKIP_FRAMES_LONGTEXT N_( \
-    "Enables framedropping on MPEG2 stream. Framedropping " \
-    "occurs when your computer is not powerful enough" )
-
 #define DROP_LATE_FRAMES_TEXT N_("Drop late frames")
 #define DROP_LATE_FRAMES_LONGTEXT N_( \
     "This drops frames that are late (arrive to the video output after " \
     "their intended display date)." )
-
-#define QUIET_SYNCHRO_TEXT N_("Quiet synchro")
-#define QUIET_SYNCHRO_LONGTEXT N_( \
-    "This avoids flooding the message log with debug output from the " \
-    "video output synchronization mechanism.")
 
 #define KEYBOARD_EVENTS_TEXT N_("Key press events")
 #define KEYBOARD_EVENTS_LONGTEXT N_( \
@@ -678,7 +677,7 @@ static const char *const ppsz_prefres[] = {
 
 #define INPUT_LOWDELAY_TEXT N_("Low delay mode")
 #define INPUT_LOWDELAY_LONGTEXT N_(\
-    "Try to minimize delay along decoding chain."\
+    "Try to minimize delay along decoding chain. "\
     "Might break with non compliant streams.")
 
 #define INPUT_REPEAT_TEXT N_("Input repetitions")
@@ -786,6 +785,10 @@ static const char* const ppsz_restore_playback_desc[] = {
 #define SPU_TEXT N_("Enable sub-pictures")
 #define SPU_LONGTEXT N_( \
     "You can completely disable the sub-picture processing.")
+
+#define SPU_FULL_TEXT N_("Display sub-pictures on full window")
+#define SPU_FULL_LONGTEXT N_( \
+    "It allows showing subtitles in black bars.")
 
 #define SECONDARY_SUB_POSITION_TEXT N_("Position of secondary subtitles")
 #define SECONDARY_SUB_POSITION_LONGTEXT N_( \
@@ -1555,6 +1558,18 @@ static const char *const mouse_wheel_texts[] = {
  * add_bool( option_name, b_value, N_(text), N_(longtext) )
  */
 
+#define add_category_hint(text, longtext) \
+    add_typedesc_inner( CONFIG_HINT_CATEGORY, text, longtext )
+
+#define add_module_cat(name, subcategory, value, text, longtext) \
+    add_string_inner(CONFIG_ITEM_MODULE_CAT, name, text, longtext, value) \
+    change_integer_range (subcategory /* gruik */, 0)
+
+#define add_module_list_cat(name, subcategory, value, text, longtext) \
+    add_string_inner(CONFIG_ITEM_MODULE_LIST_CAT, name, text, longtext, \
+                     value) \
+    change_integer_range (subcategory /* gruik */, 0)
+
 vlc_module_begin ()
     set_description( N_("core program") )
 
@@ -1636,10 +1651,8 @@ vlc_module_begin ()
     add_bool( "drop-late-frames", true, DROP_LATE_FRAMES_TEXT,
               DROP_LATE_FRAMES_LONGTEXT )
     /* Used in vout_synchro */
-    add_bool( "skip-frames", true, SKIP_FRAMES_TEXT,
-              SKIP_FRAMES_LONGTEXT )
-    add_bool( "quiet-synchro", false, QUIET_SYNCHRO_TEXT,
-              QUIET_SYNCHRO_LONGTEXT )
+    add_obsolete_bool( "skip-frames" ) /* since 4.0.0 */
+    add_obsolete_bool( "quiet-synchro" ) /* since 4.0.0 */
     add_bool( "keyboard-events", true, KEYBOARD_EVENTS_TEXT,
               KEYBOARD_EVENTS_LONGTEXT )
     add_bool( "mouse-events", true, MOUSE_EVENTS_TEXT,
@@ -1747,6 +1760,8 @@ vlc_module_begin ()
     add_category_hint(N_("Subpictures"), SUB_CAT_LONGTEXT)
 
     add_bool( "spu", true, SPU_TEXT, SPU_LONGTEXT )
+        change_safe ()
+    add_bool( "spu-fill", true, SPU_FULL_TEXT, SPU_FULL_LONGTEXT )
         change_safe ()
     add_bool( "osd", true, OSD_TEXT, OSD_LONGTEXT )
     add_module("text-renderer", "text renderer", "any",

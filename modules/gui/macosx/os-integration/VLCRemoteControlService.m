@@ -67,10 +67,10 @@ static inline NSArray * RemoteCommandCenterCommandsToHandle()
 {
     self = [super init];
     if (self) {
-        _playlistController = [[VLCMain sharedInstance] playlistController];
+        _playlistController = VLCMain.sharedInstance.playlistController;
         _playerController = [_playlistController playerController];
 
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(playbackPositionUpdated:)
                                    name:VLCPlayerTimeAndPositionChanged
@@ -97,7 +97,7 @@ static inline NSArray * RemoteCommandCenterCommandsToHandle()
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)playbackStateChanged:(NSNotification *)aNotification
@@ -155,7 +155,7 @@ static inline NSArray * RemoteCommandCenterCommandsToHandle()
 
     currentlyPlayingTrackInfo[MPMediaItemPropertyTitle] = inputItem.title;
     currentlyPlayingTrackInfo[MPMediaItemPropertyArtist] = inputItem.artist;
-    currentlyPlayingTrackInfo[MPMediaItemPropertyAlbumTitle] = inputItem.albumName;
+    currentlyPlayingTrackInfo[MPMediaItemPropertyAlbumTitle] = inputItem.album;
     currentlyPlayingTrackInfo[MPMediaItemPropertyAlbumTrackNumber] = @([inputItem.trackNumber intValue]);
 
     const vlc_tick_t duration = inputItem.duration;

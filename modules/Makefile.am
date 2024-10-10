@@ -13,6 +13,37 @@ TESTS =
 dist_noinst_SCRIPTS = module.rc.in
 EXTRA_LTLIBRARIES =
 
+if HAVE_RUST
+
+LIBTOOL_CARGO_EXE = $(abs_srcdir)/libtool_cargo.sh
+
+CARGO_BUILD_ARGS = --target=@RUST_TARGET@ --release \
+	--crate-type=staticlib
+
+RUSTFLAGS = -C panic=abort -C opt-level=z
+if !HAVE_DYNAMIC_PLUGINS
+RUSTFLAGS += --cfg vlc_static_plugins
+endif
+
+LIBTOOL_CARGO = \
+	TARGET_CC=$(CC) TARGET_AR=$(AR) \
+	TARGET_CFLAGS="$(CFLAGS)" \
+	RUSTTARGET="@RUST_TARGET@" \
+	RUSTFLAGS="${RUSTFLAGS}" \
+	CARGO_TARGET_DIR="target-rust" \
+	LIBTOOL="$(LIBTOOL)" \
+	$(LIBTOOL_CARGO_EXE) $(CARGO) $(CARGO_BUILD_STD) rustc $(CARGO_BUILD_ARGS)
+
+CARGO_PLUGINS_INV = ${LTLIBRARIES:%rs_plugin.la=%rs_plugin}
+CARGO_PLUGINS_CUT = ${CARGO_PLUGINS_INV:%.la=}
+CARGO_PLUGINS = ${CARGO_PLUGINS_CUT:%=%.la}
+
+CARGO_DEPS = ${CARGO_PLUGINS:%_plugin.la=${top_builddir}/modules/.libs/%.d}
+
+-include $(CARGO_DEPS)
+
+endif
+
 include common.am
 include access/Makefile.am
 include access/http/Makefile.am
@@ -82,3 +113,22 @@ SUFFIXES += -client-protocol.h -protocol.c .xml
 .xml-protocol.c:
 	$(AM_V_GEN)$(WAYLAND_SCANNER) private-code < "$^" > "$@.tmp"
 	$(AM_V_at)mv -f -- "$@.tmp" "$@"
+
+# Remove the non-plugins, it needs intermediate steps because
+# we can only replace and not match inverse. Instead we;
+#  1/ replace plugins .la targets by plugins names
+#  2/ remove every word which is a .la target (ie. non-plugins)
+#  3/ rename every plugin name back into the target name
+ALL_TARGETS_PLUGIN_RENAMED := $(LTLIBRARIES:lib%_plugin.la=%_plugin)
+PLUGINS_NAMES := $(ALL_TARGETS_PLUGIN_RENAMED:%.la=)
+
+# Generate a list containing the name of every plugin being built
+# Note that it cannot include plugins from recursive makefiles,
+# like the Qt plugin.
+vlc_modules_list: Makefile
+	$(AM_V_GEN)rm -f $@.tmp; for plugin in $(PLUGINS_NAMES); do \
+		printf "$${plugin}\n" >> $@.tmp; done && \
+		mv $@.tmp $@
+
+BUILT_SOURCES += vlc_modules_list
+CLEANFILES += vlc_modules_list

@@ -18,26 +18,27 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as Templates
+import QtQuick
+import QtQuick.Templates as Templates
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Player
 
 Templates.Pane {
     id: root
 
     // Properties
 
-    property int size: VLCStyle.icon_toolbar
+    font.pixelSize: VLCStyle.icon_toolbar
 
     property bool paintOnly: false
 
     // Private
 
-    readonly property string _controlPath : "qrc:///player/controlbarcontrols/"
+    readonly property string _controlPath : "qrc:///qt/qml/VLC/PlayerControls/"
 
     // Signals
 
@@ -54,7 +55,7 @@ Templates.Pane {
     // Keys
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
     // Functions private
 
@@ -111,8 +112,6 @@ Templates.Pane {
                 if (item === null) return
 
                 _applyItem(loaderA, item)
-
-                item.size = Qt.binding(function() { return root.size })
             }
         }
 
@@ -136,6 +135,10 @@ Templates.Pane {
             Navigation.rightItem: loaderC.item
 
             onLoaded: _applyItemLock(loaderB, item)
+
+            function forceUnlock() {
+                loaderB.item.close()
+            }
         }
 
         Loader {
@@ -158,6 +161,10 @@ Templates.Pane {
                                                 : loaderA.item
 
             onLoaded: _applyItemLock(loaderC, item)
+
+            function forceUnlock() {
+                loaderC.item.close()
+            }
         }
     }
 }

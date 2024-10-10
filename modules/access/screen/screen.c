@@ -31,7 +31,6 @@
 
 #include <vlc_common.h>
 #include <vlc_plugin.h>
-#include <vlc_modules.h>                 /* module_need for "video blending" */
 #include <vlc_filter.h>
 #include <vlc_url.h>
 #include "screen.h"
@@ -174,7 +173,7 @@ static int Open( vlc_object_t *p_this )
 
     msg_Dbg( p_demux, "screen width: %i, height: %i, depth: %i",
              p_sys->fmt.video.i_width, p_sys->fmt.video.i_height,
-             p_sys->fmt.video.i_bits_per_pixel );
+             vlc_fourcc_GetChromaBPP(p_sys->fmt.video.i_chroma) );
 
 #ifdef SCREEN_SUBSCREEN
     if( p_sys->i_left >= p_sys->fmt.video.i_width

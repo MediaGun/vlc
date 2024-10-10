@@ -1,6 +1,6 @@
 project('VLC', ['c', 'cpp'],
     version: '4.0.0-dev',
-    default_options: ['c_std=gnu11', 'cpp_std=c++14'],
+    default_options: ['c_std=gnu17', 'cpp_std=c++17'],
     meson_version: '>=0.60.0')
 
 vlc_copyright_years = '1996-2018'
@@ -53,6 +53,9 @@ vlc_about = custom_target('vlc_about.h',
                                    '@INPUT2@',
                                    '@OUTPUT@'])
 
+cargo_rustc_static_libs = find_program('buildsystem/cargo-rustc-static-libs.py')
+cargo_output = find_program('buildsystem/cargo-output.py')
+
 add_project_arguments('-DHAVE_CONFIG_H=1', language: ['c', 'cpp', 'objc'])
 
 # If building with contribs, read the relevant paths from the machine file
@@ -94,11 +97,13 @@ if cc.get_id() == 'msvc' or cc.get_id() == 'clang-cl'
     # extra POSIX headers not found in the Windows SDK
     list_inc_dirs += 'compat/windows'
 endif
-vlc_include_dirs = include_directories(list_inc_dirs)
 
 if host_system == 'darwin'
     add_languages('objc', native: false)
 endif
+
+# Rust build system
+cargo_bin = find_program('cargo', required: get_option('rust'))
 
 #
 # General feature defines
@@ -113,6 +118,8 @@ foreach d : feature_defines
     cdata.set(d.get(0), d.get(1))
     vlc_conf_prefix = vlc_conf_prefix + '#define @0@ @1@\n'.format(d.get(0), d.get(1))
 endforeach
+
+vlc_tests = []
 
 #
 # SIMD support
@@ -131,7 +138,7 @@ subdir('buildsystem/simd_checks')
 #
 
 # zlib library
-z_lib = cc.find_library('z', required: false)
+z_dep = dependency('zlib', required: false)
 
 # Math library
 m_lib = cc.find_library('m', required: false)
@@ -203,6 +210,8 @@ endif
 #
 
 check_c_headers = [
+    ['stdbit.h'],
+    ['stdckdint.h'],
     ['arpa/inet.h'],
     ['threads.h'],
     ['netinet/tcp.h'],
@@ -218,6 +227,7 @@ check_c_headers = [
     ['netinet/udplite.h'],
     ['pthread.h'],
     ['poll.h'],
+    ['sys/auxv.h'],
     ['sys/eventfd.h'],
     ['sys/mount.h'],
     ['sys/shm.h'],
@@ -260,6 +270,13 @@ foreach header : check_cpp_headers
     endif
 endforeach
 
+if not cdata.has('HAVE_STDBIT_H')
+    list_inc_dirs += 'compat/stdbit'
+endif
+if not cdata.has('HAVE_STDCKDINT_H')
+    list_inc_dirs += 'compat/stdckdint'
+endif
+vlc_include_dirs = include_directories(list_inc_dirs)
 
 #
 # Darwin specific checks
@@ -349,12 +366,12 @@ windows_version_test = '''
             prefix: '#include <_mingw.h>')
 
         if mingw_version_major == ''
-            error('Cannot compile with MinGW, use MinGW-w64 >= 5.0 instead.')
+            error('Cannot compile with MinGW, use MinGW-w64 >= 6.0 instead.')
         endif
 
-        # Check that MinGW w64 is at least 5.0
-        if mingw_version_major.to_int() < 5
-            error('MinGW-w64 5.0 or higher required!')
+        # Check that MinGW w64 is at least 6.0
+        if mingw_version_major.to_int() < 6
+            error('MinGW-w64 6.0 or higher required!')
         endif
 
         have_mingw = true
@@ -434,7 +451,6 @@ ucrt_version_test = '''
     # Check if we are building for Windows Store
     if get_option('winstore_app')
         have_win_store = true
-        add_project_arguments('-DWINSTORECOMPAT', language: ['c', 'cpp'])
         windowsappcompat_lib = cc.find_library('windowsappcompat')
         # TODO: enable when meson 0.63 is required
         # add_project_dependencies(windowsappcompat_lib, language: ['c', 'cpp'])
@@ -472,6 +488,21 @@ add_project_arguments(cc.get_supported_arguments([
     '-Wmultistatement-macros',
     '-pipe'
 ]), language: ['c'])
+
+if get_option('extra_checks')
+    add_project_arguments(cc.get_supported_arguments([
+        '-Werror=missing-field-initializers',
+        '-Werror=format',
+        '-Werror=return-mismatch'
+    ]), language: ['c', 'cpp'])
+    add_project_arguments(cc.get_supported_arguments([
+        '-Werror=incompatible-pointer-types',
+        '-Werror=restrict',
+        '-Werror=int-conversion',
+        '-Werror=implicit-int',
+        '-Werror=declaration-missing-parameter-type'
+    ]), language: ['c'])
+endif
 
 if get_option('branch_protection') \
     .require(host_machine.cpu_family() == 'aarch64', error_message: 'Branch protection is only available for AArch64') \
@@ -1002,6 +1033,25 @@ if get_option('default_monospace_font_family') != ''
     cdata.set_quoted('DEFAULT_MONOSPACE_FAMILY', get_option('default_monospace_font_family'))
 endif
 
+gcrypt_dep = dependency('libgcrypt', required: get_option('libgcrypt'))
+
+# Flex/Bison support
+# This defines the `bison_gen` and `flex_gen` generator variables to be used
+# to process Bison and Flex files respectively.
+
+flex = find_program('flex', required: false)
+bison = find_program('bison', required: false)
+
+if flex.found() and bison.found()
+    bison_gen = generator(bison,
+        output: ['@BASENAME@.c', '@BASENAME@.h'],
+        arguments: ['@INPUT@', '--defines=@OUTPUT1@', '--output=@OUTPUT0@'])
+
+    flex_gen = generator(flex,
+        output: '@PLAINNAME@.yy.c',
+        arguments: ['-o', '@OUTPUT@', '@INPUT@'])
+endif
+
 # Generate config.h
 configure_file(input: 'config.h.meson',
   output: 'config.h',
@@ -1024,6 +1074,17 @@ subdir('bin')
 
 # VLC plugins
 subdir('modules')
+
+# Integration and non-regression tests, some unittest are there too but the
+# modules/, src/ and lib/ folders should be favoured for those.
+subdir('test')
+
+if get_option('rust').allowed()
+    warning('''
+    The Rust module support is currently EXPERIMENTAL and INCOMPLETE.
+    Testing and reporting or contributing missing plugins and features is welcome!
+    ''')
+endif
 
 warning('''
     The Meson build system of VLC is currently EXPERIMENTAL and INCOMPLETE.

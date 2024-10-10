@@ -38,17 +38,17 @@ OPTIONS:
    -z            Build without GUI (libvlc only)
    -o <path>     Install the built binaries in the absolute path
    -m            Build with Meson rather than autotools
+   -g <g|l|a>    Select the license of contribs
+                     g: GPLv3 (default)
+                     l: LGPLv3 + ad-clauses
+                     a: LGPLv2 + ad-clauses
 EOF
 }
 
 ARCH="x86_64"
-while getopts "hra:pcli:W:sb:dD:xS:uwzo:m" OPTION
+while getopts "hra:pcli:W:sb:dD:xS:uwzo:mg:" OPTION
 do
      case $OPTION in
-         h)
-             usage
-             exit 1
-         ;;
          r)
              RELEASE="yes"
              INSTALLER="r"
@@ -104,6 +104,13 @@ do
          ;;
          m)
              BUILD_MESON="yes"
+         ;;
+         g)
+             LICENSE=$OPTARG
+         ;;
+         h|*)
+             usage
+             exit 1
          ;;
      esac
 done
@@ -220,7 +227,25 @@ if [ ! -z "$WIXPATH" ]; then
     CONTRIBFLAGS="$CONTRIBFLAGS --enable-wix"
 fi
 
-export PATH="$PWD/contrib/$CONTRIB_PREFIX/bin":"$PATH"
+case $LICENSE in
+    l)
+        # LGPL v3 + ad-clauses
+        CONTRIBFLAGS="$CONTRIBFLAGS --disable-gpl --enable-ad-clauses"
+        CONFIGFLAGS="$CONFIGFLAGS --enable-live555"
+    ;;
+    a)
+        # LGPL v2.1 + ad-clauses
+        CONTRIBFLAGS="$CONTRIBFLAGS --disable-gpl --disable-gnuv3 --enable-ad-clauses"
+    ;;
+    g|*)
+        # GPL v3
+        CONFIGFLAGS="$CONFIGFLAGS --enable-live555"
+        if [ -z "$WINSTORE" ]; then
+            CONFIGFLAGS="$CONFIGFLAGS --enable-dvdread"
+            MCONFIGFLAGS="$MCONFIGFLAGS -Ddvdread=enabled"
+        fi
+    ;;
+esac
 
 if [ "$INTERACTIVE" = "yes" ]; then
 if [ "x$SHELL" != "x" ]; then
@@ -248,11 +273,13 @@ if [ ! -z "$BUILD_UCRT" ]; then
             fi
         fi
 
-        # WinstoreCompat: hopefully can go away someday
-        LDFLAGS="$LDFLAGS -lwindowsapp -lwindowsappcompat"
-        CFLAGS="$CFLAGS -Wl,-lwindowsapp,-lwindowsappcompat"
-        CXXFLAGS="$CXXFLAGS -Wl,-lwindowsapp,-lwindowsappcompat"
-        CPPFLAGS="$CPPFLAGS -DWINSTORECOMPAT"
+        LDFLAGS="$LDFLAGS -lwindowsapp"
+        CFLAGS="$CFLAGS -Wl,-lwindowsapp"
+        CXXFLAGS="$CXXFLAGS -Wl,-lwindowsapp"
+        if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
+            CFLAGS="$CFLAGS -Wno-unused-command-line-argument"
+            CXXFLAGS="$CXXFLAGS -Wno-unused-command-line-argument"
+        fi
     else
         SHORTARCH="$SHORTARCH-ucrt"
     fi
@@ -316,11 +343,20 @@ if [ "$RELEASE" != "yes" ]; then
      CONTRIBFLAGS="$CONTRIBFLAGS --disable-optim"
 fi
 if [ ! -z "$DISABLEGUI" ]; then
-    CONTRIBFLAGS="$CONTRIBFLAGS --disable-qt --disable-qtsvg --disable-qtdeclarative --disable-qtgraphicaleffects --disable-qtquickcontrols2"
+    CONTRIBFLAGS="$CONTRIBFLAGS --disable-qt --disable-qtsvg --disable-qtdeclarative --disable-qt5compat --disable-qtshadertools --disable-qtwayland"
 fi
 if [ ! -z "$WINSTORE" ]; then
     # we don't use a special toolchain to trigger the detection in contribs so force it manually
     export HAVE_WINSTORE=1
+fi
+
+if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
+    # avoid using gcc-ar with the clang toolchain, if both are installed
+    AR="$TRIPLET-ar"
+    export AR
+    # avoid using gcc-ranlib with the clang toolchain, if both are installed
+    RANLIB="$TRIPLET-ranlib"
+    export RANLIB
 fi
 
 export CFLAGS
@@ -329,7 +365,6 @@ export CXXFLAGS
 ${VLC_ROOT_PATH}/contrib/bootstrap --host=$TRIPLET --prefix=../$CONTRIB_PREFIX $CONTRIBFLAGS
 
 # Rebuild the contribs or use the prebuilt ones
-make list
 if [ "$PREBUILT" = "yes" ]; then
     if [ -n "$VLC_PREBUILT_CONTRIBS_URL" ]; then
         make prebuilt PREBUILT_URL="$VLC_PREBUILT_CONTRIBS_URL" || PREBUILT_FAILED=yes
@@ -339,6 +374,7 @@ if [ "$PREBUILT" = "yes" ]; then
 else
     PREBUILT_FAILED=yes
 fi
+make list
 if [ -n "$PREBUILT_FAILED" ]; then
     make -j$JOBS fetch
     make -j$JOBS -k || make -j1
@@ -351,7 +387,7 @@ fi
 cd ../..
 
 if [ -z "$PKG_CONFIG" ]; then
-    if [ `unset PKG_CONFIG_LIBDIR; $TRIPLET-pkg-config --version 1>/dev/null 2>/dev/null || echo FAIL` = "FAIL" ]; then
+    if [ "$(unset PKG_CONFIG_LIBDIR; $TRIPLET-pkg-config --version 1>/dev/null 2>/dev/null || echo FAIL)" = "FAIL" ]; then
         # $TRIPLET-pkg-config DOESNT WORK
         # on Debian it pretends it works to autoconf
         export PKG_CONFIG="pkg-config"
@@ -384,11 +420,7 @@ if [ ! -z "$WITH_PDB" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --enable-pdb"
 fi
 if [ ! -z "$EXTRA_CHECKS" ]; then
-    CFLAGS="$CFLAGS -Werror=incompatible-pointer-types -Werror=missing-field-initializers"
-    CXXFLAGS="$CXXFLAGS -Werror=missing-field-initializers"
-    if [ ! "$COMPILING_WITH_CLANG" -gt 0 ]; then
-        CFLAGS="$CFLAGS -Werror=restrict"
-    fi
+    CONFIGFLAGS="$CONFIGFLAGS --enable-extra-checks"
 fi
 if [ ! -z "$DISABLEGUI" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --disable-vlc --disable-qt --disable-skins2"
@@ -410,8 +442,8 @@ if [ ! -z "$WINSTORE" ]; then
     # MCONFIGFLAGS="$MCONFIGFLAGS -Ddxva2=disabled"
 
 else
-    CONFIGFLAGS="$CONFIGFLAGS --enable-dvdread --enable-caca"
-    MCONFIGFLAGS="$MCONFIGFLAGS -Ddvdread=enabled -Dcaca=enabled"
+    CONFIGFLAGS="$CONFIGFLAGS --enable-caca"
+    MCONFIGFLAGS="$MCONFIGFLAGS -Dcaca=enabled"
 fi
 if [ ! -z "$INSTALL_PATH" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --with-packagedir=$INSTALL_PATH"

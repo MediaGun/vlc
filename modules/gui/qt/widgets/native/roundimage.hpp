@@ -23,13 +23,13 @@
 #ifndef VLC_QT_ROUNDIMAGE_HPP
 #define VLC_QT_ROUNDIMAGE_HPP
 
-#include "qt.hpp"
-
 #include <QImage>
 #include <QQuickItem>
 #include <QUrl>
+#include <memory>
 
 class QQuickImageResponse;
+class RoundImageRequest;
 
 class RoundImage : public QQuickItem
 {
@@ -38,9 +38,13 @@ class RoundImage : public QQuickItem
     // url of the image
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged FINAL)
 
+    Q_PROPERTY(QSize sourceSize READ sourceSize WRITE setSourceSize NOTIFY sourceSizeChanged FINAL)
+
     Q_PROPERTY(qreal radius READ radius WRITE setRadius NOTIFY radiusChanged FINAL)
 
     Q_PROPERTY(Status status READ status NOTIFY statusChanged FINAL)
+
+    Q_PROPERTY(bool cache READ cache WRITE setCache NOTIFY cacheChanged FINAL)
 
 public:
     enum Status
@@ -61,15 +65,21 @@ public:
     QUrl source() const;
     qreal radius() const;
     Status status() const;
+    bool cache() const;
+    QSize sourceSize() const;
 
 public slots:
     void setSource(const QUrl& source);
     void setRadius(qreal radius);
+    void setCache(bool cache);
+    void setSourceSize(const QSize&);
 
 signals:
     void sourceChanged(const QUrl&);
     void radiusChanged(qreal);
     void statusChanged();
+    void cacheChanged();;
+    void sourceSizeChanged(const QSize&);
 
 protected:
     void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &value) override;
@@ -78,7 +88,6 @@ protected:
 private:
     void setDPR(qreal value);
     void handleImageResponseFinished();
-    void resetImageResponse(bool cancel);
     void load();
     void setRoundImage(QImage image);
     void setStatus(const Status status);
@@ -86,22 +95,22 @@ private:
 
 private slots:
     void adjustQSGCustomGeometry(const QQuickWindow* const window);
+    void onRequestCompleted(Status status, const QImage& image);
 
 private:
+    Status m_status = Status::Null;
+    bool m_QSGCustomGeometry = false;
+    bool m_dirty = false;
+    bool m_enqueuedGeneration = false;
+
     QUrl m_source;
+    QSize m_sourceSize;
     qreal m_radius = 0.0;
     qreal m_dpr = 1.0; // device pixel ratio
-    Status m_status = Status::Null;
-
-    bool m_QSGCustomGeometry = false;
+    bool m_cache = true;
 
     QImage m_roundImage;
-    bool m_dirty = false;
-
-    QQuickImageResponse *m_activeImageResponse {};
-
-    bool m_enqueuedGeneration = false;
+    std::shared_ptr<RoundImageRequest> m_activeImageResponse;
 };
 
 #endif
-

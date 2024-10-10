@@ -14,17 +14,16 @@ vlc_modules += {
 }
 
 swscale_dep = dependency('libswscale', version: '>= 0.5.0', required: get_option('swscale'))
-if swscale_dep.found()
-  vlc_modules += {
-      'name' : 'swscale',
-      'sources' : files(
-        'swscale.c',
-        '../codec/avcodec/chroma.c'
-      ),
-      'dependencies' : [swscale_dep, m_lib],
-      'link_args' : symbolic_linkargs
-  }
-endif
+vlc_modules += {
+    'name' : 'swscale',
+    'sources' : files(
+      'swscale.c',
+      '../codec/avcodec/chroma.c'
+    ),
+    'dependencies' : [swscale_dep, m_lib],
+    'link_args' : symbolic_linkargs,
+    'enabled' : swscale_dep.found(),
+}
 
 vlc_modules += {
     'name' : 'grey_yuv',
@@ -43,14 +42,12 @@ vlc_modules += {
 vlc_modules += {
     'name' : 'i420_yuy2',
     'sources' : files('i420_yuy2.c'),
-    'c_args' : ['-DPLUGIN_PLAIN']
 }
 
 vlc_modules += {
     'name' : 'i420_nv12',
     'sources' : files('i420_nv12.c'),
     'link_with' : [chroma_copy_lib],
-    'c_args' : ['-DPLUGIN_PLAIN'],
 }
 
 vlc_modules += {
@@ -61,7 +58,6 @@ vlc_modules += {
 vlc_modules += {
     'name' : 'i422_yuy2',
     'sources' : files('i422_yuy2.c'),
-    'c_args' : ['-DPLUGIN_PLAIN']
 }
 
 vlc_modules += {
@@ -84,28 +80,29 @@ vlc_modules += {
     'sources' : files('yuvp.c')
 }
 
-if have_sse2
-    vlc_modules += {
-        'name' : 'i420_rgb_sse2',
-        'sources' : files(
-            'i420_rgb.c',
-            'i420_rgb16_x86.c'
-        ),
-        'c_args' : ['-DPLUGIN_SSE2']
-    }
+vlc_modules += {
+    'name' : 'i420_rgb_sse2',
+    'sources' : files(
+        'i420_rgb.c',
+        'i420_rgb16_x86.c'
+    ),
+    'c_args' : ['-DPLUGIN_SSE2'],
+    'enabled' : have_sse2,
+}
 
-  vlc_modules += {
-      'name' : 'i420_yuy2_sse2',
-      'sources' : files('i420_yuy2.c'),
-      'c_args' : ['-DPLUGIN_SSE2']
-  }
+vlc_modules += {
+    'name' : 'i420_yuy2_sse2',
+    'sources' : files('i420_yuy2.c'),
+    'c_args' : ['-DPLUGIN_SSE2'],
+    'enabled' : have_sse2,
+}
 
-  vlc_modules += {
-      'name' : 'i422_yuy2_sse2',
-      'sources' : files('i422_yuy2.c'),
-      'c_args' : ['-DPLUGIN_SSE2']
-  }
-endif
+vlc_modules += {
+    'name' : 'i422_yuy2_sse2',
+    'sources' : files('i422_yuy2.c'),
+    'c_args' : ['-DPLUGIN_SSE2'],
+    'enabled' : have_sse2,
+}
 
 vlc_modules += {
     'name' : 'orient',
@@ -113,19 +110,22 @@ vlc_modules += {
 }
 
 # CVPX chroma converter
-if host_system == 'darwin'
-    # TODO: Set minimum versions for tvOS and iOS
-    vlc_modules += {
-        'name' : 'cvpx',
-        'sources' : files(
-            '../codec/vt_utils.c',
-            'cvpx.c',
-        ),
-        'link_with' : [chroma_copy_lib],
-        'dependencies' : [videotoolbox_dep, foundation_dep, coremedia_dep, corevideo_dep]
-    }
-endif
-
+# TODO: Set minimum versions for tvOS and iOS
+vlc_modules += {
+    'name' : 'cvpx',
+    'sources' : files(
+        '../codec/vt_utils.c',
+        'cvpx.c',
+    ),
+    'link_with' : [chroma_copy_lib],
+    'dependencies' : [
+        frameworks['VideoToolbox'],
+        frameworks['Foundation'],
+        frameworks['CoreMedia'],
+        frameworks['CoreVideo'],
+    ],
+    'enabled' : host_system == 'darwin',
+}
 
 ## Tests
 

@@ -242,7 +242,15 @@ static int Demux( demux_t *p_demux )
                     msg_Warn( p_demux, "found a new ASF header" );
             }
             else
+            {
                 p_sys->b_eof = true;
+                for ( int i=0; i<MAX_ASF_TRACKS; i++ )
+                {
+                    asf_track_t *tk = p_sys->track[i];
+                    if ( tk && tk->info.p_frame )
+                        Packet_Enqueue( &p_sys->packet_sys, i, &tk->info.p_frame );
+                }
+            }
         }
 
         if ( p_sys->i_time == VLC_TICK_INVALID )
@@ -730,10 +738,10 @@ static void ASF_fillup_es_priorities_ex( demux_sys_t *p_sys, void *p_hdr,
     if (! p_mutex ) return;
 
 #if ( UINT_MAX > SIZE_MAX / 2 )
-    if ( p_sys->i_track > (size_t)SIZE_MAX / sizeof(uint16_t) )
+    if ( p_sys->i_track > (size_t)SIZE_MAX / sizeof(*p_prios->pi_stream_numbers) )
         return;
 #endif
-    p_prios->pi_stream_numbers = vlc_alloc( p_sys->i_track, sizeof(uint16_t) );
+    p_prios->pi_stream_numbers = vlc_alloc( p_sys->i_track, sizeof(*p_prios->pi_stream_numbers) );
     if ( !p_prios->pi_stream_numbers ) return;
 
     if ( p_mutex->i_stream_number_count )
@@ -757,10 +765,10 @@ static void ASF_fillup_es_bitrate_priorities_ex( demux_sys_t *p_sys, void *p_hdr
     if (! p_bitrate_mutex ) return;
 
 #if ( UINT_MAX > SIZE_MAX / 2 )
-    if ( p_sys->i_track > (size_t)SIZE_MAX / sizeof(uint16_t) )
+    if ( p_sys->i_track > (size_t)SIZE_MAX / sizeof(*p_prios->pi_stream_numbers) )
         return;
 #endif
-    p_prios->pi_stream_numbers = vlc_alloc( p_sys->i_track, sizeof( uint16_t ) );
+    p_prios->pi_stream_numbers = vlc_alloc( p_sys->i_track, sizeof(*p_prios->pi_stream_numbers) );
     if ( !p_prios->pi_stream_numbers ) return;
 
     if ( p_bitrate_mutex->i_stream_number_count )
@@ -1322,7 +1330,7 @@ static int DemuxInit( demux_t *p_demux )
                     *p_ecd->ppsz_value[i] != '\0' && /* no empty value */
                     *p_ecd->ppsz_value[i] != '{'  && /* no guid value */
                     *p_ecd->ppsz_name[i] != '{' )    /* no guid name */
-                    vlc_meta_AddExtra( p_sys->meta, p_ecd->ppsz_name[i], p_ecd->ppsz_value[i] );
+                    vlc_meta_SetExtra( p_sys->meta, p_ecd->ppsz_name[i], p_ecd->ppsz_value[i] );
             /* TODO map WM/Composer, WM/Provider, WM/PartOfSet, PeakValue, AverageLevel  */
 #undef set_meta
         }

@@ -855,22 +855,40 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
             int *pi_title_offset = va_arg( args, int* );
             int *pi_seekpoint_offset = va_arg( args, int* );
 
-            if( p_sys->i_seekpoints > 0 )
+            if( p_sys->i_seekpoints == 0 )
+                return VLC_EGENERIC;
+
+            *pi_int = 1;
+            input_title_t **titles = malloc(sizeof(*titles));
+            if (titles == NULL)
+                return VLC_ENOMEM;
+
+            titles[0] = vlc_input_title_New();
+            if (titles[0] == NULL)
             {
-                *pi_int = 1;
-                *ppp_title = malloc( sizeof( input_title_t* ) );
-                input_title_t *p_title = (*ppp_title)[0] = vlc_input_title_New();
-                for( int i = 0; i < p_sys->i_seekpoints; i++ )
-                {
-                    seekpoint_t *p_seekpoint_copy = vlc_seekpoint_Duplicate( p_sys->pp_seekpoints[i] );
-                    if ( likely( p_seekpoint_copy ) )
-                        TAB_APPEND( p_title->i_seekpoint, p_title->seekpoint, p_seekpoint_copy );
-                }
-                *pi_title_offset = 0;
-                *pi_seekpoint_offset = 0;
-                return VLC_SUCCESS;
+                free(titles);
+                return VLC_ENOMEM;
             }
-            return VLC_EGENERIC;
+
+            for( int i = 0; i < p_sys->i_seekpoints; i++ )
+            {
+                seekpoint_t *p_seekpoint_copy = vlc_seekpoint_Duplicate( p_sys->pp_seekpoints[i] );
+                if (unlikely(p_seekpoint_copy == NULL))
+                {
+                    for (int j = 0; j < i; ++j)
+                    {
+                        vlc_seekpoint_Delete(titles[0]->seekpoint[i]);
+                    }
+                    vlc_input_title_Delete(titles[0]);
+                    free(titles);
+                    return VLC_ENOMEM;
+                }
+                TAB_APPEND(titles[0]->i_seekpoint, titles[0]->seekpoint, p_seekpoint_copy);
+            }
+            *ppp_title = titles;
+            *pi_title_offset = 0;
+            *pi_seekpoint_offset = 0;
+            return VLC_SUCCESS;
         }
         case DEMUX_SET_TITLE:
         {
@@ -1866,11 +1884,10 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
                         p_stream->fmt.video.i_frame_rate = num;
                         p_stream->fmt.video.i_frame_rate_base = den;
                         date_Init( &p_stream->dts, num, den );
-                        p_stream->fmt.video.i_bits_per_pixel =
-                            GetWLE((oggpacket.packet+182));
-                        if( !p_stream->fmt.video.i_bits_per_pixel )
-                            /* hack, FIXME */
-                            p_stream->fmt.video.i_bits_per_pixel = 24;
+                        unsigned bpp = GetWLE((oggpacket.packet+182));
+                        if (p_stream->fmt.i_profile == -1 && p_stream->fmt.i_level == -1)
+                            // HACK: keep the bits per sample, will be lost if i_level is used.
+                            p_stream->fmt.i_level = bpp;
                         p_stream->fmt.video.i_width =
                             GetDWLE((oggpacket.packet+176));
                         p_stream->fmt.video.i_height =
@@ -1886,7 +1903,7 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
                                  p_stream->fmt.video.i_frame_rate_base,
                                  p_stream->fmt.video.i_width,
                                  p_stream->fmt.video.i_height,
-                                 p_stream->fmt.video.i_bits_per_pixel);
+                                 bpp);
 
                         if ( !p_stream->fmt.video.i_frame_rate ||
                              !p_stream->fmt.video.i_frame_rate_base )
@@ -2018,7 +2035,6 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
                         date_Init( &p_stream->dts, num, den );
                         p_stream->fmt.video.i_frame_rate = num;
                         p_stream->fmt.video.i_frame_rate_base = den;
-                        p_stream->fmt.video.i_bits_per_pixel = st->bits_per_sample;
                         p_stream->fmt.video.i_width = st->sh.video.width;
                         p_stream->fmt.video.i_height = st->sh.video.height;
                         p_stream->fmt.video.i_visible_width =
@@ -2032,7 +2048,7 @@ static int Ogg_FindLogicalStreams( demux_t *p_demux )
                                  p_stream->fmt.video.i_frame_rate_base,
                                  p_stream->fmt.video.i_width,
                                  p_stream->fmt.video.i_height,
-                                 p_stream->fmt.video.i_bits_per_pixel );
+                                 st->bits_per_sample );
                     }
                     /* Check for audio header (new format) */
                     else if( !strncmp( st->streamtype, "audio", 5 ) &&
@@ -2703,25 +2719,25 @@ static bool Ogg_ReadTheoraHeader( logical_stream_t *p_stream,
     i_minor = bs_read( &bitstream, 8 ); /* minor version num */
     i_subminor = bs_read( &bitstream, 8 ); /* subminor version num */
 
-    bs_read( &bitstream, 16 ) /*<< 4*/; /* width */
-    bs_read( &bitstream, 16 ) /*<< 4*/; /* height */
-    bs_read( &bitstream, 24 ); /* frame width */
-    bs_read( &bitstream, 24 ); /* frame height */
-    bs_read( &bitstream, 8 ); /* x offset */
-    bs_read( &bitstream, 8 ); /* y offset */
+    bs_skip( &bitstream, 16 ) /*<< 4*/; /* width */
+    bs_skip( &bitstream, 16 ) /*<< 4*/; /* height */
+    bs_skip( &bitstream, 24 ); /* frame width */
+    bs_skip( &bitstream, 24 ); /* frame height */
+    bs_skip( &bitstream, 8 ); /* x offset */
+    bs_skip( &bitstream, 8 ); /* y offset */
 
     i_fps_numerator = bs_read( &bitstream, 32 );
     i_fps_denominator = bs_read( &bitstream, 32 );
     i_fps_denominator = __MAX( i_fps_denominator, 1 );
-    bs_read( &bitstream, 24 ); /* aspect_numerator */
-    bs_read( &bitstream, 24 ); /* aspect_denominator */
+    bs_skip( &bitstream, 24 ); /* aspect_numerator */
+    bs_skip( &bitstream, 24 ); /* aspect_denominator */
 
     p_stream->fmt.video.i_frame_rate = i_fps_numerator;
     p_stream->fmt.video.i_frame_rate_base = i_fps_denominator;
 
-    bs_read( &bitstream, 8 ); /* colorspace */
+    bs_skip( &bitstream, 8 ); /* colorspace */
     p_stream->fmt.i_bitrate = bs_read( &bitstream, 24 );
-    bs_read( &bitstream, 6 ); /* quality */
+    bs_skip( &bitstream, 6 ); /* quality */
 
     i_keyframe_frequency_force = 1 << bs_read( &bitstream, 5 );
 
@@ -2959,7 +2975,7 @@ static bool Ogg_ReadFlacStreamInfo( demux_t *p_demux, logical_stream_t *p_stream
 
     bs_init( &s, p_oggpacket->packet, p_oggpacket->bytes );
 
-    bs_read( &s, 1 );
+    bs_skip( &s, 1 );
     if( p_oggpacket->bytes > 0 && bs_read( &s, 7 ) != 0 )
     {
         msg_Dbg( p_demux, "Invalid FLAC STREAMINFO metadata" );

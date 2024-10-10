@@ -17,6 +17,7 @@
  *****************************************************************************/
 
 #include "mlfoldersmodel.hpp"
+#include "medialibrary/medialib.hpp"
 #include <cassert>
 
 static const char* const ML_FOLDER_ADD_QUEUE = "ML_FOLDER_ADD_QUEUE";
@@ -93,7 +94,17 @@ QHash<int, QByteArray> MLFoldersBaseModel::roleNames() const
     return {
         {DisplayUrl, "display_url"},
         {Banned, "banned"},
+        {MRL, "url"}
     };
+}
+
+void MLFoldersBaseModel::reload(const int row)
+{
+    const QString mrl = m_mrls.at(row).mrl;
+    m_mediaLib->runOnMLThread(this, [mrl](vlc_medialibrary_t *ml)
+    {
+        vlc_ml_reload_folder( ml, qtu(mrl) );
+    });
 }
 
 void MLFoldersBaseModel::removeAt(int index)

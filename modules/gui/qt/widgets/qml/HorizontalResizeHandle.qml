@@ -15,10 +15,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import "qrc:///style/"
-import org.videolan.vlc 0.1
+import QtQuick
+import QtQuick.Controls
+import VLC.MainInterface
+import VLC.Style
 
 // targetWidth: concerned widget's current width
 // sourceWidth: target's width is bounded by this value (parent's width?)
@@ -39,15 +39,20 @@ MouseArea {
     property int _previousX
 
     cursorShape: Qt.SplitHCursor
-    width: VLCStyle.dp(8, VLCStyle.scale)
+    width: VLCStyle.resizeHandleWidth
     acceptedButtons: Qt.LeftButton
+    preventStealing: true
 
-    onPressed: {
+    onPressed: (mouse) => {
         MainCtx.setCursor(cursorShape)
         _previousX = mouseX
     }
 
-    onReleased: {
+    onReleased:(mouse) => {
+        MainCtx.restoreCursor()
+    }
+
+    onCanceled: {
         MainCtx.restoreCursor()
     }
 

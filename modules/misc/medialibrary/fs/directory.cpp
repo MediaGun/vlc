@@ -162,14 +162,20 @@ static bool request_metadata_sync( libvlc_int_t *libvlc, input_item_t *media,
     req.probe = false;
     auto deadline = vlc_tick_now() + VLC_TICK_FROM_SEC( 15 );
 
-    media->i_preparse_depth = 1;
-
     static const input_item_parser_cbs_t cbs = {
         onParserEnded,
         onParserSubtreeAdded,
+        nullptr,
     };
 
-    auto inputParser = vlc::wrap_cptr( input_item_Parse( media, VLC_OBJECT( libvlc ), &cbs, &req ),
+    const struct input_item_parser_cfg cfg= {
+        .cbs = &cbs,
+        .cbs_data = &req,
+        .subitems = true,
+        .interact = false,
+    };
+
+    auto inputParser = vlc::wrap_cptr( input_item_Parse( VLC_OBJECT( libvlc ), media, &cfg ),
                                        &input_item_parser_id_Release );
 
     if ( inputParser == nullptr )
@@ -237,7 +243,7 @@ void
 SDDirectory::addFile(std::string mrl, IFile::LinkedFileType fType, std::string linkedFile) const
 {
     time_t lastModificationDate = 0;
-    int64_t fileSize = 0;
+    uint64_t fileSize = 0;
 
     if ( m_fs.isNetworkFileSystem() == false )
     {

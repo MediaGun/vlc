@@ -18,24 +18,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
+import QtQuick.Window
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
+import VLC.MainInterface
 
 Image {
     id: root
-    sourceSize: Qt.size(width * MainCtx.screen.devicePixelRatio
-                    , height * MainCtx.screen.devicePixelRatio)
+    sourceSize: Qt.size(width * Screen.devicePixelRatio,
+                        height * Screen.devicePixelRatio)
 
     property bool disableSmoothWhenIntegerUpscaling: false
 
-    // TODO: Remove this Qt >= 5.14 (Binding.restoreMode == Binding.RestoreBindingOrValue)
-    // Only required for the Binding to restore the value back
-    readonly property bool _smooth: true
-    smooth: _smooth
-
-    BindingCompat on smooth {
+    Binding on smooth {
         when: root.disableSmoothWhenIntegerUpscaling &&
               !((root.paintedWidth % root.implicitWidth) || (root.paintedHeight % root.implicitHeight))
         value: false

@@ -26,21 +26,21 @@
 
 #include "qt.hpp"
 
-#include "widgets/native/qvlcframe.hpp"
-#include "player/player_controller.hpp"
-#include "util/color_scheme_model.hpp"
-#include "medialibrary/medialib.hpp"
-#include <playlist/playlist_common.hpp>
-
-#include <QSystemTrayIcon>
 #include <QtQuick/QQuickView>
 #include <QApplication>
+#include <QQuickItem>
 
-#ifdef _WIN32
-# include <shobjidl.h>
+Q_MOC_INCLUDE( "dialogs/toolbar/controlbar_profile_model.hpp" )
+Q_MOC_INCLUDE( "util/csdbuttonmodel.hpp" )
+Q_MOC_INCLUDE( "playlist/playlist_controller.hpp" )
+Q_MOC_INCLUDE( "maininterface/mainctx_submodels.hpp" )
+Q_MOC_INCLUDE( "maininterface/videosurface.hpp" )
+Q_MOC_INCLUDE( "medialibrary/medialib.hpp" )
+Q_MOC_INCLUDE( "player/player_controller.hpp" )
+Q_MOC_INCLUDE( "util/color_scheme_model.hpp" )
+#ifdef UPDATE_CHECK
+Q_MOC_INCLUDE( "dialogs/help/help.hpp" )
 #endif
-
-#include <atomic>
 
 class CSDButtonModel;
 class QSettings;
@@ -54,15 +54,26 @@ class QVBoxLayout;
 class QStackedLayout;
 class QMenu;
 class QSize;
-class QScreen;
 class QTimer;
+class QSystemTrayIcon;
 class StandardPLPanel;
 struct vlc_window;
 class VideoSurfaceProvider;
 class ControlbarProfileModel;
+class SearchCtx;
+class SortCtx;
+class WorkerThreadSet;
+class VLCSystray;
+class MediaLib;
+class ColorSchemeModel;
+class VLCVarChoiceModel;
+#ifdef UPDATE_CHECK
+class UpdateModel;
+#endif
+struct vlc_preparser_t;
+
 namespace vlc {
 namespace playlist {
-class PlaylistControllerModel;
 }
 }
 
@@ -74,75 +85,12 @@ public:
         VIDEO = 2,
     };
 
-    static bool holdFullscreen( QWindow* window, Source source, bool hold )
-    {
-        QVariant prop = window->property("__windowFullScreen");
-        bool ok = false;
-        unsigned fullscreenCounter = prop.toUInt(&ok);
-        if (!ok)
-            fullscreenCounter = 0;
-
-        if (hold)
-            fullscreenCounter |= source;
-        else
-            fullscreenCounter &= ~source;
-
-        Qt::WindowStates oldflags = window->windowStates();
-        Qt::WindowStates newflags;
-
-        if( fullscreenCounter != 0 )
-            newflags = oldflags | Qt::WindowFullScreen;
-        else
-            newflags = oldflags & ~Qt::WindowFullScreen;
-
-        if( newflags != oldflags )
-        {
-            window->setWindowStates( newflags );
-        }
-
-        window->setProperty("__windowFullScreen", QVariant::fromValue(fullscreenCounter));
-
-        return fullscreenCounter != 0;
-    }
+    static bool holdFullscreen( QWindow* window, Source source, bool hold );
 
 
-    static bool holdOnTop( QWindow* window, Source source, bool hold )
-    {
-        QVariant prop = window->property("__windowOnTop");
-        bool ok = false;
-        unsigned onTopCounter = prop.toUInt(&ok);
-        if (!ok)
-            onTopCounter = 0;
-
-        if (hold)
-            onTopCounter |= source;
-        else
-            onTopCounter &= ~source;
-
-        Qt::WindowStates oldStates = window->windowStates();
-        Qt::WindowFlags oldflags = window->flags();
-        Qt::WindowFlags newflags;
-
-        if( onTopCounter != 0 )
-            newflags = oldflags | Qt::WindowStaysOnTopHint;
-        else
-            newflags = oldflags & ~Qt::WindowStaysOnTopHint;
-        if( newflags != oldflags )
-        {
-
-            window->setFlags( newflags );
-            window->show(); /* necessary to apply window flags */
-            //workaround: removing onTop state might drop fullscreen state
-            window->setWindowStates(oldStates);
-        }
-
-        window->setProperty("__windowOnTop", QVariant::fromValue(onTopCounter));
-
-        return onTopCounter != 0;
-    }
+    static bool holdOnTop( QWindow* window, Source source, bool hold );
 
 };
-
 
 class MainCtx : public QObject
 {
@@ -151,6 +99,8 @@ class MainCtx : public QObject
     Q_PROPERTY(bool playlistDocked READ isPlaylistDocked WRITE setPlaylistDocked NOTIFY playlistDockedChanged FINAL)
     Q_PROPERTY(bool playlistVisible READ isPlaylistVisible WRITE setPlaylistVisible NOTIFY playlistVisibleChanged FINAL)
     Q_PROPERTY(double playlistWidthFactor READ getPlaylistWidthFactor WRITE setPlaylistWidthFactor NOTIFY playlistWidthFactorChanged FINAL)
+    Q_PROPERTY(double playerPlaylistWidthFactor READ getPlayerPlaylistWidthFactor WRITE setPlayerPlaylistWidthFactor NOTIFY playerPlaylistFactorChanged FINAL)
+    Q_PROPERTY(double artistAlbumsWidthFactor READ artistAlbumsWidthFactor WRITE setArtistAlbumsWidthFactor NOTIFY artistAlbumsWidthFactorChanged FINAL)
     Q_PROPERTY(bool interfaceAlwaysOnTop READ isInterfaceAlwaysOnTop WRITE setInterfaceAlwaysOnTop NOTIFY interfaceAlwaysOnTopChanged FINAL)
     Q_PROPERTY(bool hasEmbededVideo READ hasEmbededVideo NOTIFY hasEmbededVideoChanged FINAL)
     Q_PROPERTY(bool showRemainingTime READ isShowRemainingTime WRITE setShowRemainingTime NOTIFY showRemainingTimeChanged FINAL)
@@ -159,6 +109,7 @@ class MainCtx : public QObject
     Q_PROPERTY(bool mediaLibraryAvailable READ hasMediaLibrary CONSTANT FINAL)
     Q_PROPERTY(MediaLib* mediaLibrary READ getMediaLibrary CONSTANT FINAL)
     Q_PROPERTY(bool gridView READ hasGridView WRITE setGridView NOTIFY gridViewChanged FINAL)
+    Q_PROPERTY(bool hasGridListMode MEMBER m_hasGridListMode NOTIFY hasGridListModeChanged FINAL)
     Q_PROPERTY(Grouping grouping READ grouping WRITE setGrouping NOTIFY groupingChanged FINAL)
     Q_PROPERTY(ColorSchemeModel* colorScheme READ getColorScheme CONSTANT FINAL)
     Q_PROPERTY(bool hasVLM READ hasVLM CONSTANT FINAL)
@@ -171,22 +122,38 @@ class MainCtx : public QObject
     Q_PROPERTY(float pinOpacity READ pinOpacity WRITE setPinOpacity NOTIFY pinOpacityChanged FINAL)
     Q_PROPERTY(ControlbarProfileModel* controlbarProfileModel READ controlbarProfileModel CONSTANT FINAL)
     Q_PROPERTY(bool hasAcrylicSurface READ hasAcrylicSurface NOTIFY hasAcrylicSurfaceChanged FINAL)
-    Q_PROPERTY(PlaylistPtr mainPlaylist READ getMainPlaylist CONSTANT FINAL)
-    Q_PROPERTY(vlc::playlist::PlaylistControllerModel* mainPlaylistController READ getMainPlaylistController CONSTANT FINAL)
     Q_PROPERTY(bool smoothScroll READ smoothScroll NOTIFY smoothScrollChanged FINAL)
     Q_PROPERTY(QWindow* intfMainWindow READ intfMainWindow CONSTANT FINAL)
-    Q_PROPERTY(QScreen* screen READ screen NOTIFY screenChanged)
     Q_PROPERTY(bool useGlobalShortcuts READ getUseGlobalShortcuts WRITE setUseGlobalShortcuts NOTIFY useGlobalShortcutsChanged FINAL)
     Q_PROPERTY(int maxVolume READ maxVolume NOTIFY maxVolumeChanged FINAL)
     Q_PROPERTY(float safeArea READ safeArea NOTIFY safeAreaChanged FINAL)
+    Q_PROPERTY(VideoSurfaceProvider* videoSurfaceProvider READ getVideoSurfaceProvider WRITE setVideoSurfaceProvider NOTIFY hasEmbededVideoChanged FINAL)
 
     Q_PROPERTY(CSDButtonModel *csdButtonModel READ csdButtonModel CONSTANT FINAL)
+
+    //Property to get Operating System info
+    Q_PROPERTY(OsType osName READ getOSName CONSTANT)
+    Q_PROPERTY(int osVersion READ getOSVersion CONSTANT)
+
+    // Expose Property Minimal View for Player View
+    Q_PROPERTY(bool minimalView READ isMinimalView WRITE setMinimalView NOTIFY minimalViewChanged FINAL)
 
     // This Property only works if hasAcrylicSurface is set
     Q_PROPERTY(bool acrylicActive READ acrylicActive WRITE setAcrylicActive NOTIFY acrylicActiveChanged FINAL)
 
     // NOTE: This is useful when we want to prioritize player hotkeys over QML keyboard navigation.
     Q_PROPERTY(bool preferHotkeys READ preferHotkeys WRITE setPreferHotkeys NOTIFY preferHotkeysChanged FINAL)
+
+    //Property for Activating bgCone in player view
+    Q_PROPERTY(bool bgCone READ isbgCone WRITE setbgCone NOTIFY bgConeToggled FINAL)
+    Q_PROPERTY(bool windowSuportExtendedFrame READ windowSuportExtendedFrame NOTIFY windowSuportExtendedFrameChanged)
+    Q_PROPERTY(unsigned windowExtendedMargin READ windowExtendedMargin WRITE setWindowExtendedMargin NOTIFY windowExtendedMarginChanged)
+    Q_PROPERTY(SearchCtx* search MEMBER m_search CONSTANT FINAL)
+    Q_PROPERTY(SortCtx* sort MEMBER m_sort CONSTANT FINAL)
+
+#ifdef UPDATE_CHECK
+    Q_PROPERTY(UpdateModel* updateModel READ getUpdateModel CONSTANT FINAL)
+#endif
 
 public:
     /* tors */
@@ -200,12 +167,11 @@ public:
 public:
     /* Getters */
     inline qt_intf_t* getIntf() const { return p_intf; }
-    inline PlaylistPtr getMainPlaylist() const { return PlaylistPtr(p_intf->p_playlist); }
-    inline vlc::playlist::PlaylistControllerModel* getMainPlaylistController() const { return p_intf->p_mainPlaylistController; }
+    inline vlc_preparser_t *getPreparser() const { return m_preparser; };
     bool smoothScroll() const { return m_smoothScroll; }
 
-    QSystemTrayIcon *getSysTray() { return sysTray; }
-    QMenu *getSysTrayMenu() { return systrayMenu.get(); }
+    VLCSystray* getSysTray() { return m_systray.get(); }
+
     enum
     {
         CONTROLS_VISIBLE  = 0x1,
@@ -226,14 +192,20 @@ public:
         GROUPING_NAME,
         GROUPING_FOLDER
     };
-
     Q_ENUM(Grouping)
 
-    inline bool isInterfaceFullScreen() const { return m_windowVisibility == QWindow::FullScreen; }
-    inline bool isInterfaceVisible() const { return m_windowVisibility != QWindow::Hidden; }
+    enum OsType
+    {
+        Windows,
+        Unknown
+    };
+    Q_ENUM(OsType)
+
+    inline QWindow::Visibility interfaceVisibility() const { return m_windowVisibility; }
     bool isPlaylistDocked() { return b_playlistDocked; }
-    bool isPlaylistVisible() { return playlistVisible; }
-    inline double getPlaylistWidthFactor() const { return playlistWidthFactor; }
+    bool isPlaylistVisible() { return m_playlistVisible; }
+    inline double getPlaylistWidthFactor() const { return m_playlistWidthFactor; }
+    inline double getPlayerPlaylistWidthFactor() const { return m_playerPlaylistWidthFactor; }
     bool isInterfaceAlwaysOnTop() { return b_interfaceOnTop; }
     inline bool isHideAfterCreation() const { return b_hideAfterCreation; }
     inline bool isShowRemainingTime() const  { return m_showRemainingTime; }
@@ -262,12 +234,22 @@ public:
     inline void setDialogFilePath(const QUrl& filepath ){ m_dialogFilepath = filepath; }
     inline bool hasAcrylicSurface() const { return m_hasAcrylicSurface; }
     inline void reloadFromSettings() { loadFromSettingsImpl(true); }
-    inline QScreen* screen() const { return intfMainWindow()->screen(); }
     inline bool getUseGlobalShortcuts() const { return m_useGlobalShortcuts; }
     void setUseGlobalShortcuts(bool useGlobalShortcuts );
     inline int maxVolume() const { return m_maxVolume; }
 
     inline float safeArea() const { return m_safeArea; }
+
+    inline OsType getOSName() const {return m_osName;}
+    inline int getOSVersion() const {return m_osVersion;}
+
+    inline bool isbgCone() const {return m_bgCone; }
+    inline bool isMinimalView() const {return m_minimalView; }
+
+    inline bool windowSuportExtendedFrame() const { return m_windowSuportExtendedFrame; }
+    inline unsigned windowExtendedMargin() const { return m_windowExtendedMargin; }
+    void setWindowSuportExtendedFrame(bool support);
+    void setWindowExtendedMargin(unsigned margin);
 
     bool hasEmbededVideo() const;
     VideoSurfaceProvider* getVideoSurfaceProvider() const;
@@ -276,11 +258,23 @@ public:
     Q_INVOKABLE static inline void setCursor(Qt::CursorShape cursor) { QApplication::setOverrideCursor(QCursor(cursor)); }
     Q_INVOKABLE static inline void restoreCursor(void) { QApplication::restoreOverrideCursor(); }
 
+    Q_INVOKABLE static inline void setCursor(QQuickItem* item, Qt::CursorShape cursor) { assert(item); item->setCursor(cursor); }
+    Q_INVOKABLE static inline void unsetCursor(QQuickItem* item) { assert(item); item->unsetCursor(); };
+
     Q_INVOKABLE static /*constexpr*/ inline unsigned int qtVersion() { return QT_VERSION; }
     Q_INVOKABLE static /*constexpr*/ inline unsigned int qtVersionCheck(unsigned char major,
                                                                         unsigned char minor,
                                                                         unsigned char patch)
                                                                        { return QT_VERSION_CHECK(major, minor, patch); }
+
+    Q_INVOKABLE static /*constexpr*/ inline bool qtQuickControlRejectsHoverEvents() {
+        // QTBUG-100543
+        return (QT_VERSION < QT_VERSION_CHECK(6, 3, 0) && QT_VERSION >= QT_VERSION_CHECK(6, 2, 5)) ||
+               (QT_VERSION < QT_VERSION_CHECK(6, 4, 0) && QT_VERSION >= QT_VERSION_CHECK(6, 3, 1)) ||
+               (QT_VERSION >= QT_VERSION_CHECK(6, 4, 0));
+    }
+
+    Q_INVOKABLE QJSValue urlListToMimeData(const QJSValue& array);
 
     /**
      * @brief ask for the application to terminate
@@ -293,7 +287,7 @@ public:
 
     bool preferHotkeys() const;
     void setPreferHotkeys(bool enable);
-    
+
     QWindow *intfMainWindow() const;
 
     Q_INVOKABLE QVariant settingValue(const QString &key, const QVariant &defaultValue) const;
@@ -306,13 +300,28 @@ public:
     Q_INVOKABLE static double dp(const double px, const double scale);
     Q_INVOKABLE double dp(const double px) const;
 
+    Q_INVOKABLE bool useXmasCone() const;
+
+    WorkerThreadSet *workersThreads() const;
+
+    Q_INVOKABLE QUrl folderMRL(const QString &fileMRL) const;
+    Q_INVOKABLE QUrl folderMRL(const QUrl &fileMRL) const;
+
+    Q_INVOKABLE QString displayMRL(const QUrl &mrl) const;
+
+    double artistAlbumsWidthFactor() const;
+    void setArtistAlbumsWidthFactor(double newArtistAlbumsWidthFactor);
+
+#ifdef UPDATE_CHECK
+    UpdateModel* getUpdateModel() const;
+#endif
+
 protected:
     /* Systray */
-    void createSystray();
     void initSystray();
-    void handleSystray();
 
     qt_intf_t* p_intf = nullptr;
+    vlc_preparser_t *m_preparser = nullptr;
 
     bool m_hasEmbededVideo = false;
     VideoSurfaceProvider* m_videoSurfaceProvider = nullptr;
@@ -320,35 +329,22 @@ protected:
 
     /* */
     QSettings           *settings = nullptr;
-    QSystemTrayIcon     *sysTray = nullptr;
-    std::unique_ptr<QMenu> systrayMenu;
 
-    QString              input_name;
-
-    /* Status and flags */
-    QPoint              lastWinPosition;
-    QSize               lastWinSize;  /// To restore the same window size when leaving fullscreen
-    QScreen             *lastWinScreen = nullptr;
-
-    QSize               pendingResize; // to be applied when fullscreen is disabled
-
-    QMap<QWidget *, QSize> stackWidgetsSizes;
+    std::unique_ptr<VLCSystray> m_systray;
 
     /* Flags */
     double               m_intfUserScaleFactor = 1.;
     double               m_intfScaleFactor = 1.;
     int                  i_notificationSetting = 0; /// Systray Notifications
     bool                 b_hideAfterCreation = false; /// --qt-start-minimized
-    bool                 b_minimalView = false;         ///< Minimal video
     bool                 b_playlistDocked = false;
     QWindow::Visibility  m_windowVisibility = QWindow::Windowed;
     bool                 b_interfaceOnTop = false;      ///keep UI on top
-#ifdef QT5_HAS_WAYLAND
     bool                 b_hasWayland = false;
-#endif
     bool                 b_hasMedialibrary = false;
     MediaLib*            m_medialib = nullptr;
     bool                 m_gridView = false;
+    bool                 m_hasGridListMode = false;
     Grouping             m_grouping = GROUPING_NONE;
     ColorSchemeModel*    m_colorScheme = nullptr;
     bool                 m_windowTitlebar = true;
@@ -364,8 +360,12 @@ protected:
     QUrl                 m_dialogFilepath; /* Last path used in dialogs */
 
     /* States */
-    bool                 playlistVisible = false;       ///< Is the playlist visible ?
-    double               playlistWidthFactor = 4.;   ///< playlist size: root.width / playlistScaleFactor
+    bool                 m_playlistVisible = false;       ///< Is the playlist visible ?
+    double               m_playlistWidthFactor = 4.;   ///< playlist size: root.width / playlistScaleFactor
+    double               m_playerPlaylistWidthFactor = 4.;
+    bool                 m_minimalView = false;
+
+    double               m_artistAlbumsWidthFactor = 4.;
 
     VLCVarChoiceModel* m_extraInterfaces = nullptr;
 
@@ -382,17 +382,32 @@ protected:
 
     float m_safeArea = 0.0;
 
+    OsType m_osName;
+    int m_osVersion;
+
+    bool m_bgCone = true;
+    bool m_windowSuportExtendedFrame = false;
+    unsigned m_windowExtendedMargin = 0;
+
     std::unique_ptr<CSDButtonModel> m_csdButtonModel;
 
+    SearchCtx* m_search = nullptr;
+    SortCtx* m_sort = nullptr;
+
+#ifdef UPDATE_CHECK
+    //m_updateModel is created on first access
+    mutable std::unique_ptr<UpdateModel> m_updateModel;
+#endif
+
+    mutable std::unique_ptr<WorkerThreadSet> m_workersThreads;
+
 public slots:
-    void toggleUpdateSystrayMenu();
-    void showUpdateSystrayMenu();
-    void hideUpdateSystrayMenu();
     void toggleToolbarMenu();
     void toggleInterfaceFullScreen();
     void setPlaylistDocked( bool );
     void setPlaylistVisible( bool );
     void setPlaylistWidthFactor( double );
+    void setPlayerPlaylistWidthFactor( double factor );
     void setInterfaceAlwaysOnTop( bool );
     void setShowRemainingTime( bool );
     void setGridView( bool );
@@ -404,9 +419,12 @@ public slots:
     void setPinVideoControls( bool );
     void setPinOpacity( float );
 
+    void setbgCone(bool);
     void updateIntfScaleFactor();
     void onWindowVisibilityChanged(QWindow::Visibility);
     void setHasAcrylicSurface(bool);
+
+    void setMinimalView(bool);
 
     void sendHotkey(Qt::Key key, Qt::KeyboardModifiers modifiers );
 
@@ -418,14 +436,9 @@ public slots:
     VLCVarChoiceModel* getExtraInterfaces();
 
 protected slots:
-    void handleSystrayClick( QSystemTrayIcon::ActivationReason );
-    void updateSystrayTooltipName( const QString& );
-    void updateSystrayTooltipStatus( PlayerController::PlayingState );
-
     void onInputChanged( bool );
 
 signals:
-    void minimalViewToggled( bool );
     void fullscreenInterfaceToggled( bool );
     void setInterfaceVisibible(bool );
     void setInterfaceFullScreen( bool );
@@ -439,10 +452,12 @@ signals:
     void playlistDockedChanged(bool);
     void playlistVisibleChanged(bool);
     void playlistWidthFactorChanged(double);
+    void playerPlaylistFactorChanged(double);
     void interfaceAlwaysOnTopChanged(bool);
     void hasEmbededVideoChanged(bool);
     void showRemainingTimeChanged(bool);
     void gridViewChanged( bool );
+    void hasGridListModeChanged( bool );
     void groupingChanged( Grouping );
     void colorSchemeChanged( QString );
     void useClientSideDecorationChanged();
@@ -462,19 +477,30 @@ signals:
 
     void hasAcrylicSurfaceChanged();
 
+    void minimalViewChanged();
+
     void acrylicActiveChanged();
 
     void smoothScrollChanged();
 
     void preferHotkeysChanged();
 
-    void screenChanged();
-
     void useGlobalShortcutsChanged( bool );
-    
+
     void maxVolumeChanged();
 
     void safeAreaChanged();
+
+    void navBoxToggled();
+
+    void bgConeToggled();
+    void windowSuportExtendedFrameChanged();
+    void windowExtendedMarginChanged(unsigned margin);
+
+    void requestShowMainView();
+    void requestShowPlayerView();
+
+    void artistAlbumsWidthFactorChanged( double );
 
 private:
     void loadPrefs(bool callSignals);

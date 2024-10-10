@@ -211,6 +211,7 @@
     if ((int) i_ext > p_extensions_manager->extensions.i_size) {
         msg_Dbg(p_intf, "can't trigger extension with wrong id %d",
                  (int) i_ext);
+        vlc_mutex_unlock(&p_extensions_manager->lock);
         return;
     }
 
@@ -276,6 +277,7 @@
     intf_thread_t *p_intf = getIntf();
     msg_Dbg(p_intf, "Deinitializing extensions manager");
 
+    [self unloadExtensions];
     _extensionDialogProvider = nil;
     if (p_extensions_manager)
         vlc_object_delete(p_extensions_manager);

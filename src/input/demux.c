@@ -193,12 +193,15 @@ demux_t *demux_NewAdvanced( vlc_object_t *p_obj, input_thread_t *p_input,
         strict = false;
     }
 
-    priv->module = vlc_module_load(p_demux, "demux", module, strict,
-                                   demux_Probe, p_demux);
+    priv->module = vlc_module_load(vlc_object_logger(p_demux), "demux", module,
+                                   strict, demux_Probe, p_demux);
     free(modbuf);
 
     if (priv->module == NULL)
         goto error;
+
+    var_Create(p_demux, "module-name", VLC_VAR_STRING);
+    var_SetString(p_demux, "module-name", module_get_object(priv->module));
 
     return p_demux;
 error:
@@ -308,9 +311,9 @@ int demux_vaControl( demux_t *demux, int query, va_list args )
             return VLC_SUCCESS;
         }
         case DEMUX_GET_PTS_DELAY:
-            if (demux->ops->get_pts_delay != NULL) {
+            if (demux->ops->demux.get_pts_delay != NULL) {
                 vlc_tick_t *pts_delay = va_arg(args, vlc_tick_t *);
-                return demux->ops->get_pts_delay(demux, pts_delay);
+                return demux->ops->demux.get_pts_delay(demux, pts_delay);
             }
             return VLC_EGENERIC;
         case DEMUX_GET_TITLE_INFO:

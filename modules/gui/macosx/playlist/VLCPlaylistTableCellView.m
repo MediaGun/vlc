@@ -41,7 +41,7 @@
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)setRepresentsCurrentPlaylistItem:(BOOL)representsCurrentPlaylistItem
@@ -84,9 +84,9 @@
     }];
 
     const BOOL validArtistString = item.artistName && item.artistName.length > 0;
-    const BOOL validAlbumString = item.albumName && item.albumName > 0;
+    const BOOL validAlbumString = item.albumName && item.albumName.length > 0;
 
-    NSString *songDetailString;
+    NSString *songDetailString = @"";
 
     if (validArtistString && validAlbumString) {
         songDetailString = [NSString stringWithFormat:@"%@ · %@", item.artistName, item.albumName];

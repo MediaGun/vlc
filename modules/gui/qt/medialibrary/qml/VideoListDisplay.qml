@@ -15,19 +15,18 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQml.Models 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQml.Models
 
-import org.videolan.vlc 0.1
-import org.videolan.medialib 0.1
+import VLC.MediaLibrary
 
-import "qrc:///util" as Util
-import "qrc:///widgets/" as Widgets
-import "qrc:///main/" as MainInterface
-import "qrc:///style/"
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.MainInterface
+import VLC.Style
 
-MainInterface.MainTableView {
+MainTableView {
     id: listView_id
 
     //---------------------------------------------------------------------------------------------
@@ -37,15 +36,13 @@ MainInterface.MainTableView {
     // NOTE: This is useful for groups because our main criteria is 'name' instead of 'title'.
     property string mainCriteria: "title"
 
-    property alias coverLabels: tableColumns.titlecoverLabels
+    property var coverLabels
 
     //---------------------------------------------------------------------------------------------
     // Private
 
-    readonly property int _nbCols: VLCStyle.gridColumnsForWidth(availableRowWidth)
-
     property var _modelSmall: [{
-        size: Math.max(2, _nbCols),
+        weight: 1,
 
         model: ({
             criteria: mainCriteria,
@@ -54,7 +51,7 @@ MainInterface.MainTableView {
 
             showSection: "title",
 
-            text: I18n.qtr("Title"),
+            text: qsTr("Title"),
 
             placeHolder: VLCStyle.noArtVideoCover,
 
@@ -64,31 +61,19 @@ MainInterface.MainTableView {
     }]
 
     property var _modelMedium: [{
-        size: 1,
-
-        model: ({
-            type: "image",
-
-            criteria: "thumbnail",
-
-            text: I18n.qtr("Cover"),
-
-            showSection: "",
-
-            placeHolder: VLCStyle.noArtVideoCover,
-
-            headerDelegate: tableColumns.titleHeaderDelegate,
-            colDelegate   : tableColumns.titleDelegate
-        })
-    }, {
-        size: Math.max(1, _nbCols - 2),
+        weight: 1,
 
         model: ({
             criteria: mainCriteria,
 
             showSection: "title",
 
-            text: I18n.qtr("Title")
+            text: qsTr("Title"),
+
+            headerDelegate: tableColumns.titleHeaderDelegate,
+            colDelegate   : tableColumns.titleDelegate,
+
+            placeHolder: VLCStyle.noArtVideoCover
         })
     }, {
         size: 1,
@@ -96,7 +81,7 @@ MainInterface.MainTableView {
         model: ({
             criteria: "duration",
 
-            text: I18n.qtr("Duration"),
+            text: qsTr("Duration"),
 
             showSection: "",
             showContextButton: true,
@@ -116,47 +101,13 @@ MainInterface.MainTableView {
     rowHeight: VLCStyle.tableCoverRow_height
 
     //---------------------------------------------------------------------------------------------
-    // Connections
-    //---------------------------------------------------------------------------------------------
-
-    Connections {
-        target: model
-        onSortCriteriaChanged: {
-            switch (model.sortCriteria) {
-            case "title":
-                listView_id.section.property = "title_first_symbol"
-                break;
-            default:
-                listView_id.section.property = ""
-            }
-        }
-    }
-
-    //---------------------------------------------------------------------------------------------
-    // Functions
-    //---------------------------------------------------------------------------------------------
-    // Events
-
-    function onLabels(model)
-    {
-        if (model === null)
-            return [];
-
-        return [
-            model.resolution_name || "",
-            model.channel         || ""
-        ].filter(function(a) { return a !== "" });
-    }
-
-    //---------------------------------------------------------------------------------------------
     // Childs
     //---------------------------------------------------------------------------------------------
 
-    Widgets.TableColumns {
+    Widgets.MLTableColumns {
         id: tableColumns
 
-        showTitleText: (listView_id.sortModel === listView_id._modelSmall)
-        showCriterias: showTitleText
+        showCriterias: (listView_id.sortModel === listView_id._modelSmall)
 
         criteriaCover: "thumbnail"
 
@@ -164,6 +115,6 @@ MainInterface.MainTableView {
         titleCover_width: VLCStyle.listAlbumCover_width
         titleCover_radius: VLCStyle.listAlbumCover_radius
 
-        titlecoverLabels: listView_id.onLabels
+        titlecoverLabels: listView_id.coverLabels
     }
 }

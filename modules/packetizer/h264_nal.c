@@ -400,10 +400,9 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
     }
 
     /* vui */
-    i_tmp = bs_read( p_bs, 1 );
-    if( i_tmp )
+    p_sps->vui_parameters_present_flag = bs_read( p_bs, 1 );
+    if( p_sps->vui_parameters_present_flag )
     {
-        p_sps->vui.b_valid = true;
         /* read the aspect ratio part if any */
         i_tmp = bs_read( p_bs, 1 );
         if( i_tmp )
@@ -450,13 +449,13 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
         /* overscan */
         i_tmp = bs_read( p_bs, 1 );
         if ( i_tmp )
-            bs_read( p_bs, 1 );
+            bs_skip( p_bs, 1 );
 
         /* video signal type */
         i_tmp = bs_read( p_bs, 1 );
         if( i_tmp )
         {
-            bs_read( p_bs, 3 );
+            bs_skip( p_bs, 3 );
             p_sps->vui.colour.b_full_range = bs_read( p_bs, 1 );
             /* colour desc */
             i_tmp = bs_read( p_bs, 1 );
@@ -502,25 +501,25 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
                 uint32_t count = bs_read_ue( p_bs ) + 1;
                 if( count > 31 )
                     return false;
-                bs_read( p_bs, 4 );
-                bs_read( p_bs, 4 );
+                bs_skip( p_bs, 4 );
+                bs_skip( p_bs, 4 );
                 for( uint32_t j = 0; j < count; j++ )
                 {
                     bs_read_ue( p_bs );
                     bs_read_ue( p_bs );
-                    bs_read( p_bs, 1 );
+                    bs_skip( p_bs, 1 );
                     if( bs_error( p_bs ) )
                         return false;
                 }
-                bs_read( p_bs, 5 );
+                bs_skip( p_bs, 5 );
                 p_sps->vui.i_cpb_removal_delay_length_minus1 = bs_read( p_bs, 5 );
                 p_sps->vui.i_dpb_output_delay_length_minus1 = bs_read( p_bs, 5 );
-                bs_read( p_bs, 5 );
+                bs_skip( p_bs, 5 );
             }
         }
 
         if( p_sps->vui.b_hrd_parameters_present_flag )
-            bs_read( p_bs, 1 ); /* low delay hrd */
+            bs_skip( p_bs, 1 ); /* low delay hrd */
 
         /* pic struct info */
         p_sps->vui.b_pic_struct_present_flag = bs_read( p_bs, 1 );
@@ -528,7 +527,7 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
         p_sps->vui.b_bitstream_restriction_flag = bs_read( p_bs, 1 );
         if( p_sps->vui.b_bitstream_restriction_flag )
         {
-            bs_read( p_bs, 1 ); /* motion vector pic boundaries */
+            bs_skip( p_bs, 1 ); /* motion vector pic boundaries */
             bs_read_ue( p_bs ); /* max bytes per pic */
             bs_read_ue( p_bs ); /* max bits per mb */
             bs_read_ue( p_bs ); /* log2 max mv h */
@@ -599,15 +598,15 @@ static bool h264_parse_picture_parameter_set_rbsp( bs_t *p_bs,
         }
     }
 
-    bs_read_ue( p_bs ); /* num_ref_idx_l0_default_active_minus1 */
-    bs_read_ue( p_bs ); /* num_ref_idx_l1_default_active_minus1 */
+    p_pps->num_ref_idx_l01_default_active_minus1[0] = bs_read_ue( p_bs );
+    p_pps->num_ref_idx_l01_default_active_minus1[1] = bs_read_ue( p_bs );
     p_pps->weighted_pred_flag = bs_read( p_bs, 1 );
     p_pps->weighted_bipred_idc = bs_read( p_bs, 2 );
     bs_read_se( p_bs ); /* pic_init_qp_minus26 */
     bs_read_se( p_bs ); /* pic_init_qs_minus26 */
     bs_read_se( p_bs ); /* chroma_qp_index_offset */
-    bs_read( p_bs, 1 ); /* deblocking_filter_control_present_flag */
-    bs_read( p_bs, 1 ); /* constrained_intra_pred_flag */
+    bs_skip( p_bs, 1 ); /* deblocking_filter_control_present_flag */
+    bs_skip( p_bs, 1 ); /* constrained_intra_pred_flag */
     p_pps->i_redundant_pic_present_flag = bs_read( p_bs, 1 );
 
     /* TODO */
@@ -775,6 +774,16 @@ bool h264_get_xps_id( const uint8_t *p_buf, size_t i_buf, uint8_t *pi_id )
     return !bs_error( &bs ) && *pi_id <= i_max;
 }
 
+uint8_t h264_get_sps_id( const h264_sequence_parameter_set_t *p_sps )
+{
+    return p_sps->i_id;
+}
+
+uint8_t h264_get_pps_sps_id( const h264_picture_parameter_set_t *p_pps )
+{
+    return p_pps->i_sps_id;
+}
+
 static const h264_level_limits_t * h264_get_level_limits( const h264_sequence_parameter_set_t *p_sps )
 {
     uint16_t i_level_number = p_sps->i_level;
@@ -845,7 +854,40 @@ bool h264_get_dpb_values( const h264_sequence_parameter_set_t *p_sps,
     return true;
 }
 
-bool h264_get_picture_size( const h264_sequence_parameter_set_t *p_sps, unsigned *p_w, unsigned *p_h,
+unsigned h264_get_max_frame_num( const h264_sequence_parameter_set_t *p_sps )
+{
+    return 1 << (p_sps->i_log2_max_frame_num + 4);
+}
+
+bool h264_is_frames_only( const h264_sequence_parameter_set_t *p_sps )
+{
+    return p_sps->frame_mbs_only_flag;
+}
+
+bool h264_using_adaptive_frames( const h264_sequence_parameter_set_t *p_sps )
+{
+    return p_sps->mb_adaptive_frame_field_flag;
+}
+
+
+bool h264_get_sps_profile_tier_level( const h264_sequence_parameter_set_t *p_sps,
+                                      uint8_t *pi_profile, uint8_t *pi_level)
+{
+    *pi_profile = p_sps->i_profile;
+    *pi_level = p_sps->i_level;
+    return true;
+}
+
+bool h264_get_constraints_set( const h264_sequence_parameter_set_t *p_sps,
+                               uint8_t *pi_constraints )
+{
+    *pi_constraints = p_sps->i_constraint_set_flags;
+    return true;
+}
+
+bool h264_get_picture_size( const h264_sequence_parameter_set_t *p_sps,
+                            unsigned *p_ox, unsigned *p_oy,
+                            unsigned *p_w, unsigned *p_h,
                             unsigned *p_vw, unsigned *p_vh )
 {
     unsigned CropUnitX = 1;
@@ -871,9 +913,32 @@ bool h264_get_picture_size( const h264_sequence_parameter_set_t *p_sps, unsigned
     *p_h = 16 * p_sps->pic_height_in_map_units_minus1 + 16;
     *p_h *= ( 2 - p_sps->frame_mbs_only_flag );
 
+    *p_ox = p_sps->frame_crop.left_offset * CropUnitX;
+    *p_oy = p_sps->frame_crop.top_offset * CropUnitY;
     *p_vw = *p_w - ( p_sps->frame_crop.left_offset + p_sps->frame_crop.right_offset ) * CropUnitX;
     *p_vh = *p_h - ( p_sps->frame_crop.bottom_offset + p_sps->frame_crop.top_offset ) * CropUnitY;
 
+    return true;
+}
+
+bool h264_get_frame_rate( const h264_sequence_parameter_set_t *p_sps,
+                         unsigned *pi_num, unsigned *pi_den )
+{
+    if(!p_sps->vui_parameters_present_flag || !p_sps->vui.i_num_units_in_tick ||
+        p_sps->vui.i_time_scale <= 1)
+        return false;
+    *pi_num = p_sps->vui.i_time_scale;
+    *pi_den = p_sps->vui.i_num_units_in_tick;
+    return true;
+}
+
+bool h264_get_aspect_ratio( const h264_sequence_parameter_set_t *p_sps,
+                           unsigned *pi_num, unsigned *pi_den )
+{
+    if(!p_sps->vui.i_sar_num || !p_sps->vui.i_sar_den)
+        return false;
+    *pi_num = p_sps->vui.i_sar_num;
+    *pi_den = p_sps->vui.i_sar_den;
     return true;
 }
 
@@ -891,7 +956,7 @@ bool h264_get_colorimetry( const h264_sequence_parameter_set_t *p_sps,
                            video_color_space_t *p_colorspace,
                            video_color_range_t *p_full_range )
 {
-    if( !p_sps->vui.b_valid )
+    if( !p_sps->vui_parameters_present_flag )
         return false;
     *p_primaries =
         iso_23001_8_cp_to_vlc_primaries( p_sps->vui.colour.i_colour_primaries );
@@ -946,5 +1011,26 @@ bool h264_decode_sei_recovery_point( bs_t *p_bs, h264_sei_recovery_point_t *p_re
     //bool b_exact_match = bs_read( p_bs, 1 );
     //bool b_broken_link = bs_read( p_bs, 1 );
     //int i_changing_slice_group = bs_read( p_bs, 2 );
+    return true;
+}
+
+bool h264_decode_sei_pic_timing(  bs_t *p_bs,
+                                  const h264_sequence_parameter_set_t *p_sps,
+                                  uint8_t *pic_struct, uint8_t *output_delay  )
+{
+    if( !p_sps->vui_parameters_present_flag )
+        return false;
+
+    if( p_sps->vui.b_hrd_parameters_present_flag )
+    {
+        bs_skip( p_bs, p_sps->vui.i_cpb_removal_delay_length_minus1 + 1 );
+        *output_delay =
+            bs_read( p_bs, p_sps->vui.i_dpb_output_delay_length_minus1 + 1 );
+    }
+
+    if( p_sps->vui.b_pic_struct_present_flag )
+        *pic_struct = bs_read( p_bs, 4 );
+
+    /* + unparsed remains */
     return true;
 }

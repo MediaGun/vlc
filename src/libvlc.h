@@ -26,6 +26,10 @@
 
 #include <vlc_input_item.h>
 
+# ifdef __cplusplus
+extern "C" {
+# endif
+
 extern const char psz_vlc_changeset[];
 
 typedef struct variable_t variable_t;
@@ -53,17 +57,10 @@ void vlc_trace (const char *fn, const char *file, unsigned line);
  * Logging
  */
 typedef struct vlc_logger vlc_logger_t;
+typedef struct vlc_tracer vlc_tracer_t;
 
 int vlc_LogPreinit(libvlc_int_t *) VLC_USED;
 void vlc_LogInit(libvlc_int_t *);
-
-/*
- * Tracing
- */
-typedef struct vlc_tracer vlc_tracer_t;
-
-void vlc_tracer_Init(libvlc_int_t *);
-void vlc_tracer_Destroy(libvlc_int_t *);
 
 /*
  * LibVLC exit event handling
@@ -206,15 +203,13 @@ int intf_InsertItem(libvlc_int_t *, const char *mrl, unsigned optc,
                     const char * const *optv, unsigned flags);
 void intf_DestroyAll( libvlc_int_t * );
 
-int vlc_MetadataRequest(libvlc_int_t *libvlc, input_item_t *item,
-                        input_item_meta_request_option_t i_options,
-                        const struct vlc_metadata_cbs *cbs,
-                        void *cbs_userdata,
-                        int timeout, void *id);
-
 /*
  * Variables stuff
  */
 void var_OptionParse (vlc_object_t *, const char *, bool trusted);
+
+# ifdef __cplusplus
+} // extern "C"
+# endif
 
 #endif

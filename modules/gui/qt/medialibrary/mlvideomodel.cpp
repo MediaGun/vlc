@@ -33,12 +33,6 @@ QVariantList getVariantList(const QList<T> & desc)
     return list;
 }
 
-QHash<QByteArray, vlc_ml_sorting_criteria_t> MLVideoModel::M_names_to_criteria = {
-    {"title", VLC_ML_SORTING_ALPHA},
-    {"duration", VLC_ML_SORTING_DURATION},
-    {"playcount", VLC_ML_SORTING_PLAYCOUNT},
-};
-
 MLVideoModel::MLVideoModel(QObject* parent)
     : MLBaseModel(parent)
 {
@@ -107,25 +101,30 @@ QVariant MLVideoModel::itemRoleData(MLItem *item, int role) const
         case VIDEO_IS_FAVORITE:
             return QVariant::fromValue( video->isFavorite() );
         case VIDEO_FILENAME:
-            return QVariant::fromValue( video->getFileName() );
+            return QVariant::fromValue( video->fileName() );
         case VIDEO_TITLE:
-            return QVariant::fromValue( video->getTitle() );
+            return QVariant::fromValue( video->title() );
         case VIDEO_THUMBNAIL:
         {
             vlc_ml_thumbnail_status_t status;
-            const QString thumbnail = video->getThumbnail(&status);
+            const QString thumbnail = video->smallCover(&status);
             if (status == VLC_ML_THUMBNAIL_STATUS_MISSING || status == VLC_ML_THUMBNAIL_STATUS_FAILURE)
             {
                 generateThumbnail(item->getId().id);
             }
             return QVariant::fromValue( thumbnail );
         }
+        case VIDEO_IS_LOCAL:
+        {
+            QUrl videoUrl(video->getMRL());
+            return QVariant::fromValue( videoUrl.isLocalFile() );
+        }
         case VIDEO_DURATION:
-            return QVariant::fromValue( video->getDuration() );
+            return QVariant::fromValue( video->duration() );
         case VIDEO_PROGRESS:
-            return QVariant::fromValue( video->getProgress() );
+            return QVariant::fromValue( video->progress() );
         case VIDEO_PLAYCOUNT:
-            return QVariant::fromValue( video->getPlayCount() );
+            return QVariant::fromValue( video->playCount() );
         case VIDEO_RESOLUTION:
             return QVariant::fromValue( video->getResolutionName() );
         case VIDEO_CHANNEL:
@@ -138,8 +137,10 @@ QVariant MLVideoModel::itemRoleData(MLItem *item, int role) const
             return getVariantList( video->getVideoDesc() );
         case VIDEO_AUDIO_TRACK:
             return getVariantList( video->getAudioDesc() );
+        case VIDEO_SUBTITLE_TRACK:
+            return getVariantList( video->getSubtitleDesc() );
         case VIDEO_TITLE_FIRST_SYMBOL:
-            return QVariant::fromValue( getFirstSymbol( video->getTitle() ) );
+            return QVariant::fromValue( getFirstSymbol( video->title() ) );
 
         default:
             return {};
@@ -155,6 +156,7 @@ QHash<int, QByteArray> MLVideoModel::roleNames() const
         { VIDEO_FILENAME, "fileName" },
         { VIDEO_TITLE, "title" },
         { VIDEO_THUMBNAIL, "thumbnail" },
+        { VIDEO_IS_LOCAL, "isLocal"},
         { VIDEO_DURATION, "duration" },
         { VIDEO_PROGRESS, "progress" },
         { VIDEO_PLAYCOUNT, "playcount" },
@@ -164,33 +166,18 @@ QHash<int, QByteArray> MLVideoModel::roleNames() const
         { VIDEO_DISPLAY_MRL, "display_mrl" },
         { VIDEO_AUDIO_TRACK, "audioDesc" },
         { VIDEO_VIDEO_TRACK, "videoDesc" },
+        { VIDEO_SUBTITLE_TRACK, "subtitleDesc" },
         { VIDEO_TITLE_FIRST_SYMBOL, "title_first_symbol"},
     };
 }
 
-vlc_ml_sorting_criteria_t MLVideoModel::roleToCriteria(int role) const
-{
-    switch(role)
-    {
-        case VIDEO_TITLE:
-            return VLC_ML_SORTING_ALPHA;
-        case VIDEO_DURATION:
-            return VLC_ML_SORTING_DURATION;
-        case VIDEO_PLAYCOUNT:
-            return VLC_ML_SORTING_PLAYCOUNT;
-        default:
-            return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 vlc_ml_sorting_criteria_t MLVideoModel::nameToCriteria(QByteArray name) const
 {
-    return M_names_to_criteria.value(name, VLC_ML_SORTING_DEFAULT);
-}
-
-QByteArray MLVideoModel::criteriaToName(vlc_ml_sorting_criteria_t criteria) const
-{
-    return M_names_to_criteria.key(criteria, "");
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        {"title", VLC_ML_SORTING_ALPHA},
+        {"duration", VLC_ML_SORTING_DURATION},
+        {"playcount", VLC_ML_SORTING_PLAYCOUNT},
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
 // Protected MLBaseModel reimplementation
@@ -234,7 +221,7 @@ void MLVideoModel::onVlcMlEvent(const MLEvent &event)
 void MLVideoModel::thumbnailUpdated(const QModelIndex& idx, MLItem* mlitem, const QString& mrl, vlc_ml_thumbnail_status_t status)
 {
     auto videoItem = static_cast<MLVideo*>(mlitem);
-    videoItem->setThumbnail(status, mrl);
+    videoItem->setSmallCover(status, mrl);
     emit dataChanged(idx, idx, {VIDEO_THUMBNAIL});
 }
 
@@ -247,37 +234,33 @@ void MLVideoModel::generateThumbnail(uint64_t id) const
     });
 }
 
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLVideoModel::createLoader() const
+std::unique_ptr<MLListCacheLoader>
+MLVideoModel::createMLLoader() const
 {
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLVideoModel::Loader>(*this));
 }
 
-size_t MLVideoModel::Loader::count(vlc_medialibrary_t* ml) const /* override */
+size_t MLVideoModel::Loader::count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams().toCQueryParams();
-
     int64_t id = m_parent.id;
 
     if (id <= 0)
-        return vlc_ml_count_video_media(ml, &params);
+        return vlc_ml_count_video_media(ml, queryParams);
     else
-        return vlc_ml_count_video_of(ml, &params, m_parent.type, id);
+        return vlc_ml_count_video_of(ml, queryParams, m_parent.type, id);
 }
 
 std::vector<std::unique_ptr<MLItem>>
-MLVideoModel::Loader::load(vlc_medialibrary_t* ml, size_t index, size_t count) const /* override */
+MLVideoModel::Loader::load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams(index, count).toCQueryParams();
-
     ml_unique_ptr<vlc_ml_media_list_t> list;
 
     int64_t id = m_parent.id;
 
     if (id <= 0)
-        list.reset(vlc_ml_list_video_media(ml, &params));
+        list.reset(vlc_ml_list_video_media(ml, queryParams));
     else
-        list.reset(vlc_ml_list_video_of(ml, &params, m_parent.type, id));
+        list.reset(vlc_ml_list_video_of(ml, queryParams, m_parent.type, id));
 
     if (list == nullptr)
         return {};
@@ -302,3 +285,8 @@ MLVideoModel::Loader::loadItemById(vlc_medialibrary_t* ml, MLItemId itemId) cons
     return std::make_unique<MLVideo>(media.get());
 }
 
+/* Q_INVOKABLE */ QUrl MLVideoModel::getParentURL(const QModelIndex &index)
+{
+    MLVideo *video = static_cast<MLVideo *>(item(index.row()));
+    return getParentURLFromMLItem(video);
+}

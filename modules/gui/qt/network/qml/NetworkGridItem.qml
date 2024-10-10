@@ -15,15 +15,16 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQml.Models 2.12
-import QtGraphicalEffects 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQml.Models
+import Qt5Compat.GraphicalEffects
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Network
+import VLC.Style
+import VLC.Util
 
 Widgets.GridItem {
     id: root
@@ -31,13 +32,8 @@ Widgets.GridItem {
     property var model: ({})
     property int index: -1
 
-    width: VLCStyle.gridItem_network_width
-    height: VLCStyle.gridItem_network_height
-
     pictureWidth: VLCStyle.gridCover_network_width
     pictureHeight: VLCStyle.gridCover_network_height
-
-    playCoverBorderWidth: VLCStyle.gridCover_network_border
 
     playCoverShowPlay: (model.type !== NetworkMediaModel.TYPE_NODE
                         &&
@@ -50,38 +46,49 @@ Widgets.GridItem {
         return ""
     }
 
-    fallbackImage: {
-        const f = function(type) {
-            switch (type) {
-            case NetworkMediaModel.TYPE_DISC:
-                return "qrc://sd/disc.svg"
-            case NetworkMediaModel.TYPE_CARD:
-                return "qrc://sd/capture-card.svg"
-            case NetworkMediaModel.TYPE_STREAM:
-                return "qrc://sd/stream.svg"
-            case NetworkMediaModel.TYPE_PLAYLIST:
-                return "qrc://sd/playlist.svg"
-            case NetworkMediaModel.TYPE_FILE:
-                return "qrc://sd/file.svg"
-            default:
-                return "qrc://sd/directory.svg"
-            }
-        }
+    cacheImage: true // we may have network thumbnail
 
-        return SVGColorImage.colorize(f(model.type))
+    fallbackImage: {
+        return SVGColorImage.colorize(model.artworkFallback)
                             .color1(root.colorContext.fg.primary)
                             .accent(root.colorContext.accent)
                             .uri()
     }
 
-    title: model.name || I18n.qtr("Unknown share")
+    title: model.name || qsTr("Unknown share")
     subtitle: {
-       if (!model.mrl) {
-         return ""
-       } else if ((model.type === NetworkMediaModel.TYPE_NODE || model.type === NetworkMediaModel.TYPE_DIRECTORY) && model.mrl.toString() === "vlc://nop") {
-         return ""
-      } else {
-         return model.mrl
-      }
+        // make sure subtitle is never empty otherwise it causes alignment issues
+        const defaultTxt = "--"
+
+        const mrl = model.mrl?.toString() || ""
+        const type = model.type
+
+        if ((type === NetworkMediaModel.TYPE_NODE || type === NetworkMediaModel.TYPE_DIRECTORY)
+            && (mrl === "vlc://nop"))
+            return defaultTxt
+
+        return mrl || defaultTxt
+    }
+
+    pictureOverlay: Item {
+        width: root.pictureWidth
+        height: root.pictureHeight
+
+        Widgets.VideoProgressBar {
+            id: progressBar
+
+            anchors {
+                bottom: parent.bottom
+                left: parent.left
+                right: parent.right
+            }
+
+            visible: (model.progress ?? - 1) > 0
+
+            radius: root.pictureRadius
+            value:  visible
+                    ? Helpers.clamp(model.progress, 0, 1)
+                    : 0
+        }
     }
 }

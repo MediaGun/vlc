@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Copyright (C) 2019 VLC authors and VideoLAN
+ * Copyright (C) 2024 VLC authors and VideoLAN
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,52 +15,43 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
-import QtQml.Models 2.12
-import QtGraphicalEffects 1.12
-import QtQuick.Window 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQml.Models
+import Qt5Compat.GraphicalEffects
+import QtQuick.Window
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
-
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
-import "qrc:///playlist/" as PL
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///dialogs/" as DG
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.Playlist
+import VLC.Player
+import VLC.PlayerControls
+import VLC.Dialogs
+import VLC.Util
 
 FocusScope {
     id: rootPlayer
 
     // Properties
 
-    //menu/overlay to dismiss
-    property var menu: undefined
+    //behave like a Page
+    property var pagePrefix: []
 
-    property bool hasEmbededVideo: MainCtx.hasEmbededVideo
-
-    readonly property int positionSliderY: controlBarView.y + controlBarView.sliderY
+    readonly property int positionSliderY: controlBar.y + controlBar.sliderY
 
     readonly property string coverSource: {
-        if (mainPlaylistController.currentItem.artwork && mainPlaylistController.currentItem.artwork.toString())
-            mainPlaylistController.currentItem.artwork
+        if (MainPlaylistController.currentItem.artwork &&
+            MainPlaylistController.currentItem.artwork.toString())
+            MainPlaylistController.currentItem.artwork
         else if (Player.hasVideoOutput)
             VLCStyle.noArtVideoCover
         else
             VLCStyle.noArtAlbumCover
-
     }
 
     // Private
-
-    property int _lockAutoHide: 0
-
-    readonly property bool _autoHide: _lockAutoHide == 0
-                                      && rootPlayer.hasEmbededVideo
-                                      && Player.hasVideoOutput
-                                      && playlistpopup.state !== "visible"
 
     property bool _controlsUnderVideo: (MainCtx.pinVideoControls
                                         &&
@@ -73,7 +64,7 @@ FocusScope {
     layer.enabled: (StackView.status === StackView.Deactivating || StackView.status === StackView.Activating)
 
     Accessible.role: Accessible.Client
-    Accessible.name: I18n.qtr("Player")
+    Accessible.name: qsTr("Player")
 
     // Events
 
@@ -81,7 +72,7 @@ FocusScope {
     Component.onDestruction: MainCtx.preferHotkeys = false
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: {
+    Keys.onPressed: (event) => {
         if (event.accepted)
             return
 
@@ -90,73 +81,41 @@ FocusScope {
         rootPlayer.Navigation.defaultKeyAction(event)
 
         //unhandled keys are forwarded as hotkeys
-        if (!event.accepted || controlBarView.state !== "visible")
+        if (!event.accepted || controlBar.state !== "visible")
             MainCtx.sendHotkey(event.key, event.modifiers);
     }
 
-    Keys.onReleased: {
+    Keys.onReleased: (event) => {
         if (event.accepted || _keyPressed === false)
             return
 
         _keyPressed = false
 
-        if (event.key === Qt.Key_Menu) {
-            toolbarAutoHide.toggleForceVisible()
-        } else {
-            rootPlayer.Navigation.defaultKeyReleaseAction(event)
-        }
-    }
-
-
-    on_AutoHideChanged: {
-        if (_autoHide)
-            toolbarAutoHide.restart()
+        rootPlayer.Navigation.defaultKeyReleaseAction(event)
     }
 
     on_ControlsUnderVideoChanged: {
         lockUnlockAutoHide(_controlsUnderVideo)
-        if (_controlsUnderVideo)
-            toolbarAutoHide.setVisibleControlBar(true)
     }
 
     // Functions
 
-    function applyMenu(menu) {
-        if (rootPlayer.menu === menu)
-            return
-
-        // NOTE: When applying a new menu we hide the previous one.
-        if (menu)
-            dismiss()
-
-        rootPlayer.menu = menu
-    }
-
-    function dismiss() {
-        if ((typeof menu === undefined) || !menu)
-            return
-        if (menu.hasOwnProperty("dismiss"))
-            menu.dismiss()
-        else if (menu.hasOwnProperty("close"))
-            menu.close()
-    }
-
     function lockUnlockAutoHide(lock) {
-        _lockAutoHide += lock ? 1 : -1;
-        console.assert(_lockAutoHide >= 0)
+        if (lock) {
+            playerToolbarVisibilityFSM.lock()
+        } else {
+            playerToolbarVisibilityFSM.unlock()
+        }
     }
 
     // Private
 
     function _onNavigationCancel() {
-        if (rootPlayer.hasEmbededVideo && controlBarView.state === "visible") {
-            toolbarAutoHide.setVisibleControlBar(false)
-        } else {
-            if (MainCtx.hasEmbededVideo && !MainCtx.canShowVideoPIP) {
-               mainPlaylistController.stop()
-            }
-            History.previous()
+        if (MainCtx.hasEmbededVideo && !MainCtx.canShowVideoPIP) {
+            MainPlaylistController.stop()
         }
+
+        History.previous()
     }
 
     //we draw both the view and the window here
@@ -171,407 +130,470 @@ FocusScope {
         colorSet: ColorContext.Window
     }
 
+    PlayerToolbarVisibilityFSM {
+        id: playerToolbarVisibilityFSM
+
+        onForceUnlock:{
+            controlBar.forceUnlock()
+
+            topBar.forceUnlock()
+        }
+    }
+
     PlayerPlaylistVisibilityFSM {
         id: playlistVisibility
-
-        onShowPlaylist: {
-            rootPlayer.lockUnlockAutoHide(true)
-            MainCtx.playlistVisible = true
-        }
-
-        onHidePlaylist: {
-            rootPlayer.lockUnlockAutoHide(false)
-            MainCtx.playlistVisible = false
-        }
     }
 
     Connections {
         target: MainCtx
 
         //playlist
-        onPlaylistDockedChanged: playlistVisibility.updatePlaylistDocked()
-        onPlaylistVisibleChanged: playlistVisibility.updatePlaylistVisible()
-        onHasEmbededVideoChanged: playlistVisibility.updateVideoEmbed()
-    }
-
-    VideoSurface {
-        id: videoSurface
-
-        ctx: MainCtx
-        visible: rootPlayer.hasEmbededVideo
-        enabled: rootPlayer.hasEmbededVideo
-        anchors.fill: parent
-        anchors.topMargin: rootPlayer._controlsUnderVideo ? topcontrolView.height : 0
-        anchors.bottomMargin: rootPlayer._controlsUnderVideo ? controlBarView.height : 0
-
-        onMouseMoved: {
-            //short interval for mouse events
-            toolbarAutoHide.setVisible(1000)
+        function onPlaylistDockedChanged() {
+            playlistVisibility.updatePlaylistDocked()
+        }
+        function onPlaylistVisibleChanged() {
+            playlistVisibility.updatePlaylistVisible()
+        }
+        function onHasEmbededVideoChanged() {
+            playlistVisibility.updateVideoEmbed()
+            playerToolbarVisibilityFSM.updateVideoEmbed()
+        }
+        function onAskShow() {
+            playerToolbarVisibilityFSM.askShow()
         }
     }
 
-    // background image
-    Rectangle {
-        visible: !rootPlayer.hasEmbededVideo
-        focus: false
-        color: bgtheme.bg.primary
-        anchors.fill: parent
+    Loader {
+        id: playerSpecializationLoader
 
-        readonly property ColorContext colorContext: ColorContext {
-            id: bgtheme
-            colorSet: ColorContext.View
+        anchors {
+            left: parent.left
+            right: parent.right
+            top: (MainCtx.hasEmbededVideo && !rootPlayer._controlsUnderVideo) ? parent.top : topBar.bottom
+            bottom: (MainCtx.hasEmbededVideo && !rootPlayer._controlsUnderVideo) ? parent.bottom : controlBar.top
         }
 
-        PlayerBlurredBackground {
-            id: backgroundImage
+        sourceComponent: MainCtx.hasEmbededVideo ? videoComponent : audioComponent
 
-            //destination aspect ratio
-            readonly property real dar: parent.width / parent.height
+        property int cursorShape
 
-            anchors.centerIn: parent
-            width: (cover.sar < dar) ? parent.width :  parent.height * cover.sar
-            height: (cover.sar < dar) ? parent.width / cover.sar :  parent.height
+        Component {
+            id: videoComponent
 
-            source: cover
+            FocusScope {
+                // Video
 
-            screenColor: VLCStyle.setColorAlpha(bgtheme.bg.primary, .55)
-            overlayColor: VLCStyle.setColorAlpha(Qt.tint(bgtheme.fg.primary, bgtheme.bg.primary), 0.4)
+                focus: true
+
+                VideoSurface {
+                    id: videoSurface
+
+                    anchors.fill: parent
+
+                    videoSurfaceProvider: MainCtx.videoSurfaceProvider
+
+                    visible: MainCtx.hasEmbededVideo
+
+                    focus: true
+
+                    cursorShape: playerSpecializationLoader.cursorShape
+
+                    onMouseMoved: {
+                        //short interval for mouse events
+                        if (Player.isInteractive)
+                            interactiveAutoHideTimer.restart()
+                        else
+                            playerToolbarVisibilityFSM.mouseMove();
+                    }
+
+                    Binding on cursorShape {
+                        when: topBar.state === "hidden"
+                              && controlBar.state === "hidden"
+                              && !interactiveAutoHideTimer.running
+                        value: Qt.BlankCursor
+                    }
+                }
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+
+                    implicitHeight: VLCStyle.dp(206, VLCStyle.scale)
+
+                    opacity: topBar.opacity
+                    visible: !topBarAcrylicBg.visible
+
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(0, 0, 0, .8) }
+                        GradientStop { position: 1; color: "transparent" }
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+
+                    implicitHeight: VLCStyle.dp(206, VLCStyle.scale)
+
+                    opacity: controlBar.opacity
+
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: "transparent" }
+                        GradientStop { position: .64; color: Qt.rgba(0, 0, 0, .8) }
+                        GradientStop { position: 1; color: "black" }
+                    }
+
+                    visible: !(controlBar.background && controlBar.background.visible)
+                }
+            }
+        }
+
+        Component {
+            id: audioComponent
+
+            FocusScope {
+                // Audio
+
+                focus: true
+
+                // background image
+                Rectangle {
+                    focus: false
+                    color: bgtheme.bg.primary
+                    anchors.fill: parent
+
+                    readonly property ColorContext colorContext: ColorContext {
+                        id: bgtheme
+                        colorSet: ColorContext.View
+                    }
+
+                    PlayerBlurredBackground {
+                        id: backgroundImage
+
+                        //destination aspect ratio
+                        readonly property real dar: parent.width / parent.height
+
+                        anchors.centerIn: parent
+                        width: (cover.sar < dar) ? parent.width :  parent.height * cover.sar
+                        height: (cover.sar < dar) ? parent.width / cover.sar :  parent.height
+
+                        source: cover
+
+                        screenColor: bgtheme.bg.primary.alpha(.55)
+                        overlayColor: Qt.tint(bgtheme.fg.primary, bgtheme.bg.primary).alpha(0.4)
+                    }
+                }
+
+                MouseArea {
+                    id: centerContent
+
+                    readonly property ColorContext colorContext: ColorContext {
+                        id: centerTheme
+                        colorSet: ColorContext.View
+                    }
+
+                    anchors.fill: parent
+                    anchors.topMargin: VLCStyle.margin_xsmall
+                    anchors.bottomMargin: VLCStyle.margin_xsmall
+
+                    onWheel: (wheel) => {
+                        wheel.accepted = true
+
+                        var delta = wheel.angleDelta.y
+
+                        if (delta === 0)
+                            return
+
+                        Helpers.applyVolume(Player, delta)
+                    }
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 0
+
+                        Item {
+                            id: coverItem
+                            Layout.preferredHeight: rootPlayer.height / sizeConstant
+                            Layout.preferredWidth: cover.paintedWidth
+                            Layout.maximumHeight: centerContent.height
+                            Layout.alignment: Qt.AlignHCenter
+
+                            readonly property real sizeConstant: 2.7182
+
+                            Image {
+                                id: cover
+
+                                //source aspect ratio
+                                readonly property real sar: paintedWidth / paintedHeight
+                                readonly property int maximumWidth: Helpers.alignUp((Screen.desktopAvailableWidth / coverItem.sizeConstant), 32)
+                                readonly property int maximumHeight: Helpers.alignUp((Screen.desktopAvailableHeight / coverItem.sizeConstant), 32)
+
+                                readonly property int maximumSize: Math.min(maximumWidth, maximumHeight)
+
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                source: VLCAccessImage.uri(rootPlayer.coverSource)
+                                fillMode: Image.PreserveAspectFit
+                                mipmap: true
+                                cache: false
+                                asynchronous: true
+
+                                sourceSize: Qt.size(maximumSize, maximumSize)
+
+                                Accessible.role: Accessible.Graphic
+                                Accessible.name: qsTr("Cover")
+
+                                onStatusChanged: {
+                                    if (status === Image.Ready)
+                                        backgroundImage.scheduleUpdate()
+                                }
+
+                                // TODO: Qt >= 6.4 Investigate using MultiEffect.
+                                Widgets.DoubleShadow {
+                                    anchors.centerIn: parent
+                                    sourceItem: parent
+
+                                    cache: false
+
+                                    primaryVerticalOffset: VLCStyle.dp(24)
+                                    primaryBlurRadius: VLCStyle.dp(54)
+                                    secondaryVerticalOffset: VLCStyle.dp(5)
+                                    secondaryBlurRadius: VLCStyle.dp(14)
+                                }
+                            }
+                        }
+
+                        Widgets.SubtitleLabel {
+                            id: albumLabel
+
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: VLCStyle.margin_xxlarge
+
+                            Binding on visible {
+                                delayed: true
+                                when: albumLabel.componentCompleted
+                                value: centerContent.height > (albumLabel.y + albumLabel.height)
+                            }
+
+                            text: MainPlaylistController.currentItem.album
+                            font.pixelSize: VLCStyle.fontSize_xxlarge
+                            horizontalAlignment: Text.AlignHCenter
+                            color: centerTheme.fg.primary
+                            Accessible.description: qsTr("album")
+
+                            property bool componentCompleted: false
+
+                            Component.onCompleted: {
+                                componentCompleted = true
+                            }
+                        }
+
+                        Widgets.MenuLabel {
+                            id: artistLabel
+
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: VLCStyle.margin_small
+
+                            Binding on visible {
+                                delayed: true
+                                when: artistLabel.componentCompleted
+                                value: centerContent.height > (artistLabel.y + artistLabel.height)
+                            }
+
+                            text: MainPlaylistController.currentItem.artist
+                            font.weight: Font.Light
+                            horizontalAlignment: Text.AlignHCenter
+                            color: centerTheme.fg.primary
+                            Accessible.description: qsTr("artist")
+
+                            property bool componentCompleted: false
+
+                            Component.onCompleted: {
+                                componentCompleted = true
+                            }
+                        }
+
+                        Widgets.NavigableRow {
+                            id: audioControls
+
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: VLCStyle.margin_large
+
+                            Binding on visible {
+                                delayed: true
+                                when: audioControls.componentCompleted
+                                value: Player.videoTracks.count === 0 && centerContent.height > (audioControls.y + audioControls.height)
+                            }
+
+                            focus: true
+                            spacing: VLCStyle.margin_xxsmall
+                            Navigation.parentItem: rootPlayer
+                            Navigation.upItem: topBar
+                            Navigation.downItem: Player.isInteractive ? toggleControlBarButton : controlBar
+
+                            property bool componentCompleted: false
+
+                            Component.onCompleted: {
+                                componentCompleted = true
+                            }
+
+                            model: ObjectModel {
+                                Widgets.IconToolButton {
+                                    text: VLCIcons.skip_back
+                                    font.pixelSize: VLCStyle.icon_audioPlayerButton
+                                    onClicked: Player.jumpBwd()
+                                    description: qsTr("Step back")
+                                }
+
+                                Widgets.IconToolButton {
+                                    text: VLCIcons.visualization
+                                    font.pixelSize: VLCStyle.icon_audioPlayerButton
+                                    onClicked: Player.toggleVisualization()
+                                    description: qsTr("Visualization")
+                                }
+
+                                Widgets.IconToolButton{
+                                    text: VLCIcons.skip_for
+                                    font.pixelSize: VLCStyle.icon_audioPlayerButton
+                                    onClicked: Player.jumpFwd()
+                                    description: qsTr("Step forward")
+                                }
+                            }
+                        }
+                    }
+
+                    Widgets.SubtitleLabel {
+                        id: labelVolume
+
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+
+                        anchors.rightMargin: VLCStyle.margin_normal
+                        anchors.topMargin: VLCStyle.margin_xxsmall
+
+                        visible: false
+
+                        text: qsTr("Volume %1%").arg(Math.round(Player.volume * 100))
+
+                        color: centerTheme.fg.primary
+
+                        font.weight: Font.Normal
+
+                        Connections {
+                            target: Player
+
+                            function onVolumeChanged() {
+                                animationVolume.restart()
+                            }
+                        }
+
+                        SequentialAnimation {
+                            id: animationVolume
+
+                            PropertyAction { target: labelVolume; property: "visible"; value: true }
+
+                            PauseAnimation { duration: VLCStyle.duration_humanMoment }
+
+                            PropertyAction { target: labelVolume; property: "visible"; value: false }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Backgrounds of topControlbar and controlBar are drawn separately since they can outgrow their content
-    Component {
-        id: backgroundForPinnedControls
+    TopBar {
+        id: topBar
 
-        Rectangle {
-            width: rootPlayer.width
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
 
-            opacity: MainCtx.pinOpacity
+        z: 1
 
-            color: windowTheme.bg.primary
+        topMargin: VLCStyle.applicationVerticalMargin
+        sideMargin: VLCStyle.applicationHorizontalMargin
+
+        textWidth: playlistVisibility.isPlaylistVisible
+                 ? rootPlayer.width - playlistpopup.width
+                 : rootPlayer.width
+
+        // NOTE: With pinned controls, the top controls are hidden when switching to
+        //       fullScreen. Except when resume is visible
+        visible: (MainCtx.pinVideoControls === false
+                  ||
+                  MainCtx.intfMainWindow.visibility !== Window.FullScreen
+                  ||
+                  resumeVisible)
+
+        focus: true
+        title: MainPlaylistController.currentItem.title
+
+        pinControls: MainCtx.pinVideoControls
+
+        showCSD: MainCtx.clientSideDecoration && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
+        showToolbar: MainCtx.hasToolbarMenu && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
+
+        Navigation.parentItem: rootPlayer
+        Navigation.downItem: {
+            if (playlistVisibility.isPlaylistVisible)
+                return playlistpopup
+            if (MainCtx.hasEmbededVideo)
+                return playerSpecializationLoader
+            if (Player.isInteractive)
+                return toggleControlBarButton
+            return controlBar
         }
-    }
 
-    Component {
-        id: acrylicBackground
+        //initial state value is "", using a binding avoid animation on startup
+        Binding on state {
+            when: playerToolbarVisibilityFSM.started
+            value: playerToolbarVisibilityFSM.isVisible ? "visible" : "hidden"
+        }
 
+        onTogglePlaylistVisibility: playlistVisibility.togglePlaylistVisibility()
+
+        onRequestLockUnlockAutoHide: (lock) => {
+            rootPlayer.lockUnlockAutoHide(lock)
+        }
+
+        onBackRequested: {
+            if (MainCtx.hasEmbededVideo && !MainCtx.canShowVideoPIP) {
+               MainPlaylistController.stop()
+            }
+            MainCtx.requestShowMainView()
+        }
+
+        FadeControllerStateGroup {
+            target: topBar
+        }
+
+        // TODO: Make TopBar a Control and use background
         Widgets.AcrylicBackground {
-            width: rootPlayer.width
+            id: topBarAcrylicBg
 
-            visible: (rootPlayer._controlsUnderVideo || topcontrolView.resumeVisible)
+            z: -1
+
+            anchors.fill: parent
 
             opacity: (MainCtx.intfMainWindow.visibility === Window.FullScreen) ? MainCtx.pinOpacity
                                                                                : 1.0
 
             tintColor: windowTheme.bg.primary
-        }
-    }
 
-    /* top control bar background */
-    Widgets.LoaderFade {
-        width: parent.width
-
-        state: topcontrolView.state
-
-        height: item.height
-
-        sourceComponent: {
-            if (MainCtx.pinVideoControls)
-                return acrylicBackground
-            else
-                return topcontrolViewBackground
-        }
-
-        onItemChanged: {
-            if (rootPlayer._controlsUnderVideo)
-                item.height = Qt.binding(function () { return topcontrolView.height + topcontrolView.anchors.topMargin; })
-        }
-
-        Component {
-            id: topcontrolViewBackground
-
-            Rectangle {
-                width: rootPlayer.width
-                height: VLCStyle.dp(206, VLCStyle.scale)
-
-                visible: rootPlayer.hasEmbededVideo
-
-                gradient: Gradient {
-                    GradientStop { position: 0; color: Qt.rgba(0, 0, 0, .8) }
-                    GradientStop { position: 1; color: "transparent" }
-                }
-            }
-        }
-    }
-
-    /* bottom control bar background */
-    Widgets.LoaderFade {
-        anchors.bottom: controlBarView.bottom
-        anchors.left: controlBarView.left
-        anchors.right: controlBarView.right
-
-        height: item.height
-
-        state: controlBarView.state
-
-        sourceComponent: (MainCtx.pinVideoControls)
-                         ? backgroundForPinnedControls
-                         : (rootPlayer.hasEmbededVideo ? forVideoMedia : forMusicMedia)
-
-        onItemChanged: {
-            if (rootPlayer._controlsUnderVideo)
-                item.height = Qt.binding(function () { return rootPlayer.height - rootPlayer.positionSliderY; })
-        }
-
-        Component {
-            id: forVideoMedia
-
-            Rectangle {
-                width: rootPlayer.width
-                height: VLCStyle.dp(206, VLCStyle.scale)
-                gradient: Gradient {
-                    GradientStop { position: 0; color: "transparent" }
-                    GradientStop { position: .64; color: Qt.rgba(0, 0, 0, .8) }
-                    GradientStop { position: 1; color: "black" }
-                }
-            }
-        }
-
-        Component {
-            id: forMusicMedia
-
-            Rectangle {
-                width: controlBarView.width
-                height: controlBarView.height - (rootPlayer.positionSliderY - controlBarView.y)
-                color: windowTheme.bg.primary
-                opacity: 0.7
-            }
-        }
-    }
-
-    Widgets.LoaderFade {
-        id: topcontrolView
-
-        property bool resumeVisible: (item) ? item.resumeVisible : false
-
-        anchors {
-            top: parent.top
-            left: parent.left
-            right: parent.right
-        }
-
-        z: 1
-
-        sourceComponent: TopBar {
-            id: topbar
-
-            width: topcontrolView.width
-            height: topbar.implicitHeight
-
-            topMargin: VLCStyle.applicationVerticalMargin
-            sideMargin: VLCStyle.applicationHorizontalMargin
-
-            textWidth: (MainCtx.playlistVisible) ? rootPlayer.width - playlistpopup.width
-                                                 : rootPlayer.width
-
-            // NOTE: With pinned controls, the top controls are hidden when switching to
-            //       fullScreen. Except when resume is visible
-            visible: (MainCtx.pinVideoControls === false
-                      ||
-                      MainCtx.intfMainWindow.visibility !== Window.FullScreen
-                      ||
-                      resumeVisible)
-
-            focus: true
-            title: mainPlaylistController.currentItem.title
-
-            pinControls: MainCtx.pinVideoControls
-
-            showCSD: MainCtx.clientSideDecoration && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
-            showToolbar: MainCtx.hasToolbarMenu && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
-
-            Navigation.parentItem: rootPlayer
-            Navigation.downItem: playlistpopup.showPlaylist ? playlistpopup : (audioControls.visible ? audioControls : controlBarView)
-
-            onTogglePlaylistVisibility: playlistVisibility.togglePlaylistVisibility()
-
-            onRequestLockUnlockAutoHide: {
-                rootPlayer.lockUnlockAutoHide(lock)
-            }
-
-            onBackRequested: {
-                if (MainCtx.hasEmbededVideo && !MainCtx.canShowVideoPIP) {
-                   mainPlaylistController.stop()
-                }
-                History.previous()
-            }
-        }
-    }
-
-    Item {
-        id: centerContent
-
-        readonly property ColorContext colorContext: ColorContext {
-            id: centerTheme
-            colorSet: ColorContext.View
-        }
-
-        anchors {
-            left: parent.left
-            right: parent.right
-            top: topcontrolView.bottom
-            bottom: controlBarView.top
-            topMargin: VLCStyle.margin_xsmall
-            bottomMargin: VLCStyle.margin_xsmall
-        }
-
-        ColumnLayout {
-            anchors.centerIn: parent
-            spacing: 0
-            visible: !rootPlayer.hasEmbededVideo
-
-            Item {
-                id: coverItem
-                Layout.preferredHeight: rootPlayer.height / sizeConstant
-                Layout.preferredWidth: cover.paintedWidth
-                Layout.maximumHeight: centerContent.height
-                Layout.alignment: Qt.AlignHCenter
-
-                readonly property real sizeConstant: 2.7182
-
-                Image {
-                    id: cover
-
-                    //source aspect ratio
-                    readonly property real sar: paintedWidth / paintedHeight
-                    readonly property int maximumWidth: MainCtx.screen
-                                                          ? Helpers.alignUp((MainCtx.screen.availableGeometry.width / coverItem.sizeConstant), 32)
-                                                          : 1024
-                    readonly property int maximumHeight: MainCtx.screen
-                                                          ? Helpers.alignUp((MainCtx.screen.availableGeometry.height / coverItem.sizeConstant), 32)
-                                                          : 1024
-
-                    readonly property int maximumSize: Math.min(maximumWidth, maximumHeight)
-
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    source: rootPlayer.coverSource
-                    fillMode: Image.PreserveAspectFit
-                    mipmap: true
-                    cache: false
-                    asynchronous: true
-
-                    sourceSize: Qt.size(maximumSize, maximumSize)
-
-                    Accessible.role: Accessible.Graphic
-                    Accessible.name: I18n.qtr("Cover")
-
-                    onStatusChanged: {
-                        if (status === Image.Ready)
-                            backgroundImage.scheduleUpdate()
-                    }
-                }
-
-                //don't use a DoubleShadow here as cover size will change
-                //dynamically with the window size
-                Widgets.CoverShadow {
-                    anchors.fill: parent
-                    source: cover
-                    primaryVerticalOffset: VLCStyle.dp(24)
-                    primaryBlurRadius: VLCStyle.dp(54)
-                    secondaryVerticalOffset: VLCStyle.dp(5)
-                    secondaryBlurRadius: VLCStyle.dp(14)
-                }
-            }
-
-            Widgets.SubtitleLabel {
-                id: albumLabel
-
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: VLCStyle.margin_xxlarge
-
-                BindingCompat on visible {
-                    delayed: true
-                    value: centerContent.height > (albumLabel.y + albumLabel.height)
-                }
-
-                text: mainPlaylistController.currentItem.album
-                font.pixelSize: VLCStyle.fontSize_xxlarge
-                horizontalAlignment: Text.AlignHCenter
-                color: centerTheme.fg.primary
-                Accessible.description: I18n.qtr("album")
-            }
-
-            Widgets.MenuLabel {
-                id: artistLabel
-
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: VLCStyle.margin_small
-
-                BindingCompat on visible {
-                    delayed: true
-                    value: centerContent.height > (artistLabel.y + artistLabel.height)
-                }
-
-                text: mainPlaylistController.currentItem.artist
-                font.weight: Font.Light
-                horizontalAlignment: Text.AlignHCenter
-                color: centerTheme.fg.primary
-                Accessible.description: I18n.qtr("artist")
-            }
-
-            Widgets.NavigableRow {
-                id: audioControls
-
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: VLCStyle.margin_large
-
-                BindingCompat on visible {
-                    delayed: true
-                    value: Player.videoTracks.count === 0 && centerContent.height > (audioControls.y + audioControls.height)
-                }
-
-                focus: visible
-                spacing: VLCStyle.margin_xxsmall
-                Navigation.parentItem: rootPlayer
-                Navigation.upItem: topcontrolView
-                Navigation.downItem: controlBarView
-
-                model: ObjectModel {
-                    Widgets.IconToolButton {
-                        iconText: VLCIcons.skip_back
-                        size: VLCStyle.icon_audioPlayerButton
-                        onClicked: Player.jumpBwd()
-                        text: I18n.qtr("Step back")
-                    }
-
-                    Widgets.IconToolButton {
-                        iconText: VLCIcons.visualization
-                        size: VLCStyle.icon_audioPlayerButton
-                        onClicked: Player.toggleVisualization()
-                        text: I18n.qtr("Visualization")
-                    }
-
-                    Widgets.IconToolButton{
-                        iconText: VLCIcons.skip_for
-                        size: VLCStyle.icon_audioPlayerButton
-                        onClicked: Player.jumpFwd()
-                        text: I18n.qtr("Step forward")
-                    }
-                }
-            }
+            visible: MainCtx.pinVideoControls
         }
     }
 
     Widgets.DrawerExt {
         id: playlistpopup
 
-        property bool showPlaylist: false
-
         anchors {
             // NOTE: When the controls are pinned we display the playqueue under the topBar.
-            top: (rootPlayer._controlsUnderVideo) ? topcontrolView.bottom
+            top: (rootPlayer._controlsUnderVideo) ? topBar.bottom
                                                   : parent.top
 
             right: parent.right
@@ -582,89 +604,183 @@ FocusScope {
 
         focus: false
         edge: Widgets.DrawerExt.Edges.Right
-        state: playlistVisibility.isPlaylistVisible ? "visible" : "hidden"
-        component: Rectangle {
+
+        //initial state value is "", using a binding avoid animation on startup
+        Binding on state {
+            when: playlistVisibility.started
+            value: playlistVisibility.isPlaylistVisible ? "visible" : "hidden"
+        }
+
+        component: PlaylistListView {
+            id: playlistView
+
             width: Helpers.clamp(rootPlayer.width / resizeHandle.widthFactor
                                  , playlistView.minimumWidth
                                  , (rootPlayer.width + playlistView.rightPadding) / 2)
-
             height: playlistpopup.height
 
-            color: VLCStyle.setColorAlpha(windowTheme.bg.primary, 0.8)
+            useAcrylic: false
+            focus: true
+
+            wheelEnabled: true
+
+            rightPadding: VLCStyle.applicationHorizontalMargin
+            topPadding:  {
+                if (rootPlayer._controlsUnderVideo)
+                    return VLCStyle.margin_normal
+                else
+                    // NOTE: We increase the padding accordingly to avoid overlapping the TopBar.
+                    return topBar.reservedHeight
+            }
+
+            background: Rectangle {
+                color: windowTheme.bg.primary.alpha(0.8)
+            }
+
+            Navigation.parentItem: rootPlayer
+            Navigation.upItem: topBar
+            Navigation.downItem: Player.isInteractive ? toggleControlBarButton : controlBar
+            Navigation.leftAction: closePlaylist
+            Navigation.cancelAction: closePlaylist
+
+            function closePlaylist() {
+                playlistVisibility.togglePlaylistVisibility()
+                if (audioControls.visible)
+                    audioControls.forceActiveFocus()
+                else
+                    controlBar.forceActiveFocus()
+            }
 
 
-            PL.PlaylistListView {
-                id: playlistView
+            Widgets.HorizontalResizeHandle {
+                id: resizeHandle
 
-                useAcrylic: false
-                focus: true
+                property bool _inhibitMainCtxUpdate: false
 
-                anchors.fill: parent
-                rightPadding: VLCStyle.applicationHorizontalMargin
-                topPadding:  {
-                    if (rootPlayer._controlsUnderVideo)
-                        return VLCStyle.margin_normal
-                    else
-                        // NOTE: We increase the padding accordingly to avoid overlapping the TopBar.
-                        return topcontrolView.item.reservedHeight
+                parent: playlistView
+
+                anchors {
+                    top: parent.top
+                    bottom: parent.bottom
+                    left: parent.left
                 }
 
-                Navigation.parentItem: rootPlayer
-                Navigation.upItem: topcontrolView
-                Navigation.downItem: controlBarView
-                Navigation.leftAction: closePlaylist
-                Navigation.cancelAction: closePlaylist
+                atRight: false
+                targetWidth: playlistpopup.width
+                sourceWidth: rootPlayer.width
 
-                function closePlaylist() {
-                    playlistVisibility.togglePlaylistVisibility()
-                    if (audioControls.visible)
-                        audioControls.forceActiveFocus()
-                    else
-                        controlBarView.forceActiveFocus()
+                onWidthFactorChanged: {
+                    if (!_inhibitMainCtxUpdate)
+                        MainCtx.playerPlaylistWidthFactor = widthFactor
                 }
 
-                // TODO: remember width factor?
-                Widgets.HorizontalResizeHandle {
-                    id: resizeHandle
+                Component.onCompleted:  _updateFromMainCtx()
 
-                    anchors {
-                        top: parent.top
-                        bottom: parent.bottom
-                        left: parent.left
+                function _updateFromMainCtx() {
+                    if (widthFactor == MainCtx.playerPlaylistWidthFactor)
+                        return
+
+                    _inhibitMainCtxUpdate = true
+                    widthFactor = MainCtx.playerPlaylistWidthFactor
+                    _inhibitMainCtxUpdate = false
+                }
+
+                Connections {
+                    target: MainCtx
+
+                    function onPlaylistWidthFactorChanged() {
+                        resizeHandle._updateFromMainCtx()
                     }
-
-                    atRight: false
-                    targetWidth: playlistpopup.width
-                    sourceWidth: rootPlayer.width
                 }
             }
         }
-        onStateChanged: {
-            if (state === "hidden")
-                toolbarAutoHide.restart()
-        }
     }
 
-    DG.Dialogs {
+    Dialogs {
         z: 10
         bgContent: rootPlayer
 
         anchors {
-            bottom: controlBarView.item.visible ? controlBarView.top : rootPlayer.bottom
+            bottom: controlBar.visible ? controlBar.top : rootPlayer.bottom
             left: parent.left
             right: parent.right
 
-            bottomMargin: (rootPlayer._controlsUnderVideo || !controlBarView.item.visible)
+            bottomMargin: (rootPlayer._controlsUnderVideo || !controlBar.visible)
                           ? 0 : - VLCStyle.margin_large
         }
     }
 
-    Widgets.LoaderFade {
-        id: controlBarView
+    Timer {
+        // NavigationBox's visibility depends on this timer
+        id: interactiveAutoHideTimer
+        running: false
+        repeat: false
+        interval: 3000
+    }
 
-        readonly property int sliderY: (MainCtx.pinVideoControls) ? item.sliderY
-                                                                    - VLCStyle.margin_xxxsmall
-                                                                  : item.sliderY
+    NavigationBox {
+        id: navBox
+        visible: Player.isInteractive && navBox.show
+                    && (interactiveAutoHideTimer.running
+                    || navBox.hovered || !MainCtx.hasEmbededVideo)
+
+        x: rootPlayer.x + VLCStyle.margin_normal + VLCStyle.applicationHorizontalMargin
+        y: controlBar.y - navBox.height - VLCStyle.margin_normal
+
+        dragXMin: 0
+        dragXMax: rootPlayer.width - navBox.width
+        dragYMin: 0
+        dragYMax: rootPlayer.height - navBox.height
+
+        Drag.onDragStarted: (controlId) => {
+            navBox.x = drag.x
+            navBox.y = drag.y
+        }
+    }
+
+    Connections {
+        target: MainCtx
+        function onNavBoxToggled() { interactiveAutoHideTimer.restart() }
+    }
+
+    Connections {
+        target: rootPlayer
+        function onWidthChanged() {
+            if (navBox.x > navBox.dragXMax)
+                navBox.x = navBox.dragXMax
+        }
+        function onHeightChanged() {
+            if (navBox.y > navBox.dragYMax)
+                navBox.y = navBox.dragYMax
+        }
+    }
+
+    Widgets.ButtonExt {
+        id: toggleControlBarButton
+        visible: Player.isInteractive
+                 && MainCtx.hasEmbededVideo
+                 && !(MainCtx.pinVideoControls && !Player.fullscreen)
+                 && (interactiveAutoHideTimer.running === true
+                     || controlBar.state !== "hidden" || toggleControlBarButton.hovered)
+        focus: true
+        anchors {
+            bottom: controlBar.state === "hidden" ? parent.bottom : controlBar.top
+            horizontalCenter: parent.horizontalCenter
+        }
+        iconSize: VLCStyle.icon_large
+        iconTxt: controlBar.state === "hidden" ? VLCIcons.expand_inverted : VLCIcons.expand
+
+        Navigation.parentItem: rootPlayer
+        Navigation.upItem: playlistVisibility.isPlaylistVisible ? playlistpopup : (MainCtx.hasEmbededVideo ? playerSpecializationLoader : topBar)
+        Navigation.downItem: controlBar
+
+        onClicked:{
+            playerToolbarVisibilityFSM.askShow();
+        }
+    }
+
+    ControlBar {
+        id: controlBar
 
         anchors {
             bottom: parent.bottom
@@ -672,109 +788,94 @@ FocusScope {
             right: parent.right
         }
 
+        hoverEnabled: true
+
         focus: true
 
+        rightPadding: VLCStyle.applicationHorizontalMargin
+        leftPadding: VLCStyle.applicationHorizontalMargin
+        bottomPadding: VLCStyle.applicationVerticalMargin + VLCStyle.margin_xsmall
+
+        textPosition: (MainCtx.pinVideoControls)
+                      ? ControlBar.TimeTextPosition.LeftRightSlider
+                      : ControlBar.TimeTextPosition.AboveSlider
+
+        // hide right text so that it won't overlap with playlist
+        showRemainingTime: (textPosition !== ControlBar.TimeTextPosition.AboveSlider)
+                           || !playlistVisibility.isPlaylistVisible
+
         onStateChanged: {
-            if (state === "visible" && item)
-                item.showChapterMarks()
+            if (state === "visible")
+                showChapterMarks()
         }
 
-        sourceComponent: MouseArea {
-            id: controllerMouseArea
+        Navigation.parentItem: rootPlayer
+        Navigation.upItem: {
+            if (playlistVisibility.isPlaylistVisible)
+                return playlistpopup
+            if (Player.isInteractive)
+                return toggleControlBarButton
+            if (!MainCtx.hasEmbededVideo)
+                return playerSpecializationLoader
+            return topBar
+        }
 
-            readonly property alias sliderY: controllerId.sliderY
+        //initial state value is "", using a binding avoid animation on startup
+        Binding on state {
+            when: playerToolbarVisibilityFSM.started
+            value: playerToolbarVisibilityFSM.isVisible ? "visible" : "hidden"
+        }
 
-            height: controllerId.implicitHeight + controllerId.anchors.bottomMargin
-            width: controlBarView.width
-            hoverEnabled: true
+        onRequestLockUnlockAutoHide: (lock) => rootPlayer.lockUnlockAutoHide(lock)
 
-            function showChapterMarks() {
-                controllerId.showChapterMarks()
-            }
+        identifier: (Player.hasVideoOutput) ? PlayerControlbarModel.Videoplayer
+                                            : PlayerControlbarModel.Audioplayer
 
-            onContainsMouseChanged: rootPlayer.lockUnlockAutoHide(containsMouse)
+        onHoveredChanged: rootPlayer.lockUnlockAutoHide(hovered)
 
-            ControlBar {
-                id: controllerId
+        background: Rectangle {
+            id: controlBarBackground
 
-                focus: true
-                anchors.fill: parent
-                anchors.leftMargin: VLCStyle.applicationHorizontalMargin
-                anchors.rightMargin: VLCStyle.applicationHorizontalMargin
-                anchors.bottomMargin: VLCStyle.applicationVerticalMargin
+            visible: !MainCtx.hasEmbededVideo || MainCtx.pinVideoControls
 
-                textPosition: (MainCtx.pinVideoControls)
-                              ? ControlBar.TimeTextPosition.LeftRightSlider
-                              : ControlBar.TimeTextPosition.AboveSlider
+            opacity: MainCtx.pinVideoControls ? MainCtx.pinOpacity : 0.7
 
-                Navigation.parentItem: rootPlayer
-                Navigation.upItem: playlistpopup.showPlaylist ? playlistpopup : (audioControls.visible ? audioControls : topcontrolView)
+            color: windowTheme.bg.primary
+        }
 
-                onRequestLockUnlockAutoHide: rootPlayer.lockUnlockAutoHide(lock)
-
-                identifier: (Player.hasVideoOutput) ? PlayerControlbarModel.Videoplayer
-                                                    : PlayerControlbarModel.Audioplayer
-            }
+        FadeControllerStateGroup {
+            target: controlBar
         }
     }
 
-    Timer {
-        id: toolbarAutoHide
-        running: true
-        repeat: false
-        interval: 3000
-        onTriggered: {
-            setVisibleControlBar(false)
-        }
+    QmlAudioContextMenu {
+        id: audioContextMenu
 
-        function setVisibleControlBar(visible) {
-            if (visible)
-            {
-                controlBarView.state = "visible"
-                topcontrolView.state = "visible"
-                if (!controlBarView.focus && !topcontrolView.focus)
-                    controlBarView.forceActiveFocus()
+        ctx: MainCtx
+    }
 
-                videoSurface.cursorShape = Qt.ArrowCursor
-            }
-            else
-            {
-                if (!rootPlayer._autoHide)
-                    return;
-                controlBarView.state = "hidden"
-                topcontrolView.state = "hidden"
-                videoSurface.forceActiveFocus()
-                videoSurface.cursorShape = Qt.BlankCursor
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        enabled: !MainCtx.hasEmbededVideo
+
+        onTapped: (eventPoint, button) => {
+            if (button & Qt.RightButton) {
+                audioContextMenu.popup(eventPoint.globalPosition)
             }
         }
-
-        function setVisible(duration) {
-            setVisibleControlBar(true)
-            toolbarAutoHide.interval = duration
-            toolbarAutoHide.restart()
-        }
-
-        function toggleForceVisible() {
-            setVisibleControlBar(controlBarView.state !== "visible")
-            toolbarAutoHide.stop()
-        }
-
     }
 
     //filter key events to keep toolbar
     //visible when user navigates within the control bar
     KeyEventFilter {
-        id: filter
-        target: MainCtx.intfMainWindow
-        enabled: controlBarView.state === "visible"
-                 && (controlBarView.focus || topcontrolView.focus)
-        Keys.onPressed: toolbarAutoHide.setVisible(5000)
-    }
+    id: filter
+    target: MainCtx.intfMainWindow
 
-    Connections {
-        target: MainCtx
-        onAskShow: {
-            toolbarAutoHide.toggleForceVisible()
+        Keys.onPressed: (event) => {
+            if (Player.isInteractive)
+                interactiveAutoHideTimer.restart()
+            else
+                playerToolbarVisibilityFSM.keyboardMove()
         }
     }
 }

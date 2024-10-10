@@ -37,6 +37,7 @@
 #include <vector>
 
 #include <vlc_common.h>
+#include <vlc_arrays.h>
 #include <vlc_plugin.h>
 #include <vlc_access.h>
 #include <vlc_demux.h>
@@ -68,7 +69,7 @@ static int OpenDevice( vlc_object_t *, access_sys_t *, std::string, bool );
 static ComPtr<IBaseFilter> FindCaptureDevice( vlc_object_t *, std::string *,
                                        std::list<std::string> *, bool );
 static size_t EnumDeviceCaps( vlc_object_t *, ComPtr<IBaseFilter> &,
-                              int, int, int, int, int, int,
+                              vlc_fourcc_t, int, int, int, int, int,
                               AM_MEDIA_TYPE *mt, size_t, bool );
 static bool ConnectFilters( vlc_object_t *, access_sys_t *,
                             ComPtr<IBaseFilter> &, ComPtr<CaptureFilter> & );
@@ -299,7 +300,7 @@ struct dshow_stream_t
 
     } header;
 
-    int             i_fourcc;
+    vlc_fourcc_t    i_fourcc;
     es_out_id_t     *p_es;
 
     bool      b_pts;
@@ -316,11 +317,11 @@ static void CreateDirectShowGraph( access_sys_t *p_sys )
 
     /* Create directshow filter graph */
     if( SUCCEEDED( CoCreateInstance( CLSID_FilterGraph, 0, CLSCTX_INPROC,
-                       __uuidof(p_sys->p_graph.Get()), &p_sys->p_graph ) ) )
+                       IID_PPV_ARGS( &p_sys->p_graph ) ) ) )
     {
         /* Create directshow capture graph builder if available */
         if( SUCCEEDED( CoCreateInstance( CLSID_CaptureGraphBuilder2, 0,
-                         CLSCTX_INPROC, __uuidof(p_sys->p_capture_graph_builder2.Get()), &p_sys->p_capture_graph_builder2 ) ) )
+                         CLSCTX_INPROC, IID_PPV_ARGS( &p_sys->p_capture_graph_builder2 ) ) ) )
         {
             p_sys->p_capture_graph_builder2->
                 SetFiltergraph(static_cast<IGraphBuilder *>(p_sys->p_graph.Get()) );
@@ -440,7 +441,7 @@ static int CommonOpen( vlc_object_t *p_this, access_sys_t *p_sys,
     free( psz_val );
 
     /* Chroma */
-    psz_val = var_CreateGetString( p_this, "dshow-chroma" );
+    psz_val = var_InheritString( p_this, "dshow-chroma" );
     i_chroma = vlc_fourcc_GetCodecFromString( VIDEO_ES, psz_val );
     free( psz_val );
 
@@ -622,39 +623,6 @@ static int CommonOpen( vlc_object_t *p_this, access_sys_t *p_sys,
     return VLC_SUCCESS;
 }
 
-static void SetRGBMasks( vlc_fourcc_t i_fourcc, es_format_t *fmt )
-{
-    switch( i_fourcc )
-    {
-        case VLC_CODEC_RGB15:
-            fmt->video.i_rmask = 0x7c00;
-            fmt->video.i_gmask = 0x03e0;
-            fmt->video.i_bmask = 0x001f;
-            break;
-        case VLC_CODEC_RGB16:
-            fmt->video.i_rmask = 0xf800;
-            fmt->video.i_gmask = 0x07e0;
-            fmt->video.i_bmask = 0x001f;
-            break;
-        case VLC_CODEC_RGB24:
-            /* This is in BGR format */
-            fmt->video.i_bmask = 0x00ff0000;
-            fmt->video.i_gmask = 0x0000ff00;
-            fmt->video.i_rmask = 0x000000ff;
-            break;
-        case VLC_CODEC_RGB32:
-            /* This is in BGRx format */
-            fmt->video.i_bmask = 0xff000000;
-            fmt->video.i_gmask = 0x00ff0000;
-            fmt->video.i_rmask = 0x0000ff00;
-            break;
-        default:
-            return;
-    }
-    fmt->video.i_chroma = i_fourcc;
-    video_format_FixRgb( &fmt->video );
-}
-
 /*****************************************************************************
  * DemuxOpen: open direct show device as an access_demux module
  *****************************************************************************/
@@ -671,7 +639,7 @@ static int DemuxOpen( vlc_object_t *p_this )
         return VLC_ENOMEM;
     p_demux->p_sys = (demux_sys_t *)p_sys;
 
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     if( vlc_mta_acquire( p_this ) == false )
     {
@@ -732,9 +700,6 @@ static int DemuxOpen( vlc_object_t *p_this )
                 fmt.video.orientation = ORIENT_BOTTOM_LEFT;
             }
 
-            /* Setup rgb mask for RGB formats */
-            SetRGBMasks( p_stream->i_fourcc, &fmt );
-
             if( p_stream->header.video.AvgTimePerFrame )
             {
                 fmt.video.i_frame_rate = 10000000;
@@ -774,7 +739,7 @@ static int AccessOpen( vlc_object_t *p_this )
     if( !p_sys )
         return VLC_ENOMEM;
 
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     if( vlc_mta_acquire( p_this ) == false )
     {
@@ -831,7 +796,7 @@ static void AccessClose( vlc_object_t *p_this )
     stream_t     *p_access = (stream_t *)p_this;
     access_sys_t *p_sys    = (access_sys_t *)p_access->p_sys;
 
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     /* Stop capturing stuff */
     p_sys->p_control->Stop();
@@ -847,7 +812,7 @@ static void DemuxClose( vlc_object_t *p_this )
     demux_t      *p_demux = (demux_t *)p_this;
     access_sys_t *p_sys   = (access_sys_t *)p_demux->p_sys;
 
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     /* Stop capturing stuff */
     p_sys->p_control->Stop();
@@ -946,7 +911,7 @@ static bool ConnectFilters( vlc_object_t *p_this, access_sys_t *p_sys,
 /*
  * get fourcc priority from arbitrary preference, the higher the better
  */
-static int GetFourCCPriority( int i_fourcc )
+static int GetFourCCPriority( vlc_fourcc_t i_fourcc )
 {
     switch( i_fourcc )
     {
@@ -956,10 +921,10 @@ static int GetFourCCPriority( int i_fourcc )
     case VLC_CODEC_YV12:
     case VLC_FOURCC('a','r','a','w'):
         return 8;
-    case VLC_CODEC_RGB24:
+    case VLC_CODEC_BGR24:
         return 7;
     case VLC_CODEC_YUYV:
-    case VLC_CODEC_RGB32:
+    case VLC_CODEC_BGRX:
     case VLC_CODEC_RGBA:
         return 6;
     }
@@ -1221,7 +1186,7 @@ FindCaptureDevice( vlc_object_t *p_this, std::string *p_devicename,
     ComPtr<ICreateDevEnum> p_dev_enum;
 
     hr = CoCreateInstance( CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC,
-                           __uuidof(p_dev_enum.Get()), &p_dev_enum );
+                           IID_PPV_ARGS( &p_dev_enum ) );
     if( FAILED(hr) )
     {
         msg_Err( p_this, "failed to create the device enumerator (0x%lX)", hr);
@@ -1317,7 +1282,7 @@ FindCaptureDevice( vlc_object_t *p_this, std::string *p_devicename,
 }
 
 static size_t EnumDeviceCaps( vlc_object_t *p_this, ComPtr<IBaseFilter> &p_filter,
-                              int i_fourcc, int i_width, int i_height,
+                              vlc_fourcc_t i_fourcc, int i_width, int i_height,
                               int i_channels, int i_samplespersec,
                               int i_bitspersample, AM_MEDIA_TYPE *mt,
                               size_t mt_max, bool b_audio )
@@ -1385,7 +1350,7 @@ static size_t EnumDeviceCaps( vlc_object_t *p_this, ComPtr<IBaseFilter> &p_filte
                     {
                         if( SUCCEEDED(pSC->GetStreamCaps(i, &p_mt, static_cast<BYTE*>(pSCC))) )
                         {
-                            int i_current_fourcc = GetFourCCFromMediaType( *p_mt );
+                            vlc_fourcc_t i_current_fourcc = GetFourCCFromMediaType( *p_mt );
                             int i_current_priority = GetFourCCPriority(i_current_fourcc);
 
                             if( (i_fourcc && (i_current_fourcc != i_fourcc))
@@ -1578,7 +1543,7 @@ static size_t EnumDeviceCaps( vlc_object_t *p_this, ComPtr<IBaseFilter> &p_filte
 
         while( p_enummt->Next( 1, &p_mt, NULL ) == S_OK )
         {
-            int i_current_fourcc = GetFourCCFromMediaType( *p_mt );
+            vlc_fourcc_t i_current_fourcc = GetFourCCFromMediaType( *p_mt );
             if( !b_audio && i_current_fourcc && p_mt->majortype == MEDIATYPE_Video
                 && p_mt->formattype == FORMAT_VideoInfo )
             {
@@ -1692,7 +1657,7 @@ static size_t EnumDeviceCaps( vlc_object_t *p_this, ComPtr<IBaseFilter> &p_filte
             {
                 // the first four bytes of subtype GUID contains the codec FOURCC
                 const char *pfcc = (char *)&p_mt->subtype;
-                int i_current_fourcc = VLC_FOURCC(pfcc[0], pfcc[1], pfcc[2], pfcc[3]);
+                vlc_fourcc_t i_current_fourcc = VLC_FOURCC(pfcc[0], pfcc[1], pfcc[2], pfcc[3]);
                 if( VLC_FOURCC('H','C','W','2') == i_current_fourcc
                  && p_mt->majortype == MEDIATYPE_Video && !b_audio )
                 {
@@ -1747,7 +1712,7 @@ static size_t EnumDeviceCaps( vlc_object_t *p_this, ComPtr<IBaseFilter> &p_filte
  *****************************************************************************/
 static block_t *ReadCompressed( stream_t *p_access, bool *eof )
 {
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     access_sys_t   *p_sys = (access_sys_t *)p_access->p_sys;
     /* There must be only 1 elementary stream to produce a valid stream
@@ -1794,7 +1759,7 @@ out:
  ****************************************************************************/
 static int Demux( demux_t *p_demux )
 {
-    ComContext ctx( COINIT_MULTITHREADED );
+    ComContext ctx( COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE );
 
     access_sys_t *p_sys = (access_sys_t *)p_demux->p_sys;
     int i_found_samples;
@@ -1979,14 +1944,14 @@ static int AppendAudioEnabledVDevs( vlc_object_t *p_this, std::list<std::string>
     ComPtr<IGraphBuilder> p_gbuilder;
     ComPtr<ICaptureGraphBuilder2> p_cgbuilder;
 
-    if( FAILED( CoCreateInstance( CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER, __uuidof(p_graph.Get()), &p_graph ) ) )
+    if( FAILED( CoCreateInstance( CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS( &p_graph ) ) ) )
         return VLC_EGENERIC;
 
     if( FAILED( p_graph.As( &p_gbuilder ) ) )
         return VLC_EGENERIC;
 
     if( FAILED( CoCreateInstance( CLSID_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER,
-                                  __uuidof(p_cgbuilder.Get()), &p_cgbuilder ) ) )
+                                  IID_PPV_ARGS( &p_cgbuilder ) ) ) )
         return VLC_EGENERIC;
 
     if( FAILED( p_cgbuilder->SetFiltergraph( p_gbuilder.Get() ) ) )
@@ -2028,7 +1993,7 @@ static int FindDevices( const char *psz_name, char ***vp, char ***tp )
 
         // Use STA as this most likely comes from a Qt thread, which is
         // initialized as STA.
-        ComContext ctx( COINIT_APARTMENTTHREADED );
+        ComContext ctx( COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE );
 
         FindCaptureDevice( NULL, NULL, &list_devices, b_audio );
 

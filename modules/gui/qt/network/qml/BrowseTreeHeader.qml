@@ -16,21 +16,23 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.11
-import QtQuick.Layouts 1.11
 
-import org.videolan.vlc 0.1
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Templates as T
 
-import "qrc:///util/" as Util
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
 
-FocusScope {
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Network
+import VLC.MainInterface
+
+T.Pane {
     id: root
 
     // Network* model
-    /* required */ property var providerModel
+    required property BaseModel providerModel
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
@@ -38,14 +40,12 @@ FocusScope {
         colorSet: ColorContext.View
     }
 
-    property int leftPadding: VLCStyle.margin_large
-    property int rightPadding: VLCStyle.margin_small
-
-    property int topPadding: VLCStyle.margin_large
-    property int bottomPadding: VLCStyle.margin_normal
+    topPadding: VLCStyle.layoutTitle_top_padding
+    bottomPadding: VLCStyle.layoutTitle_bottom_padding
 
     height: implicitHeight
     implicitHeight: layout.implicitHeight + topPadding + bottomPadding
+    implicitWidth: layout.implicitWidth + leftPadding + rightPadding
 
     focus: medialibraryBtn.visible
     Navigation.navigable: medialibraryBtn.visible
@@ -53,15 +53,7 @@ FocusScope {
     RowLayout {
         id: layout
 
-        anchors {
-            fill: parent
-
-            leftMargin: root.leftPadding
-            rightMargin: root.rightPadding
-
-            topMargin: root.topPadding
-            bottomMargin: root.bottomPadding
-        }
+        anchors.fill: parent
 
         Widgets.SubtitleLabel {
             text: providerModel.name
@@ -73,18 +65,19 @@ FocusScope {
         Widgets.ButtonExt {
             id: medialibraryBtn
 
+            readonly property NetworkMediaModel networkModel: providerModel as NetworkMediaModel
+
             focus: true
 
-            iconTxt: providerModel.indexed ? VLCIcons.remove : VLCIcons.add
+            iconTxt: networkModel?.indexed ? VLCIcons.remove : VLCIcons.add
 
-            text: providerModel.indexed
-                  ? I18n.qtr("Remove from medialibrary")
-                  : I18n.qtr("Add to medialibrary")
+            text: networkModel?.indexed
+                  ? qsTr("Remove from medialibrary")
+                  : qsTr("Add to medialibrary")
 
-            visible: !providerModel.is_on_provider_list
-                     && !!providerModel.canBeIndexed
+            visible: providerModel?.canBeIndexed ?? false
 
-            onClicked: providerModel.indexed = !providerModel.indexed
+            onClicked: networkModel.indexed = !networkModel.indexed
 
             Layout.preferredWidth: implicitWidth
 

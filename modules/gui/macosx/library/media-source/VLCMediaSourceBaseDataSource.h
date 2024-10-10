@@ -22,15 +22,17 @@
 
 #import <Cocoa/Cocoa.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 typedef NS_ENUM(NSInteger, VLCMediaSourceMode) {
     VLCMediaSourceModeLAN,
     VLCMediaSourceModeInternet,
 };
 
-NS_ASSUME_NONNULL_BEGIN
-
 @class VLCInputNodePathControl;
 @class VLCMediaSourceDataSource;
+
+extern NSString * const VLCMediaSourceBaseDataSourceNodeChanged;
 
 @interface VLCMediaSourceBaseDataSource : NSObject <NSCollectionViewDataSource,
                                                     NSCollectionViewDelegate,
@@ -38,13 +40,13 @@ NS_ASSUME_NONNULL_BEGIN
                                                     NSTableViewDelegate,
                                                     NSTableViewDataSource>
 
-@property (readwrite) NSCollectionView *collectionView;
-@property (readwrite) NSScrollView *collectionViewScrollView;
-@property (readwrite) NSTableView *tableView;
-@property (readwrite) NSButton *homeButton;
-@property (readwrite) VLCInputNodePathControl *pathControl;
-@property (readwrite) NSLayoutConstraint *pathControlBottomTableViewScrollViewConstraint;
-@property (readwrite) NSLayoutConstraint *pathControlBottomCollectionViewScrollViewConstraint;
+@property (readwrite, weak) NSCollectionView *collectionView;
+@property (readwrite, weak) NSScrollView *collectionViewScrollView;
+@property (readwrite, weak) NSTableView *tableView;
+@property (readwrite, weak) NSScrollView *tableViewScrollView;
+@property (readwrite, weak) NSButton *homeButton;
+@property (readwrite, weak) VLCInputNodePathControl *pathControl;
+@property (readwrite, weak) NSVisualEffectView *pathControlVisualEffectView;
 @property (readwrite, nonatomic) VLCMediaSourceMode mediaSourceMode;
 @property (readwrite, nonatomic) VLCMediaSourceDataSource *childDataSource;
 
@@ -52,6 +54,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadViews;
 - (void)homeButtonAction:(id)sender;
 - (void)pathControlAction:(id)sender;
+
+- (void)presentLocalFolderMrl:(NSString *)mrl;
 
 @end
 

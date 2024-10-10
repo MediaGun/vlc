@@ -42,6 +42,7 @@
 #include <vlc_strings.h>
 #include <vlc_charset.h>
 #include <vlc_spu.h>
+#include <vlc_subpicture.h>
 #include "vout_internal.h"
 #include "snapshot.h"
 
@@ -57,6 +58,8 @@ static int AspectCallback( vlc_object_t *, char const *,
                            vlc_value_t, vlc_value_t, void * );
 static int AutoScaleCallback( vlc_object_t *, char const *,
                               vlc_value_t, vlc_value_t, void * );
+static int FitCallback( vlc_object_t *, char const *,
+                        vlc_value_t, vlc_value_t, void * );
 static int ZoomCallback( vlc_object_t *, char const *,
                          vlc_value_t, vlc_value_t, void * );
 static int AboveCallback( vlc_object_t *, char const *,
@@ -126,6 +129,18 @@ static const struct
     { "235:100", "2.35:1" },
     { "239:100", "2.39:1" },
     { "5:4", "5:4" },
+};
+
+static const struct
+{
+    enum vlc_video_fitting fit;
+    char psz_label[15];
+} p_fit_values[] = {
+    { VLC_VIDEO_FIT_NONE,    N_("None") },
+    { VLC_VIDEO_FIT_SMALLER, N_("Inside Window") },
+    { VLC_VIDEO_FIT_LARGER,  N_("Outside Window") },
+    { VLC_VIDEO_FIT_WIDTH,   N_("Window Width") },
+    { VLC_VIDEO_FIT_HEIGHT,  N_("Window Height") },
 };
 
 static void AddCustomRatios( vout_thread_t *p_vout, const char *psz_var,
@@ -245,6 +260,18 @@ void vout_CreateVars( vout_thread_t *p_vout )
         free( psz_buf );
     }
 
+    /* display fit */
+    var_Create( p_vout, "fit", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND |
+                VLC_VAR_DOINHERIT );
+    var_Change( p_vout, "fit", VLC_VAR_SETTEXT, _("Fit Mode") );
+
+    for( size_t i = 0; i < ARRAY_SIZE(p_fit_values); i++ )
+    {
+        val.i_int = p_fit_values[i].fit;
+        var_Change( p_vout, "fit", VLC_VAR_ADDCHOICE, val,
+                    p_fit_values[i].psz_label );
+    }
+
     /* Add a variable to indicate if the window should be on top of others */
     var_Create( p_vout, "video-on-top", VLC_VAR_BOOL | VLC_VAR_DOINHERIT
                 | VLC_VAR_ISCOMMAND );
@@ -297,11 +324,16 @@ void vout_CreateVars( vout_thread_t *p_vout )
     /* Viewpoint */
     var_Create( p_vout, "viewpoint", VLC_VAR_ADDRESS  );
     var_Create( p_vout, "viewpoint-changeable", VLC_VAR_BOOL );
+
+    /* SPU in full window */
+    var_Create( p_vout, "spu-fill", VLC_VAR_BOOL | VLC_VAR_DOINHERIT
+                | VLC_VAR_ISCOMMAND );
 }
 
 void vout_IntfInit( vout_thread_t *p_vout )
 {
     var_AddCallback( p_vout, "autoscale", AutoScaleCallback, NULL );
+    var_AddCallback( p_vout, "fit", FitCallback, NULL );
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
     var_AddCallback( p_vout, "crop-left", CropBorderCallback, NULL );
     var_AddCallback( p_vout, "crop-top", CropBorderCallback, NULL );
@@ -353,6 +385,7 @@ void vout_IntfDeinit(vlc_object_t *obj)
     var_DelCallback(obj, "crop-top", CropBorderCallback, NULL);
     var_DelCallback(obj, "crop-left", CropBorderCallback, NULL);
     var_DelCallback(obj, "zoom", ZoomCallback, NULL);
+    var_DelCallback(obj, "fit", FitCallback, NULL);
     var_DelCallback(obj, "autoscale", AutoScaleCallback, NULL);
 }
 
@@ -536,10 +569,11 @@ static int CropBorderCallback(vlc_object_t *object, char const *cmd,
 bool GetAspectRatio(const char *ar_str, unsigned *num, unsigned *den)
 {
     if (sscanf(ar_str, "%u:%u", num, den) == 2 &&
-        (num != 0) == (den != 0))
+        (*num != 0) == (*den != 0))
         return true;
     else if (*ar_str == '\0') {
-        *num = *den = 0;
+        *num = VLC_DAR_FROM_SOURCE.num;
+        *den = VLC_DAR_FROM_SOURCE.den;
         return true;
     }
     return false;
@@ -563,6 +597,17 @@ static int AutoScaleCallback( vlc_object_t *obj, char const *name,
     vout_thread_t *p_vout = (vout_thread_t *)obj;
     enum vlc_video_fitting fit = cur.b_bool ? var_InheritFit(obj)
                                             : VLC_VIDEO_FIT_NONE;
+
+    (void) name; (void) prev; (void) data;
+    vout_ChangeDisplayFitting(p_vout, fit);
+    return VLC_SUCCESS;
+}
+
+static int FitCallback( vlc_object_t *obj, char const *name,
+                        vlc_value_t prev, vlc_value_t cur, void *data )
+{
+    vout_thread_t *p_vout = (vout_thread_t *)obj;
+    enum vlc_video_fitting fit = cur.i_int;
 
     (void) name; (void) prev; (void) data;
     vout_ChangeDisplayFitting(p_vout, fit);

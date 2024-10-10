@@ -37,6 +37,9 @@
 #include "playlist/playlist_item.hpp"
 
 #include "util/singleton.hpp"
+#include "util/shared_input_item.hpp"
+
+#include "medialibrary/mlqmltypes.hpp"
 
 #include <QObject>
 #include <QStringList>
@@ -67,6 +70,22 @@ enum {
 class QEvent;
 class QSignalMapper;
 class VLCMenuBar;
+
+class OpenDialog;
+class FirstRunWizard;
+class ExtendedDialog;
+class MessagesDialog;
+class GotoTimeDialog;
+class VLMDialog;
+class HelpDialog;
+class AboutDialog;
+class MediaInfoDialog;
+class PlaylistsDialog;
+class BookmarksDialog;
+class PodcastConfigDialog;
+class PluginDialog;
+class EpgDialog;
+class UpdateDialog;
 
 class DialogsProvider : public QObject, public Singleton<DialogsProvider>
 {
@@ -120,17 +139,43 @@ private:
     std::unique_ptr<QMenu> audioPopupMenu;
     std::unique_ptr<QMenu> miscPopupMenu;
 
+    std::unique_ptr<OpenDialog> m_openDialog;
+    std::unique_ptr<FirstRunWizard> m_firstRunDialog;
+    std::unique_ptr<ExtendedDialog> m_extendedDialog;
+    std::unique_ptr<MessagesDialog> m_messagesDialog;
+    std::unique_ptr<GotoTimeDialog> m_gotoTimeDialog;
+    std::unique_ptr<VLMDialog> m_vlmDialog;
+    std::unique_ptr<HelpDialog> m_helpDialog;
+    std::unique_ptr<AboutDialog> m_aboutDialog;
+    std::unique_ptr<MediaInfoDialog> m_mediaInfoDialog;
+    std::unique_ptr<PlaylistsDialog> m_playlistDialog;
+    std::unique_ptr<BookmarksDialog> m_bookmarkDialog;
+    std::unique_ptr<PodcastConfigDialog> m_podcastDialog;
+    std::unique_ptr<PluginDialog> m_pluginDialog;
+    std::unique_ptr<EpgDialog> m_egpDialog;
+#ifdef UPDATE_CHECK
+    std::unique_ptr<UpdateDialog> m_updateDialog;
+#endif
+
+
     QWidget* root;
     bool b_isDying;
 
-    void openDialog( int );
+    void openDialog( OpenDialog::OpenTab );
+
+    template<typename T>
+    inline void ensureDialog(std::unique_ptr<T>& dialog);
+    template<typename T>
+    void toggleDialogVisible(std::unique_ptr<T>& dialog);
 
 public slots:
     void playlistsDialog();
     void playlistsDialog( const QVariantList & listMedia );
     void bookmarksDialog();
     void mediaInfoDialog( void );
+    void mediaInfoDialog( const SharedInputItem& inputItem );
     void mediaInfoDialog( const PlaylistItem& pItem );
+    void mediaInfoDialog( const MLItemId& itemId );
     void mediaCodecDialog();
     void prefsDialog();
     void firstRunDialog();
@@ -164,8 +209,6 @@ public slots:
     void openNetDialog();
     void openCaptureDialog();
 
-    void PLAppendDialog( int tab = OPEN_FILE_TAB );
-
     void PLOpenDir();
     void PLAppendDir();
 
@@ -182,6 +225,9 @@ public slots:
     void loadVideoFile();
 
     void quit();
+
+public:
+    void PLAppendDialog( OpenDialog::OpenTab tab = OpenDialog::OPEN_FILE_TAB );
 
 signals:
     void releaseMouseEvents();

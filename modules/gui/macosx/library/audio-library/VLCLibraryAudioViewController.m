@@ -23,12 +23,17 @@
 #import "VLCLibraryAudioViewController.h"
 
 #import "extensions/NSString+Helpers.h"
+#import "extensions/NSWindow+VLCAdditions.h"
 
 #import "library/VLCLibraryCollectionViewDelegate.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryController.h"
+#import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryNavigationStack.h"
+#import "library/VLCLibrarySegment.h"
+#import "library/VLCLibraryWindowNavigationSidebarViewController.h"
+#import "library/VLCLibraryWindowSplitViewController.h"
 #import "library/VLCLibraryTwoPaneSplitViewDelegate.h"
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryWindowPersistentPreferences.h"
@@ -36,8 +41,11 @@
 #import "library/audio-library/VLCLibraryAlbumTableCellView.h"
 #import "library/audio-library/VLCLibraryAudioDataSource.h"
 #import "library/audio-library/VLCLibraryAudioGroupDataSource.h"
+#import "library/audio-library/VLCLibraryAudioGroupHeaderView.h"
 #import "library/audio-library/VLCLibraryAudioGroupTableViewDelegate.h"
 #import "library/audio-library/VLCLibraryAudioTableViewDelegate.h"
+
+#import "library/playlist-library/VLCLibraryPlaylistViewController.h"
 
 #import "library/video-library/VLCLibraryVideoViewController.h"
 
@@ -50,6 +58,9 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 
 @interface VLCLibraryAudioViewController()
 {
+    id<VLCMediaLibraryItemProtocol> _awaitingPresentingLibraryItem;
+
+    NSArray<NSLayoutConstraint *> *_internalPlaceholderImageViewSizeConstraints;
     NSArray<NSString *> *_placeholderImageNames;
     NSArray<NSString *> *_placeholderLabelStrings;
 
@@ -66,9 +77,9 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow
 {
-    self = [super init];
+    self = [super initWithLibraryWindow:libraryWindow];
 
-    if(self) {
+    if (self) {
         [self setupPropertiesFromLibraryWindow:libraryWindow];
         [self setupAudioDataSource];
 
@@ -81,10 +92,9 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
         [self setupAudioCollectionView];
         [self setupGridModeSplitView];
         [self setupAudioTableViews];
-        [self setupAudioSegmentedControl];
         [self setupAudioLibraryViews];
 
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(libraryModelUpdated:)
                                    name:VLCLibraryModelAudioMediaListReset
@@ -92,6 +102,28 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
         [notificationCenter addObserver:self
                                selector:@selector(libraryModelUpdated:)
                                    name:VLCLibraryModelAudioMediaItemDeleted
+                                 object:nil];
+
+        NSString * const audioMediaResetLongLoadStartNotification = [VLCLibraryModelAudioMediaListReset stringByAppendingString:VLCLongNotificationNameStartSuffix];
+        NSString * const audioMediaResetLongLoadFinishNotification = [VLCLibraryModelAudioMediaListReset stringByAppendingString:VLCLongNotificationNameFinishSuffix];
+        NSString * const audioMediaDeletedLongLoadStartNotification = [VLCLibraryModelAudioMediaItemDeleted stringByAppendingString:VLCLongNotificationNameStartSuffix];
+        NSString * const audioMediaDeletedLongLoadFinishNotification = [VLCLibraryModelAudioMediaItemDeleted stringByAppendingString:VLCLongNotificationNameFinishSuffix];
+
+        [notificationCenter addObserver:self
+                               selector:@selector(libraryModelLongLoadStarted:)
+                                   name:audioMediaResetLongLoadStartNotification
+                                 object:nil];
+        [notificationCenter addObserver:self
+                               selector:@selector(libraryModelLongLoadFinished:)
+                                   name:audioMediaResetLongLoadFinishNotification
+                                 object:nil];
+        [notificationCenter addObserver:self
+                               selector:@selector(libraryModelLongLoadStarted:)
+                                   name:audioMediaDeletedLongLoadStartNotification
+                                 object:nil];
+        [notificationCenter addObserver:self
+                               selector:@selector(libraryModelLongLoadFinished:)
+                                   name:audioMediaDeletedLongLoadFinishNotification
                                  object:nil];
     }
 
@@ -102,8 +134,6 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 {
     NSParameterAssert(libraryWindow);
 
-    _libraryWindow = libraryWindow;
-    _libraryTargetView = libraryWindow.libraryTargetView;
     _audioLibraryView = libraryWindow.audioLibraryView;
     _audioLibrarySplitView = libraryWindow.audioLibrarySplitView;
     _audioCollectionSelectionTableViewScrollView = libraryWindow.audioCollectionSelectionTableViewScrollView;
@@ -119,28 +149,21 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     _audioLibraryGridModeSplitViewListTableView = libraryWindow.audioLibraryGridModeSplitViewListTableView;
     _audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView = libraryWindow.audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView;
     _audioLibraryGridModeSplitViewListSelectionCollectionView = libraryWindow.audioLibraryGridModeSplitViewListSelectionCollectionView;
-
-    _audioSegmentedControl = libraryWindow.audioSegmentedControl;
-    _segmentedTitleControl = libraryWindow.segmentedTitleControl;
-    _placeholderImageView = libraryWindow.placeholderImageView;
-    _placeholderLabel = libraryWindow.placeholderLabel;
-    _emptyLibraryView = libraryWindow.emptyLibraryView;
-    _optionBarView = libraryWindow.optionBarView;
 }
 
 - (void)setupAudioDataSource
 {
     _audioDataSource = [[VLCLibraryAudioDataSource alloc] init];
-    _audioDataSource.libraryModel = [VLCMain sharedInstance].libraryController.libraryModel;
+    _audioDataSource.libraryModel = VLCMain.sharedInstance.libraryController.libraryModel;
     _audioDataSource.collectionSelectionTableView = _audioCollectionSelectionTableView;
-    _audioDataSource.groupSelectionTableView = _audioGroupSelectionTableView;
     _audioDataSource.songsTableView = _audioSongTableView;
     _audioDataSource.collectionView = _audioLibraryCollectionView;
     _audioDataSource.gridModeListTableView = _audioLibraryGridModeSplitViewListTableView;
-    _audioDataSource.gridModeListSelectionCollectionView = _audioLibraryGridModeSplitViewListSelectionCollectionView;
     [_audioDataSource setup];
 
     _audioGroupDataSource = [[VLCLibraryAudioGroupDataSource alloc] init];
+    _audioGroupDataSource.tableViews = @[_audioGroupSelectionTableView];
+    _audioGroupDataSource.collectionViews = @[_audioLibraryGridModeSplitViewListSelectionCollectionView];
     _audioDataSource.audioGroupDataSource = _audioGroupDataSource;
 }
 
@@ -152,21 +175,14 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     _audioLibraryCollectionView.selectable = YES;
     _audioLibraryCollectionView.allowsMultipleSelection = NO;
     _audioLibraryCollectionView.allowsEmptySelection = YES;
-
-    const CGFloat collectionItemSpacing = [VLCLibraryUIUnits collectionViewItemSpacing];
-    const NSEdgeInsets collectionViewSectionInset = [VLCLibraryUIUnits collectionViewSectionInsets];
-
-    NSCollectionViewFlowLayout *audioLibraryCollectionViewLayout = [[VLCLibraryCollectionViewFlowLayout alloc] init];
-    _audioLibraryCollectionView.collectionViewLayout = audioLibraryCollectionViewLayout;
-    audioLibraryCollectionViewLayout.minimumLineSpacing = collectionItemSpacing;
-    audioLibraryCollectionViewLayout.minimumInteritemSpacing = collectionItemSpacing;
-    audioLibraryCollectionViewLayout.sectionInset = collectionViewSectionInset;
+    _audioLibraryCollectionView.collectionViewLayout = VLCLibraryCollectionViewFlowLayout.standardLayout;
 }
 
 - (void)setupAudioTableViews
 {
     _audioLibrarySplitView.delegate = _splitViewDelegate;
-    
+    [_splitViewDelegate resetDefaultSplitForSplitView:self.audioLibrarySplitView];
+
     _audioCollectionSelectionTableView.dataSource = _audioDataSource;
     _audioCollectionSelectionTableView.delegate = _audioLibraryTableViewDelegate;
 
@@ -184,6 +200,7 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 - (void)setupGridModeSplitView
 {
     _audioLibraryGridModeSplitView.delegate = _splitViewDelegate;
+    [_splitViewDelegate resetDefaultSplitForSplitView:self.audioLibraryGridModeSplitView];
 
     _audioLibraryGridModeSplitViewListTableView.dataSource = _audioDataSource;
     _audioLibraryGridModeSplitViewListTableView.delegate = _audioLibraryTableViewDelegate;
@@ -195,28 +212,30 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     _audioLibraryGridModeSplitViewListSelectionCollectionView.allowsMultipleSelection = NO;
     _audioLibraryGridModeSplitViewListSelectionCollectionView.allowsEmptySelection = YES;
 
-    const CGFloat collectionItemSpacing = [VLCLibraryUIUnits collectionViewItemSpacing];
-    const NSEdgeInsets collectionViewSectionInset = [VLCLibraryUIUnits collectionViewSectionInsets];
-
-    NSCollectionViewFlowLayout *audioLibraryGridModeListSelectionCollectionViewLayout = [[VLCLibraryCollectionViewFlowLayout alloc] init];
+    VLCLibraryCollectionViewFlowLayout * const audioLibraryGridModeListSelectionCollectionViewLayout =
+        VLCLibraryCollectionViewFlowLayout.standardLayout;
     _audioLibraryGridModeSplitViewListSelectionCollectionView.collectionViewLayout = audioLibraryGridModeListSelectionCollectionViewLayout;
-    audioLibraryGridModeListSelectionCollectionViewLayout.minimumLineSpacing = collectionItemSpacing;
-    audioLibraryGridModeListSelectionCollectionViewLayout.minimumInteritemSpacing = collectionItemSpacing;
-    audioLibraryGridModeListSelectionCollectionViewLayout.sectionInset = collectionViewSectionInset;
+    audioLibraryGridModeListSelectionCollectionViewLayout.headerReferenceSize = VLCLibraryAudioGroupHeaderView.defaultHeaderSize;
 
+    if (@available(macOS 10.12, *)) {
+        audioLibraryGridModeListSelectionCollectionViewLayout.sectionHeadersPinToVisibleBounds = YES;
+    }
+
+    [VLCLibraryAudioDataSource setupCollectionView:_audioLibraryGridModeSplitViewListSelectionCollectionView];
+    [VLCLibraryAudioGroupDataSource setupCollectionView:_audioLibraryGridModeSplitViewListSelectionCollectionView];
 }
 
 - (void)setupAudioPlaceholderView
 {
-    _audioPlaceholderImageViewSizeConstraints = @[
-        [NSLayoutConstraint constraintWithItem:_placeholderImageView
+    _internalPlaceholderImageViewSizeConstraints = @[
+        [NSLayoutConstraint constraintWithItem:self.placeholderImageView
                                      attribute:NSLayoutAttributeWidth
                                      relatedBy:NSLayoutRelationEqual
                                         toItem:nil
                                      attribute:NSLayoutAttributeNotAnAttribute
                                     multiplier:0.f
                                       constant:149.f],
-        [NSLayoutConstraint constraintWithItem:_placeholderImageView
+        [NSLayoutConstraint constraintWithItem:self.placeholderImageView
                                      attribute:NSLayoutAttributeHeight
                                      relatedBy:NSLayoutRelationEqual
                                         toItem:nil
@@ -234,35 +253,14 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     ];
 }
 
-- (void)setupAudioSegmentedControl
-{
-    _audioSegmentedControl.segmentCount = 4;
-    [_audioSegmentedControl setLabel:_NS("Artists") forSegment:VLCAudioLibraryArtistsSegment];
-    [_audioSegmentedControl setLabel:_NS("Albums") forSegment:VLCAudioLibraryAlbumsSegment];
-    [_audioSegmentedControl setLabel:_NS("Songs") forSegment:VLCAudioLibrarySongsSegment];
-    [_audioSegmentedControl setLabel:_NS("Genres") forSegment:VLCAudioLibraryGenresSegment];
-    _audioSegmentedControl.selectedSegment = 0;
-}
-
-- (void)configureAudioSegmentedControl
-{
-    [_audioSegmentedControl setTarget:self];
-    [_audioSegmentedControl setAction:@selector(segmentedControlAction:)];
-}
-
 - (void)setupAudioLibraryViews
 {
-    _audioCollectionSelectionTableView.rowHeight = [VLCLibraryUIUnits mediumTableViewRowHeight];
-    _audioLibraryGridModeSplitViewListTableView.rowHeight = [VLCLibraryUIUnits mediumTableViewRowHeight];
-    _audioGroupSelectionTableView.rowHeight = [VLCLibraryAlbumTableCellView defaultHeight];
+    _audioCollectionSelectionTableView.rowHeight = VLCLibraryUIUnits.mediumTableViewRowHeight;
+    _audioLibraryGridModeSplitViewListTableView.rowHeight = VLCLibraryUIUnits.mediumTableViewRowHeight;
+    _audioGroupSelectionTableView.rowHeight = VLCLibraryAlbumTableCellView.defaultHeight;
 
-    const NSEdgeInsets defaultContentInsets = [VLCLibraryUIUnits libraryViewScrollViewContentInsets];
-    const CGFloat topAudioScrollViewContentInset = defaultContentInsets.top + _optionBarView.frame.size.height;
-    const NSEdgeInsets audioScrollViewContentInsets = NSEdgeInsetsMake(topAudioScrollViewContentInset,
-                                                                       defaultContentInsets.left,
-                                                                       defaultContentInsets.bottom,
-                                                                       defaultContentInsets.right);
-    const NSEdgeInsets audioScrollViewScrollerInsets = [VLCLibraryUIUnits libraryViewScrollViewScrollerInsets];
+    const NSEdgeInsets audioScrollViewContentInsets = VLCLibraryUIUnits.libraryViewScrollViewContentInsets;
+    const NSEdgeInsets audioScrollViewScrollerInsets = VLCLibraryUIUnits.libraryViewScrollViewScrollerInsets;
 
     _audioCollectionViewScrollView.automaticallyAdjustsContentInsets = NO;
     _audioCollectionViewScrollView.contentInsets = audioScrollViewContentInsets;
@@ -283,51 +281,34 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     _audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView.scrollerInsets = audioScrollViewScrollerInsets;
 }
 
+#pragma mark - Superclass property overrides
+
+- (NSArray<NSLayoutConstraint *> *)placeholderImageViewSizeConstraints
+{
+    return _internalPlaceholderImageViewSizeConstraints;
+}
+
+- (id<VLCLibraryDataSource>)currentDataSource
+{
+    return self.audioDataSource;
+}
+
 #pragma mark - Show the audio view
 
 - (void)presentAudioView
 {
-    _libraryTargetView.subviews = @[];
-
-    [self configureAudioSegmentedControl];
-    [self segmentedControlAction:VLCMain.sharedInstance.libraryWindow.navigationStack];
+    [self updatePresentedView];
 }
 
 - (void)presentPlaceholderAudioView
 {
-    for (NSLayoutConstraint * const constraint in _libraryWindow.libraryVideoViewController.videoPlaceholderImageViewSizeConstraints) {
-        constraint.active = NO;
-    }
-    for (NSLayoutConstraint * const constraint in _audioPlaceholderImageViewSizeConstraints) {
-        constraint.active = YES;
-    }
-
-    const NSInteger selectedLibrarySegment = _audioSegmentedControl.selectedSegment;
-
-    if(selectedLibrarySegment < _placeholderImageNames.count && selectedLibrarySegment >= 0) {
-        _placeholderImageView.image = [NSImage imageNamed:_placeholderImageNames[selectedLibrarySegment]];
-    }
-
-    if(selectedLibrarySegment < _placeholderLabelStrings.count && selectedLibrarySegment >= 0) {
-        _placeholderLabel.stringValue = _placeholderLabelStrings[selectedLibrarySegment];
-    }
-
-    _emptyLibraryView.translatesAutoresizingMaskIntoConstraints = NO;
-    _libraryTargetView.subviews = @[_emptyLibraryView];
-    NSDictionary * const dict = NSDictionaryOfVariableBindings(_emptyLibraryView);
-    [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[_emptyLibraryView(>=572.)]|" options:0 metrics:0 views:dict]];
-    [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[_emptyLibraryView(>=444.)]|" options:0 metrics:0 views:dict]];
-
-    _emptyLibraryView.identifier = VLCLibraryPlaceholderAudioViewIdentifier;
-}
-
-- (void)prepareAudioLibraryView
-{
-    _audioLibraryView.translatesAutoresizingMaskIntoConstraints = NO;
-    _libraryTargetView.subviews = @[_audioLibraryView];
-    NSDictionary *dict = NSDictionaryOfVariableBindings(_audioLibraryView);
-    [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|[_audioLibraryView(>=572.)]|" options:0 metrics:0 views:dict]];
-    [_libraryTargetView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|[_audioLibraryView(>=444.)]|" options:0 metrics:0 views:dict]];
+    const NSInteger selectedLibrarySegment = self.audioDataSource.audioLibrarySegment;
+    NSAssert(selectedLibrarySegment != VLCAudioLibraryRecentsSegment &&
+             selectedLibrarySegment != VLCAudioLibraryUnknownSegment,
+             @"Received invalid audio library segment from audio data source!");
+    [self.libraryWindow displayLibraryPlaceholderViewWithImage:[NSImage imageNamed:_placeholderImageNames[selectedLibrarySegment]]
+                                              usingConstraints:self.placeholderImageViewSizeConstraints
+                                             displayingMessage:_placeholderLabelStrings[selectedLibrarySegment]];
 }
 
 - (void)hideAllViews
@@ -340,8 +321,9 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 
 - (void)presentAudioGridModeView
 {
-    if (_audioSegmentedControl.selectedSegment == VLCAudioLibrarySongsSegment ||
-        _audioSegmentedControl.selectedSegment == VLCAudioLibraryAlbumsSegment) {
+    const VLCLibrarySegmentType selectedSegment = self.libraryWindow.librarySegmentType;
+    if (selectedSegment == VLCLibrarySongsMusicSubSegment ||
+        selectedSegment == VLCLibraryAlbumsMusicSubSegment) {
 
         [_audioLibraryCollectionView deselectAll:self];
         [(VLCLibraryCollectionViewFlowLayout *)_audioLibraryCollectionView.collectionViewLayout resetLayout];
@@ -354,43 +336,59 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
 
 - (void)presentAudioTableView
 {
-    if (_audioSegmentedControl.selectedSegment == VLCAudioLibrarySongsSegment) {
+    if (self.libraryWindow.librarySegmentType == VLCLibrarySongsMusicSubSegment) {
         _audioSongTableViewScrollView.hidden = NO;
     } else {
         _audioLibrarySplitView.hidden = NO;
     }
 }
 
+- (VLCLibraryViewModeSegment)viewModeSegmentForCurrentLibrarySegment
+{
+    VLCLibraryWindowPersistentPreferences * const libraryWindowPrefs = VLCLibraryWindowPersistentPreferences.sharedInstance;
+
+    switch (self.libraryWindow.librarySegmentType) {
+        case VLCLibraryArtistsMusicSubSegment:
+            return libraryWindowPrefs.artistLibraryViewMode;
+        case VLCLibraryGenresMusicSubSegment:
+            return libraryWindowPrefs.genreLibraryViewMode;
+        case VLCLibrarySongsMusicSubSegment:
+            return libraryWindowPrefs.songsLibraryViewMode;
+        case VLCLibraryAlbumsMusicSubSegment:
+            return libraryWindowPrefs.albumLibraryViewMode;
+        default:
+            return VLCLibraryGridViewModeSegment;
+    }
+}
+
+- (VLCAudioLibrarySegment)currentLibrarySegmentToAudioLibrarySegment
+{
+    switch (self.libraryWindow.librarySegmentType) {
+        case VLCLibraryMusicSegment:
+        case VLCLibraryArtistsMusicSubSegment:
+            return VLCAudioLibraryArtistsSegment;
+        case VLCLibraryAlbumsMusicSubSegment:
+            return VLCAudioLibraryAlbumsSegment;
+        case VLCLibrarySongsMusicSubSegment:
+            return VLCAudioLibrarySongsSegment;
+        case VLCLibraryGenresMusicSubSegment:
+            return VLCAudioLibraryGenresSegment;
+        default:
+            NSAssert(false, @"Non-audio or unknown library subsegment received");
+            return VLCAudioLibraryUnknownSegment;
+    }
+}
+
 - (void)updatePresentedView
 {
-    const VLCAudioLibrarySegment audioLibrarySegment = _audioSegmentedControl.selectedSegment;
-    _audioDataSource.audioLibrarySegment = audioLibrarySegment;
+    self.audioDataSource.audioLibrarySegment = [self currentLibrarySegmentToAudioLibrarySegment];
+    const BOOL anyAudioMedia = self.audioDataSource.libraryModel.numberOfAudioMedia > 0;
 
-    if (_audioDataSource.libraryModel.listOfAudioMedia.count == 0) {
-        [self presentPlaceholderAudioView];
-    } else {
-        [self prepareAudioLibraryView];
+    if (anyAudioMedia) {
+        [self.libraryWindow displayLibraryView:self.audioLibraryView];
         [self hideAllViews];
 
-        VLCLibraryViewModeSegment viewModeSegment = VLCLibraryGridViewModeSegment; // default value
-        VLCLibraryWindowPersistentPreferences * const libraryWindowPrefs = VLCLibraryWindowPersistentPreferences.sharedInstance;
-
-        switch (audioLibrarySegment) {
-            case VLCAudioLibraryArtistsSegment:
-                viewModeSegment = libraryWindowPrefs.artistLibraryViewMode;
-                break;
-            case VLCAudioLibraryGenresSegment:
-                viewModeSegment = libraryWindowPrefs.genreLibraryViewMode;
-                break;
-            case VLCAudioLibrarySongsSegment:
-                viewModeSegment = libraryWindowPrefs.songsLibraryViewMode;
-                break;
-            case VLCAudioLibraryAlbumsSegment:
-                viewModeSegment = libraryWindowPrefs.albumLibraryViewMode;
-                break;
-            default:
-                break;
-        }
+        const VLCLibraryViewModeSegment viewModeSegment = [self viewModeSegmentForCurrentLibrarySegment];
 
         if (viewModeSegment == VLCLibraryListViewModeSegment) {
             [self presentAudioTableView];
@@ -401,12 +399,11 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
         }
 
         [VLCMain.sharedInstance.libraryWindow updateGridVsListViewModeSegmentedControl];
+    } else if (self.audioDataSource.libraryModel.filterString.length > 0) {
+        [self.libraryWindow displayNoResultsMessage];
+    } else {
+        [self presentPlaceholderAudioView];
     }
-}
-
-- (IBAction)segmentedControlAction:(id)sender
-{
-    [self updatePresentedView];
 }
 
 - (void)reloadData
@@ -414,20 +411,145 @@ NSString *VLCLibraryPlaceholderAudioViewIdentifier = @"VLCLibraryPlaceholderAudi
     [_audioDataSource reloadData];
 }
 
+- (void)presentLibraryItemInTableView:(id<VLCMediaLibraryItemProtocol>)libraryItem
+{
+    if (libraryItem == nil) {
+        return;
+    }
+
+    NSTableView *targetMainTableView;
+    if ([libraryItem isKindOfClass:VLCMediaLibraryMediaItem.class]) {
+        targetMainTableView = self.audioSongTableView;
+    } else {
+        targetMainTableView = self.audioCollectionSelectionTableView;
+    }
+    NSAssert(targetMainTableView != nil, @"Target tableview for presenting audio library view is nil");
+    NSAssert(targetMainTableView.dataSource == self.audioDataSource, @"Target tableview data source is unexpected");
+
+    const NSInteger rowForLibraryItem = [self.audioDataSource rowForLibraryItem:libraryItem];
+    if (rowForLibraryItem != NSNotFound) {
+        NSIndexSet * const indexSet = [NSIndexSet indexSetWithIndex:rowForLibraryItem];
+        [targetMainTableView selectRowIndexes:indexSet byExtendingSelection:NO];
+        [targetMainTableView scrollRowToVisible:rowForLibraryItem];
+    }
+}
+
+- (void)presentLibraryItemInCollectionView:(id<VLCMediaLibraryItemProtocol>)libraryItem
+{
+    if (libraryItem == nil) {
+        return;
+    }
+
+    // If we are handling a library item that is shown in one of the split view modes,
+    // with a table view on the left and the collection view on the right, defer back
+    // to presentLibraryItemInTabelView
+    if ([libraryItem isKindOfClass:VLCMediaLibraryGenre.class] ||
+        [libraryItem isKindOfClass:VLCMediaLibraryArtist.class]) {
+        [self presentLibraryItemInTableView:libraryItem];
+    }
+
+    NSIndexPath * const indexPathForLibraryItem = [self.audioDataSource indexPathForLibraryItem:libraryItem];
+    if (indexPathForLibraryItem) {
+        NSSet<NSIndexPath *> * const indexPathSet = [NSSet setWithObject:indexPathForLibraryItem];
+        NSCollectionView * const collectionView = self.audioLibraryCollectionView;
+        VLCLibraryCollectionViewFlowLayout * const expandableFlowLayout = (VLCLibraryCollectionViewFlowLayout *)collectionView.collectionViewLayout;
+
+        [collectionView selectItemsAtIndexPaths:indexPathSet
+                                 scrollPosition:NSCollectionViewScrollPositionTop];
+        [expandableFlowLayout expandDetailSectionAtIndex:indexPathForLibraryItem];
+    }
+}
+
+- (void)presentLibraryItemWaitForDataSourceFinished:(NSNotification *)aNotification
+{
+    if (self.audioDataSource.displayedCollectionCount < self.audioDataSource.collectionToDisplayCount) {
+        return;
+    }
+    
+    [NSNotificationCenter.defaultCenter removeObserver:self
+                                                  name:VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
+                                                object:self.audioDataSource];
+
+    const VLCLibraryViewModeSegment viewModeSegment = [self viewModeSegmentForCurrentLibrarySegment];
+    if (viewModeSegment == VLCLibraryListViewModeSegment) {
+        [self presentLibraryItemInTableView:_awaitingPresentingLibraryItem];
+    } else if (viewModeSegment == VLCLibraryGridViewModeSegment) {
+        [self presentLibraryItemInCollectionView:_awaitingPresentingLibraryItem];
+    } else {
+        NSAssert(NO, @"No valid view mode segment acquired, cannot present item!");
+    }
+
+    _awaitingPresentingLibraryItem = nil;
+}
+
+- (void)presentLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem
+{
+    if (libraryItem == nil) {
+        return;
+    }
+
+    _awaitingPresentingLibraryItem = libraryItem;
+
+    // If the library item is a media item, we need to select the corresponding segment
+    // in the segmented control. We then need to update the presented view.
+    VLCLibrarySegmentType segmentType;
+    if ([libraryItem isKindOfClass:VLCMediaLibraryAlbum.class]) {
+        segmentType = VLCLibraryAlbumsMusicSubSegment;
+    } else if ([libraryItem isKindOfClass:VLCMediaLibraryArtist.class]) {
+        segmentType = VLCLibraryArtistsMusicSubSegment;
+    } else if ([libraryItem isKindOfClass:VLCMediaLibraryGenre.class]) {
+        segmentType = VLCLibraryGenresMusicSubSegment;
+    } else {
+        segmentType = VLCLibrarySongsMusicSubSegment;
+    }
+
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(presentLibraryItemWaitForDataSourceFinished:)
+                                               name:VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
+                                             object:self.audioDataSource];
+
+    VLCLibraryWindow * const libraryWindow = self.libraryWindow;
+    libraryWindow.librarySegmentType = segmentType;
+    [libraryWindow.splitViewController.navSidebarViewController selectSegment:segmentType];
+    [self updatePresentedView];
+}
+
 - (void)libraryModelUpdated:(NSNotification *)aNotification
 {
-    NSParameterAssert(aNotification);
-    VLCLibraryModel *model = (VLCLibraryModel *)aNotification.object;
-    NSAssert(model, @"Notification object should be a VLCLibraryModel");
-    NSArray<VLCMediaLibraryMediaItem *> * audioList = model.listOfAudioMedia;
+    VLCLibraryModel * const model = VLCMain.sharedInstance.libraryController.libraryModel;
+    const NSUInteger audioCount = model.numberOfAudioMedia;
 
-    if (_segmentedTitleControl.selectedSegment == VLCLibraryMusicSegment &&
-        ((audioList.count == 0 && ![_libraryTargetView.subviews containsObject:_emptyLibraryView]) ||
-         (audioList.count > 0 && ![_libraryTargetView.subviews containsObject:_audioLibraryView])) &&
-        _libraryWindow.videoViewController.view.hidden) {
+    if ((self.libraryWindow.librarySegmentType == VLCLibraryMusicSegment ||
+         self.libraryWindow.librarySegmentType == VLCLibrarySongsMusicSubSegment ||
+         self.libraryWindow.librarySegmentType == VLCLibraryArtistsMusicSubSegment ||
+         self.libraryWindow.librarySegmentType == VLCLibraryAlbumsMusicSubSegment ||
+         self.libraryWindow.librarySegmentType == VLCLibraryGenresMusicSubSegment) &&
+        ((audioCount == 0 && ![self.libraryTargetView.subviews containsObject:self.emptyLibraryView]) ||
+         (audioCount > 0 && ![self.libraryTargetView.subviews containsObject:_audioLibraryView])) &&
+        self.libraryWindow.videoViewController.view.hidden) {
 
         [self updatePresentedView];
     }
+}
+
+- (void)libraryModelLongLoadStarted:(NSNotification *)notification
+{
+    if (self.connected) {
+        [self.audioDataSource disconnect];
+        [self.audioGroupDataSource disconnect];
+    }
+
+    [self.libraryWindow showLoadingOverlay];
+}
+
+- (void)libraryModelLongLoadFinished:(NSNotification *)notification
+{
+    if (self.connected) {
+        [self.audioDataSource connect];
+        [self.audioGroupDataSource connect];
+    }
+
+    [self.libraryWindow hideLoadingOverlay];
 }
 
 @end

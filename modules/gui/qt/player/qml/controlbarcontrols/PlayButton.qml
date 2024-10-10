@@ -16,21 +16,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
-import "qrc:///util/Helpers.js" as Helpers
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Player
+import VLC.Playlist
+import VLC.Util
 
 T.Control {
     id: root
 
     // Properties
-
-    property int maximumHeight: VLCStyle.icon_medium
 
     property bool paintOnly: false
 
@@ -53,50 +53,30 @@ T.Control {
 
     // Settings
 
-    implicitWidth: implicitHeight
-
-    implicitHeight: Math.min(VLCStyle.icon_medium, maximumHeight)
+    implicitWidth: implicitBackgroundWidth + leftInset + rightInset
+    implicitHeight: implicitBackgroundHeight + topInset + bottomInset
 
     scale: (_keyOkPressed || (mouseArea.pressed && cursorInside)) ? 0.95
                                                                   : 1.00
 
     Accessible.role: Accessible.Button
-    Accessible.name: I18n.qtr("Play/Pause")
+    Accessible.name: qsTr("Play/Pause")
     Accessible.checkable: true
     Accessible.checked: Player.playingState !== Player.PLAYING_STATE_PAUSED
                         && Player.playingState !== Player.PLAYING_STATE_STOPPED
-    Accessible.onPressAction: mainPlaylistController.togglePlayPause()
-    Accessible.onToggleAction: mainPlaylistController.togglePlayPause()
+    Accessible.onPressAction: MainPlaylistController.togglePlayPause()
+    Accessible.onToggleAction: MainPlaylistController.togglePlayPause()
 
     // States
 
     states: [
         State {
-            name: "focused"
-            when: visualFocus
-
-            PropertyChanges {
-                target: hoverShadow
-                opacity: 0.0
-            }
-
-            PropertyChanges {
-                target: focusShadow
-                opacity: 1.0
-            }
-        },
-        State {
-            name: "hover"
+            name: "hovered"
             when: cursorInside
 
             PropertyChanges {
                 target: hoverShadow
                 opacity: 1.0
-            }
-
-            PropertyChanges {
-                target: focusShadow
-                opacity: 0.0
             }
         }
     ]
@@ -113,24 +93,26 @@ T.Control {
 
     // Keys
 
-    Keys.onPressed: {
+    Keys.onPressed: (event) => {
         if (KeyHelper.matchOk(event) ) {
             if (!event.isAutoRepeat) {
                 _keyOkPressed = true
                 keyHoldTimer.restart()
+                innerRectangle.state = "diminished"
             }
             event.accepted = true
         }
         Navigation.defaultKeyAction(event)
     }
 
-    Keys.onReleased: {
+    Keys.onReleased: (event) => {
         if (KeyHelper.matchOk(event)) {
             if (!event.isAutoRepeat) {
                 _keyOkPressed = false
                 keyHoldTimer.stop()
+                innerRectangle.state = ""
                 if (Player.playingState !== Player.PLAYING_STATE_STOPPED)
-                    mainPlaylistController.togglePlayPause()
+                    MainPlaylistController.togglePlayPause()
             }
             event.accepted = true
         }
@@ -139,8 +121,9 @@ T.Control {
     // Functions
 
     function _pressAndHoldAction() {
+        innerRectangle.state = ""
         _keyOkPressed = false
-        mainPlaylistController.stop()
+        MainPlaylistController.stop()
     }
 
     // Children
@@ -176,21 +159,40 @@ T.Control {
             }
         }
 
-        onPressed: {
+        onCursorInsideChanged: {
+            if (pressed && !cursorInside) {
+                // Press and hold action can no longer be done,
+                // so reset the state in order to reset the
+                // animation:
+                innerRectangle.state = ""
+            }
+        }
+
+        onPressed: (mouse) => {
             if (!cursorInside) {
                 mouse.accepted = false
                 return
             }
 
             root.forceActiveFocus(Qt.MouseFocusReason)
+            innerRectangle.state = "diminished"
         }
 
-        onClicked: {
-            mainPlaylistController.togglePlayPause()
+        onReleased: {
+            innerRectangle.state = ""
+        }
+
+        onClicked: (mouse) => {
+            MainPlaylistController.togglePlayPause()
             mouse.accepted = true
         }
 
-        onPressAndHold: {
+        onPressAndHold: (mouse) => {
+            if (!cursorInside) {
+                mouse.accepted = false
+                return
+            }
+
             _pressAndHoldAction()
             mouse.accepted = true
         }
@@ -203,9 +205,9 @@ T.Control {
             if (!paintOnly
                     && state !== Player.PLAYING_STATE_PAUSED
                     && state !== Player.PLAYING_STATE_STOPPED)
-                return VLCIcons.pause
+                return VLCIcons.pause_filled
             else
-                return VLCIcons.play
+                return VLCIcons.play_filled
         }
 
         color: cursorInside ? theme.accent
@@ -230,7 +232,9 @@ T.Control {
     }
 
     background: Item {
-        // TODO: Qt >= 5.15 use inline component for the drop shadows
+        implicitWidth: height
+        implicitHeight: VLCStyle.icon_medium
+
         Widgets.DropShadowImage {
             id: hoverShadow
 
@@ -239,39 +243,80 @@ T.Control {
             visible: opacity > 0
             opacity: 0
 
+            rectWidth: parent.width
+            rectHeight: parent.height
+            xRadius: parent.width
+            yRadius: xRadius
+
             blurRadius: VLCStyle.dp(9)
             yOffset: VLCStyle.dp(4)
 
-            color: VLCStyle.setColorAlpha(theme.accent, 0.29)
-
-            xRadius: parent.width
-            yRadius: xRadius
-
-            sourceSize: Qt.size(xRadius, yRadius)
+            color: theme.accent.alpha(0.29)
         }
 
-        Widgets.DropShadowImage {
-            id: focusShadow
-
-            anchors.centerIn: parent
-
-            visible: opacity > 0
-            opacity: 0
-
-            blurRadius: VLCStyle.dp(14)
-            yOffset: VLCStyle.dp(1)
-
-            color: VLCStyle.setColorAlpha(theme.accent, 1.0)
-
-            xRadius: parent.width
-            yRadius: xRadius
-
-            sourceSize: Qt.size(xRadius, yRadius)
-        }
-
-        Widgets.ScaledImage {
+        Widgets.AnimatedBackground {
             anchors.fill: parent
-            source: "qrc:/misc/play_button.svg"
+            anchors.margins: -border.width
+
+            enabled: theme.initialized
+
+            border.color: root.visualFocus ? theme.visualFocus : "transparent"
+        }
+
+        Rectangle {
+            anchors.fill: parent
+
+            radius: width
+
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#e25b01" }
+                GradientStop { position: 1.0; color: "#f89a06" }
+            }
+
+            Rectangle {
+                id: innerRectangle
+
+                color: "white"
+
+                anchors.fill: parent
+                anchors.margins: _diminished ? (parent.width / 2)
+                                             : VLCStyle.dp(2)
+
+                radius: width
+
+                property bool _diminished: false
+
+                onStateChanged: {
+                    if (state === "diminished") {
+                        marginBehavior.enabled = true
+                        bindingTimer.start()
+                    } else {
+                        bindingTimer.stop()
+                        marginBehavior.enabled = false
+                        _diminished = false
+                    }
+                }
+
+                Timer {
+                    // Do not immediately start the animation.
+                    // Give some time if the intention is not
+                    // to hold the button.
+                    id: bindingTimer
+                    interval: mouseArea.pressAndHoldInterval / 3
+                    onTriggered: innerRectangle._diminished = true
+                }
+
+                Behavior on anchors.margins {
+                    id: marginBehavior
+                    NumberAnimation {
+                        // Press and hold action must be triggered
+                        // as soon as the inner rectangle diminishes.
+                        // Subtract the interval here so that we satisfy
+                        // that condition.
+                        duration: mouseArea.pressAndHoldInterval - bindingTimer.interval
+                    }
+                }
+            }
         }
     }
 }

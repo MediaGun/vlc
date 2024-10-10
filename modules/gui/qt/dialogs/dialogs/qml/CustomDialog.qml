@@ -16,12 +16,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
-import org.videolan.vlc 0.1
+import QtQuick
+import QtQuick.Layouts
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
 
 ModalDialog {
     id: root
@@ -36,8 +36,8 @@ ModalDialog {
 
     function ask(text, acceptCb, rejectCb, buttons) {
         //TODO: use a Promise here when dropping support of Qt 5.11
-        let okTxt = I18n.qtr("OK")
-        let cancelTxt = I18n.qtr("cancel")
+        let okTxt = qsTr("OK")
+        let cancelTxt = qsTr("cancel")
         if (buttons) {
             if (buttons.cancel) {
                 cancelTxt = buttons.cancel
@@ -102,7 +102,7 @@ ModalDialog {
 
                     Navigation.rightItem: okBtn
                     Keys.priority: Keys.AfterItem
-                    Keys.onPressed: okBtn.Navigation.defaultKeyAction(event)
+                    Keys.onPressed: (event) => okBtn.Navigation.defaultKeyAction(event)
                 }
 
                 Widgets.TextToolButton {
@@ -114,7 +114,7 @@ ModalDialog {
 
                     Navigation.leftItem: cancelBtn
                     Keys.priority: Keys.AfterItem
-                    Keys.onPressed: cancelBtn.Navigation.defaultKeyAction(event)
+                    Keys.onPressed: (event) => cancelBtn.Navigation.defaultKeyAction(event)
                 }
             }
         }

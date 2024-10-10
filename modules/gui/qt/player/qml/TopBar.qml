@@ -16,24 +16,30 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
-import QtQuick.Window 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import QtQuick.Window
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
-import "qrc:///menus/" as Menus
+import VLC.MainInterface
+import VLC.Style
+import VLC.PlayerControls
+import VLC.Widgets as Widgets
+import VLC.Menus as Menus
 
 FocusScope{
     id: root
 
     // Properties
 
-    /* required */ property int textWidth
+    required property int textWidth
+
+    property int reservedHeight: 0
+
+    property int topMargin: 0
+    property int sideMargin: 0
 
     property string title
 
@@ -41,10 +47,16 @@ FocusScope{
     property bool showToolbar: false
     property bool pinControls: false
 
-    property int topMargin: 0
-    property int sideMargin: 0
+    readonly property ColorContext colorContext: ColorContext {
+        id: theme
+        colorSet: ColorContext.Window
+    }
 
-    property int reservedHeight: 0
+    // Private
+
+    property bool _showTopBar: (pinControls === false || showToolbar === false)
+
+    property bool _showCenterText: (pinControls && showToolbar === false && showCSD)
 
     readonly property int _sideMargin: VLCStyle.margin_small + sideMargin
 
@@ -58,22 +70,33 @@ FocusScope{
     signal requestLockUnlockAutoHide(bool lock)
     signal backRequested()
 
+    ///incomming signal to request all menu and popup to close
+    signal forceUnlock()
 
-    Accessible.name: I18n.qtr("Player topbar")
+    // Settings
+
+    Accessible.name: qsTr("Player topbar")
     Accessible.role: Accessible.ToolBar
 
-    Component.onCompleted:  root._layout()
+    // Events
 
-    onShowCSDChanged: root._layout()
-    onPinControlsChanged: root._layout()
-    onShowToolbarChanged: root._layout()
-    onTopMarginChanged: root._layout()
-    onSideMarginChanged: root._layout()
+    Component.onCompleted: _layout()
+
+    onShowCSDChanged: _layout()
+    onPinControlsChanged: _layout()
+    onShowToolbarChanged: _layout()
+    onTopMarginChanged: _layout()
+    onSideMarginChanged: _layout()
+
+    on_ShowTopBarChanged: _layout()
+    on_ShowCenterTextChanged: _layout()
+
+    // Functions
 
     function _layoutLine(c1, c2, offset)
     {
-        let c1Height = c1 !== undefined ? c1.implicitHeight : 0
-        let c2Height = c2 !== undefined ? c2.implicitHeight : 0
+        let c1Height = c1?.implicitHeight ?? 0
+        let c2Height = c2?.implicitHeight ?? 0
 
         if (c2 === csdDecorations) {
             //csdDecorations.implicitHeight gets overwritten when the height is set,
@@ -98,9 +121,9 @@ FocusScope{
     //FIXME: if CSD will be weirdly placed if application safe-area are used,
     //nota that if you need a safe area (kiosk mode), you probably don't need CSD
     function _layout() {
-        let offset = root.topMargin
+        let offset = topMargin
 
-        if (root.pinControls && !root.showToolbar && root.showCSD) {
+        if (_showCenterText) {
             //place everything on one line
             //csdDecorations.implicitHeight gets overwritten when the height is set,
             //VLCStyle.icon_normal is its initial value
@@ -115,10 +138,10 @@ FocusScope{
 
             playlistGroup.height = lineHeight
             playlistGroup.anchors.topMargin = 0
-            playlistGroup.extraRightMargin = Qt.binding(function() { return root.width - csdDecorations.x })
+            playlistGroup.extraRightMargin = Qt.binding(function() { return width - csdDecorations.x })
 
 
-            root.implicitHeight = lineHeight
+            implicitHeight = lineHeight
             offset += lineHeight
 
         } else {
@@ -128,11 +151,11 @@ FocusScope{
             let right = undefined
             let logoPlaced = false
 
-            if (root.showToolbar) {
+            if (showToolbar) {
                 left = menubar
             }
 
-            if (root.showCSD) {
+            if (showCSD) {
                 right = csdDecorations
                 if (!left) {
                     left = logoOrResume
@@ -141,9 +164,9 @@ FocusScope{
             }
 
             if (!!left || !!right) {
-                offset += root._layoutLine(left, right, offset)
+                offset += _layoutLine(left, right, offset)
 
-                if (root.showCSD) {
+                if (showCSD) {
                     tapNDrag.height = offset
                 }
             }
@@ -154,28 +177,19 @@ FocusScope{
                 left = undefined
             }
 
-            right = playlistGroup
+            if (_showTopBar)
+                right = playlistGroup
+            else
+                right = undefined
 
-            const secondLineOffset = offset
-            const secondLineHeight = root._layoutLine(left, right, offset)
-
-            offset += secondLineHeight
-
-            if (root.pinControls) {
-                centerTitleText.y = secondLineOffset
-                centerTitleText.height = secondLineHeight
-            }
-
+            offset += _layoutLine(left, right, offset)
         }
 
-        root.implicitHeight = offset
+        implicitHeight = offset
         reservedHeight = offset
     }
 
-    readonly property ColorContext colorContext: ColorContext {
-        id: theme
-        colorSet: ColorContext.Window
-    }
+    // Children
 
     //drag and dbl click the titlebar in CSD mode
     Loader {
@@ -183,7 +197,7 @@ FocusScope{
 
         anchors.fill: parent
         active: root.showCSD
-        source: "qrc:///widgets/CSDTitlebarTapNDrapHandler.qml"
+        source: "qrc:///qt/qml/VLC/Widgets/CSDTitlebarTapNDrapHandler.qml"
     }
 
     // Components -
@@ -192,17 +206,16 @@ FocusScope{
 
         anchors.top: parent.top
         anchors.left: parent.left
-        anchors.leftMargin: root._sideMargin
+        anchors.leftMargin: root.sideMargin
 
         width: implicitWidth
 
         visible: root.showToolbar
         enabled: root.showToolbar
 
-        onHoveredChanged: root.requestLockUnlockAutoHide(hovered)
-        onMenuOpenedChanged: root.requestLockUnlockAutoHide(menuOpened)
+        onHoveredChanged: menu => root.requestLockUnlockAutoHide(hovered)
+        onMenuOpenedChanged: menu => root.requestLockUnlockAutoHide(menuOpened)
     }
-
 
     Item {
         id: logoOrResume
@@ -214,8 +227,14 @@ FocusScope{
         implicitWidth: resumeVisible ? resumeDialog.implicitWidth
                                      : logoGroup.implicitWidth
 
-        implicitHeight: resumeVisible ? resumeDialog.implicitHeight
-                                      : logoGroup.implicitHeight
+        implicitHeight: {
+            if (root.resumeVisible)
+                return resumeDialog.implicitHeight
+            else if (_showTopBar)
+                return logoGroup.implicitHeight
+            else
+                return 0
+        }
 
         onImplicitHeightChanged: root._layout()
 
@@ -223,21 +242,22 @@ FocusScope{
             id: logoGroup
 
             anchors.fill: parent
-            visible: !resumeVisible
+
+            visible: (root._showTopBar && root.resumeVisible === false)
 
             implicitHeight: VLCStyle.icon_banner + VLCStyle.margin_xxsmall * 2
             implicitWidth: backBtn.implicitWidth + logo.implicitWidth + VLCStyle.margin_xxsmall
 
-            Widgets.IconControlButton {
+            Widgets.IconToolButton {
                 id: backBtn
 
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
 
                 objectName: "IconToolButton"
-                size: VLCStyle.icon_banner
-                iconText: VLCIcons.back
-                text: I18n.qtr("Back")
+                font.pixelSize: VLCStyle.icon_banner
+                text: VLCIcons.back
+                description: qsTr("Back")
                 focus: true
 
                 Navigation.parentItem: root
@@ -259,13 +279,12 @@ FocusScope{
                 Connections {
                     target: logo.button
 
-                    onSystemMenuVisibilityChanged: {
+                    function onSystemMenuVisibilityChanged() {
                         root.requestLockUnlockAutoHide(visible)
                     }
                 }
             }
         }
-
 
         ResumeDialog {
             id: resumeDialog
@@ -305,7 +324,8 @@ FocusScope{
         readonly property bool _alignHCenter: _centerX > _leftLimit
                                               && _centerX + centerTitleText.implicitWidth < _rightLimit
 
-        visible: root.pinControls && !resumeVisible
+        visible: (_showCenterText && root.resumeVisible === false)
+
         enabled: visible
 
         width: Math.min(centerTitleText._availableWidth, centerTitleText.implicitWidth)
@@ -345,6 +365,7 @@ FocusScope{
         width: root.textWidth - VLCStyle.margin_normal
 
         visible: !root.pinControls
+
         enabled: visible
 
         topPadding: VLCStyle.margin_large
@@ -370,13 +391,13 @@ FocusScope{
         enabled: root.showCSD
         visible: root.showCSD
         source:  VLCStyle.palette.hasCSDImage
-            ? "qrc:///widgets/CSDThemeButtonSet.qml"
-            : "qrc:///widgets/CSDWindowButtonSet.qml"
+            ? "qrc:///qt/qml/VLC/Widgets/CSDThemeButtonSet.qml"
+            : "qrc:///qt/qml/VLC/Widgets/CSDWindowButtonSet.qml"
 
         Connections {
             target: csdDecorations.item
-            enabled: csdDecorations.loaded
-            onHoveredChanged: root.requestLockUnlockAutoHide(csdDecorations.item.hovered)
+            enabled: csdDecorations.status === Loader.Ready
+            function onButtonHoveredChanged() { root.requestLockUnlockAutoHide(csdDecorations.item.buttonHovered) }
         }
     }
 
@@ -392,20 +413,23 @@ FocusScope{
         anchors.right: parent.right
         anchors.rightMargin: root._sideMargin + extraRightMargin
 
-        Widgets.IconControlButton {
+        visible: root._showTopBar
+
+        Widgets.IconToolButton {
             id: menuSelector
 
             anchors.verticalCenter: parent.verticalCenter
             visible: !root.showToolbar
             enabled: visible
             focus: visible
-            size: VLCStyle.icon_banner
+            font.pixelSize: VLCStyle.icon_banner
 
             width: VLCStyle.bannerButton_width
             height: VLCStyle.bannerButton_height
 
-            iconText: VLCIcons.menu
-            text: I18n.qtr("Menu")
+            text: VLCIcons.more
+            description: qsTr("Menu")
+            checked: contextMenu.shown
 
             Navigation.parentItem: root
             Navigation.leftItem: backBtn
@@ -415,24 +439,33 @@ FocusScope{
 
             onHoveredChanged: root.requestLockUnlockAutoHide(hovered)
 
-            QmlGlobalMenu {
+            Menus.QmlGlobalMenu {
                 id: contextMenu
 
                 ctx: MainCtx
+                playerViewVisible: History.match(History.viewPath, ["player"])
 
                 onAboutToShow: root.requestLockUnlockAutoHide(true)
                 onAboutToHide: root.requestLockUnlockAutoHide(false)
             }
+
+            Connections {
+                target: root
+
+                function onForceUnlock() {
+                    contextMenu.close()
+                }
+            }
         }
 
-        Widgets.IconControlButton {
+        Widgets.IconToolButton {
             id: playlistButton
 
             anchors.verticalCenter: parent.verticalCenter
             objectName: ControlListModel.PLAYLIST_BUTTON
-            size: VLCStyle.icon_banner
-            iconText: VLCIcons.playlist
-            text: I18n.qtr("Playlist")
+            font.pixelSize: VLCStyle.icon_banner
+            text: VLCIcons.playlist
+            description: qsTr("Playlist")
             focus: root.showToolbar
 
             checked: MainCtx.playlistVisible

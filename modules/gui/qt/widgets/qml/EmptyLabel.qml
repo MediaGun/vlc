@@ -16,21 +16,18 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
-import org.videolan.vlc 0.1
+import QtQuick
+import QtQuick.Templates as T
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.Style
+import VLC.Widgets as Widgets
 
-FocusScope {
+T.Control {
     id: root
 
     // Aliases
 
     default property alias contents: column.data
-
-    property alias spacing: column.spacing
 
     property alias cover: cover.source
 
@@ -41,9 +38,12 @@ FocusScope {
 
     property alias column: column
 
+    spacing: VLCStyle.margin_small
+
     enabled: visible
+
     Accessible.role: Accessible.Pane
-    Accessible.name: I18n.qtr("Empty view")
+    Accessible.name: qsTr("Empty view")
 
     // Children
 
@@ -59,7 +59,7 @@ FocusScope {
 
         width: root.width
 
-        spacing: VLCStyle.margin_small
+        spacing: root.spacing
 
         Item {
             width: parent.width
@@ -73,7 +73,7 @@ FocusScope {
                 width: VLCStyle.colWidth(1)
                 height: VLCStyle.colWidth(1)
 
-                Image {
+                ScaledImage {
                     id: cover
 
                     anchors.fill: parent
@@ -83,8 +83,9 @@ FocusScope {
                     fillMode: Image.PreserveAspectFit
                 }
 
-                Widgets.ListCoverShadow {
-                    anchors.fill: cover
+                Widgets.DefaultShadow {
+                    anchors.centerIn: cover
+                    sourceItem: parent
                 }
             }
 

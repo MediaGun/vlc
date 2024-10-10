@@ -3,7 +3,7 @@
  *****************************************************************************
  * Copyright (C) 2022 VLC authors and VideoLAN
  *
- * Authors: Claudio Cambra <claudio.cambra@gmail.com>
+ * Authors: Claudio Cambra <developer@claudiocambra.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,13 +26,17 @@
 #import "extensions/NSFont+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 #import "extensions/NSView+VLCAdditions.h"
+
 #import "views/VLCImageView.h"
 #import "views/VLCTrackingView.h"
+
 #import "main/VLCMain.h"
+
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryDataTypes.h"
+#import "library/VLCLibraryItemInternalMediaItemsDataSource.h"
 #import "library/VLCLibraryTableCellView.h"
-#import "library/audio-library/VLCLibraryAlbumTracksDataSource.h"
+#import "library/VLCLibraryRepresentedItem.h"
 
 NSString *VLCAudioLibrarySongCellIdentifier = @"VLCAudioLibrarySongCellIdentifier";
 
@@ -60,7 +64,7 @@ NSString *VLCAudioLibrarySongCellIdentifier = @"VLCAudioLibrarySongCellIdentifie
     self.trackingView.viewToShow = self.trackNumberTextField;
 
     if (@available(macOS 10.14, *)) {
-        self.playInstantlyButton.contentTintColor = [NSColor VLCAccentColor];
+        self.playInstantlyButton.contentTintColor = NSColor.VLCAccentColor;
     }
 
     [self prepareForReuse];
@@ -78,38 +82,30 @@ NSString *VLCAudioLibrarySongCellIdentifier = @"VLCAudioLibrarySongCellIdentifie
 
 - (IBAction)playInstantly:(id)sender
 {
-    if(_representedMediaItem == nil) {
+    [self.representedItem play];
+}
+
+- (void)setRepresentedItem:(VLCLibraryRepresentedItem *)representedItem
+{
+    if (representedItem == nil) {
+        NSLog(@"Represented item is nil, cannot set in song table cell view");
         return;
     }
 
-    if (!_libraryController) {
-        _libraryController = [[VLCMain sharedInstance] libraryController];
-    }
+    _representedItem = representedItem;
 
-    BOOL playImmediately = YES;
-    [_libraryController appendItemToPlaylist:_representedMediaItem playImmediately:playImmediately];
-}
+    VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)representedItem.item;
+    NSAssert(mediaItem != nil, @"Represented item should be a medialibrarymediaitem!");
 
-- (void)setRepresentedMediaItem:(VLCMediaLibraryMediaItem *)representedMediaItem
-{
-    _representedMediaItem = representedMediaItem;
-    self.songNameTextField.stringValue = representedMediaItem.displayString;
-    self.durationTextField.stringValue = representedMediaItem.durationString;
+    self.songNameTextField.stringValue = mediaItem.displayString;
+    self.durationTextField.stringValue = mediaItem.durationString;
 
-    if (representedMediaItem.trackNumber == 0) {
+    if (mediaItem.trackNumber == 0) {
         self.trackNumberTextField.stringValue = @"—";
     } else {
-        self.trackNumberTextField.stringValue = [NSString stringWithFormat:@"%d", representedMediaItem.trackNumber];
+        self.trackNumberTextField.stringValue = [NSString stringWithFormat:@"%d", mediaItem.trackNumber];
     }
 
-}
-
-- (void)setRepresentedItem:(id<VLCMediaLibraryItemProtocol>)libraryItem
-{
-    VLCMediaLibraryMediaItem * const mediaItem = (VLCMediaLibraryMediaItem *)libraryItem;
-    if (mediaItem != nil) {
-        [self setRepresentedMediaItem:mediaItem];
-    }
 }
 
 @end

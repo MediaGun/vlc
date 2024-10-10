@@ -267,13 +267,14 @@ OS="${HOST#*-}" # strip architecture
 MAKE=make
 case "${OS}" in
 	*-darwin*)
+		add_make_enabled "HAVE_DARWIN_OS"
 		if test -z "$BUILDFORIOS"
 		then
 			check_macosx_sdk
-			add_make_enabled "HAVE_MACOSX" "HAVE_DARWIN_OS" "HAVE_BSD"
+			add_make_enabled "HAVE_MACOSX"
 		else
 			check_ios_sdk
-			add_make_enabled "HAVE_IOS" "HAVE_DARWIN_OS" "HAVE_BSD" "HAVE_FPU"
+			add_make_enabled "HAVE_IOS" "HAVE_FPU"
 
 			case "${HOST}" in
 				*arm64*)
@@ -287,9 +288,21 @@ case "${OS}" in
 		then
 			add_make_enabled "HAVE_TVOS"
 		fi
+		if test "$BUILDFORWATCHOS"
+		then
+			add_make_enabled "HAVE_WATCHOS"
+		fi
+		if test "$BUILDFORVISIONOS"
+		then
+			add_make_enabled "HAVE_XROS"
+		fi
 		if test "$ENABLE_BITCODE"
 		then
 			add_make_enabled "HAVE_BITCODE_ENABLED"
+		fi
+		if test "$BUILDFORSIMULATOR"
+		then
+			add_make_enabled "HAVE_SIMULATOR"
 		fi
 		;;
 	*bsd*)
@@ -323,13 +336,13 @@ case "${OS}" in
 	*mingw*)
 		add_make_enabled "HAVE_WIN32"
 		case "${HOST}" in
-			*winphone*|*windowsphone*)
-				add_make_enabled "HAVE_WINDOWSPHONE"
+			*winphone*|*windowsphone*|*winrt*|*uwp*)
+				add_make_enabled "HAVE_WINSTORE"
 				;;
 		esac
 		case "${HOST}" in
-			*winphone*|*windowsphone*|*winrt*|*uwp*)
-				add_make_enabled "HAVE_WINSTORE"
+			*x86_64*|*aarch64*)
+				add_make_enabled "HAVE_WIN64"
 				;;
 		esac
 		case "${HOST}" in
@@ -351,13 +364,17 @@ esac
 #
 BOOTSTRAP_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
 CURRENT_PATH="$( pwd -P )"
+
+ARCH=$("${BOOTSTRAP_PATH}/src/get-arch.sh" "${HOST}")
+add_make "ARCH := $ARCH"
+
 # location of the contrib/src folder from the root of the contrib build folder
 TOPSRC=$(python3 -c "import os; print(os.path.relpath('$BOOTSTRAP_PATH', '$CURRENT_PATH'))")
 # location of the contrib/src folder from a built library folder
 TOPSRC_BUILT=$(python3 -c "import os; print(os.path.relpath('$BOOTSTRAP_PATH', '$CURRENT_PATH/libfoo'))")
-add_make "TOPSRC = $TOPSRC"
-add_make "TOPSRC_BUILT = $TOPSRC_BUILT"
-add_make "TOPDST = .."
+add_make "TOPSRC := $TOPSRC"
+add_make "TOPSRC_BUILT := $TOPSRC_BUILT"
+add_make "TOPDST := .."
 add_make "-include config.mak"
 add_make 'include $(TOPSRC)/src/main.mak'
 echo "Bootstrap completed."

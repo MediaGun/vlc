@@ -32,11 +32,21 @@
 #  include "compositor_win7.hpp"
 #endif
 
-#ifdef QT5_HAS_XCB
+#ifdef QT_HAS_WAYLAND_COMPOSITOR
+#  include "compositor_wayland.hpp"
+#endif
+
+#ifdef QT_HAS_X11_COMPOSITOR
 #  include "compositor_x11.hpp"
 #endif
 
+#include "maininterface/windoweffects_module.hpp"
+
+#include "compositor_platform.hpp"
+
 #include <vlc_window.h>
+#include <vlc_modules.h>
+
 
 using namespace vlc;
 
@@ -45,26 +55,26 @@ static Compositor* instanciateCompositor(qt_intf_t *p_intf) {
     return new T(p_intf);
 }
 
-template<typename T>
-static bool preInit(qt_intf_t *p_intf) {
-    return T::preInit(p_intf);
-}
-
 struct {
     const char* name;
     Compositor* (*instantiate)(qt_intf_t *p_intf);
-    bool (*preInit)(qt_intf_t *p_intf);
 } static compositorList[] = {
-#ifdef _WIN32
-#ifdef HAVE_DCOMP_H
-    {"dcomp", &instanciateCompositor<CompositorDirectComposition>, &preInit<CompositorDirectComposition> },
+#if defined(_WIN32) && defined(HAVE_DCOMP_H)
+    {"dcomp", &instanciateCompositor<CompositorDirectComposition> },
 #endif
-    {"win7", &instanciateCompositor<CompositorWin7>, &preInit<CompositorWin7> },
+#if defined(_WIN32) || defined(__APPLE__)
+    {"platform", &instanciateCompositor<CompositorPlatform> },
 #endif
-#ifdef QT5_HAS_X11_COMPOSITOR
-    {"x11", &instanciateCompositor<CompositorX11>, &preInit<CompositorX11> },
+#if defined(_WIN32)
+    {"win7", &instanciateCompositor<CompositorWin7> },
 #endif
-    {"dummy", &instanciateCompositor<CompositorDummy>, &preInit<CompositorDummy> }
+#ifdef QT_HAS_WAYLAND_COMPOSITOR
+    {"wayland", &instanciateCompositor<CompositorWayland> },
+#endif
+#ifdef QT_HAS_X11_COMPOSITOR
+    {"x11", &instanciateCompositor<CompositorX11> },
+#endif
+    {"dummy", &instanciateCompositor<CompositorDummy> }
 };
 
 CompositorFactory::CompositorFactory(qt_intf_t *p_intf, const char* compositor)
@@ -73,31 +83,21 @@ CompositorFactory::CompositorFactory(qt_intf_t *p_intf, const char* compositor)
 {
 }
 
-bool CompositorFactory::preInit()
-{
-    for (; m_compositorIndex < ARRAY_SIZE(compositorList); m_compositorIndex++)
-    {
-        if (m_compositorName == "auto" || m_compositorName == compositorList[m_compositorIndex].name)
-        {
-            if (compositorList[m_compositorIndex].preInit(m_intf))
-                return true;
-        }
-    }
-    return false;
-}
-
 Compositor* CompositorFactory::createCompositor()
 {
     for (; m_compositorIndex < ARRAY_SIZE(compositorList); m_compositorIndex++)
     {
         if (m_compositorName == "auto" || m_compositorName == compositorList[m_compositorIndex].name)
         {
-            Compositor* compositor = compositorList[m_compositorIndex].instantiate(m_intf);
+            std::unique_ptr<Compositor> compositor {
+                compositorList[m_compositorIndex].instantiate(m_intf)
+            };
+
             if (compositor->init())
             {
                 //avoid looping over the same compositor if the current ones fails further initialisation steps
                 m_compositorIndex++;
-                return compositor;
+                return compositor.release();
             }
         }
     }
@@ -174,7 +174,12 @@ CompositorVideo::CompositorVideo(qt_intf_t *p_intf, QObject* parent)
 
 CompositorVideo::~CompositorVideo()
 {
-
+    if (m_windowEffectsModule)
+    {
+        if (m_windowEffectsModule->p_module)
+            module_unneed(m_windowEffectsModule, m_windowEffectsModule->p_module);
+        vlc_object_delete(m_windowEffectsModule);
+    }
 }
 
 void CompositorVideo::commonSetupVoutWindow(vlc_window_t* p_wnd, VoutDestroyCb destroyCb)
@@ -195,10 +200,26 @@ void CompositorVideo::commonSetupVoutWindow(vlc_window_t* p_wnd, VoutDestroyCb d
     p_wnd->sys = this;
     p_wnd->ops = &ops;
     p_wnd->info.has_double_click = true;
+
+    // These need to be connected here, since the compositor might not be ready when
+    // these signals are emitted. VOut window might not be set, or worse, compositor's
+    // internal preparations might not be completed yet:
+    connect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfacePositionChanged,
+            this, &CompositorVideo::onSurfacePositionChanged, Qt::UniqueConnection);
+    connect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfaceSizeChanged,
+            this, &CompositorVideo::onSurfaceSizeChanged, Qt::UniqueConnection);
 }
 
 void CompositorVideo::windowDestroy()
 {
+    // Current thread may not be the thread where
+    // m_videoSurfaceProvider belongs to, so do not delete
+    // it here:
+    disconnect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfacePositionChanged,
+               this, &CompositorVideo::onSurfacePositionChanged);
+    disconnect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfaceSizeChanged,
+               this, &CompositorVideo::onSurfaceSizeChanged);
+
     if (m_destroyCb)
         m_destroyCb(m_wnd);
 }
@@ -237,29 +258,32 @@ void CompositorVideo::commonWindowDisable()
 }
 
 
-bool CompositorVideo::commonGUICreateImpl(QWindow* window, QWidget* rootWidget, CompositorVideo::Flags flags)
+bool CompositorVideo::commonGUICreateImpl(QWindow* window, CompositorVideo::Flags flags)
 {
     assert(m_mainCtx);
+    assert(window);
 
     m_videoSurfaceProvider = std::make_unique<VideoSurfaceProvider>();
     m_mainCtx->setVideoSurfaceProvider(m_videoSurfaceProvider.get());
-    if (flags & CompositorVideo::CAN_SHOW_PIP)
+    const bool backendIsOpenVg = QQuickWindow::sceneGraphBackend() == QLatin1String("openvg");
+    if (!backendIsOpenVg && (flags & CompositorVideo::CAN_SHOW_PIP))
     {
         m_mainCtx->setCanShowVideoPIP(true);
-        connect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfacePositionChanged,
-                this, &CompositorVideo::onSurfacePositionChanged);
-        connect(m_videoSurfaceProvider.get(), &VideoSurfaceProvider::surfaceSizeChanged,
-                this, &CompositorVideo::onSurfaceSizeChanged);
+    }
+    if (!backendIsOpenVg && (flags & CompositorVideo::HAS_ACRYLIC))
+    {
+        setBlurBehind(window, true);
     }
     m_videoWindowHandler = std::make_unique<VideoWindowHandler>(m_intf);
     m_videoWindowHandler->setWindow( window );
 
 #ifdef _WIN32
-    m_interfaceWindowHandler = std::make_unique<InterfaceWindowHandlerWin32>(m_intf, m_mainCtx, window, rootWidget);
+    m_interfaceWindowHandler = std::make_unique<InterfaceWindowHandlerWin32>(m_intf, m_mainCtx, window);
 #else
-    m_interfaceWindowHandler = std::make_unique<InterfaceWindowHandler>(m_intf, m_mainCtx,  window, rootWidget);
+    m_interfaceWindowHandler = std::make_unique<InterfaceWindowHandler>(m_intf, m_mainCtx, window);
 #endif
-    m_mainCtx->setHasAcrylicSurface(flags & CompositorVideo::HAS_ACRYLIC);
+    m_mainCtx->setHasAcrylicSurface(m_blurBehind);
+    m_mainCtx->setWindowSuportExtendedFrame(flags & CompositorVideo::HAS_EXTENDED_FRAME);
 
 #ifdef _WIN32
     m_taskbarWidget = std::make_unique<WinTaskbarWidget>(m_intf, window);
@@ -269,9 +293,9 @@ bool CompositorVideo::commonGUICreateImpl(QWindow* window, QWidget* rootWidget, 
     return true;
 }
 
-bool CompositorVideo::commonGUICreate(QWindow* window, QWidget* rootWidget, QmlUISurface* qmlSurface, CompositorVideo::Flags flags)
+bool CompositorVideo::commonGUICreate(QWindow* window, QmlUISurface* qmlSurface, CompositorVideo::Flags flags)
 {
-    bool ret = commonGUICreateImpl(window, rootWidget, flags);
+    bool ret = commonGUICreateImpl(window, flags);
     if (!ret)
         return false;
     ret = m_ui->setup(qmlSurface->engine());
@@ -281,9 +305,9 @@ bool CompositorVideo::commonGUICreate(QWindow* window, QWidget* rootWidget, QmlU
     return true;
 }
 
-bool CompositorVideo::commonGUICreate(QWindow* window, QWidget* rootWidget, QQuickView* qmlView, CompositorVideo::Flags flags)
+bool CompositorVideo::commonGUICreate(QWindow* window, QQuickView* qmlView, CompositorVideo::Flags flags)
 {
-    bool ret = commonGUICreateImpl(window, rootWidget, flags);
+    bool ret = commonGUICreateImpl(window, flags);
     if (!ret)
         return false;
     ret = m_ui->setup(qmlView->engine());
@@ -305,7 +329,53 @@ void CompositorVideo::commonGUIDestroy()
 
 void CompositorVideo::commonIntfDestroy()
 {
-    unloadGUI();
     m_videoWindowHandler.reset();
     m_videoSurfaceProvider.reset();
+    unloadGUI();
+}
+
+bool CompositorVideo::setBlurBehind(QWindow *window, const bool enable)
+{
+    assert(window);
+    assert(m_intf);
+
+    if (enable)
+    {
+        if (!var_InheritBool(m_intf, "qt-backdrop-blur"))
+        {
+            return false;
+        }
+    }
+
+    if (m_failedToLoadWindowEffectsModule)
+        return false;
+
+    if (!m_windowEffectsModule)
+    {
+        m_windowEffectsModule = vlc_object_create<WindowEffectsModule>(m_intf);
+        if (!m_windowEffectsModule) // do not set m_failedToLoadWindowEffectsModule here
+            return false;
+    }
+
+    if (!m_windowEffectsModule->p_module)
+    {
+        m_windowEffectsModule->p_module = module_need(m_windowEffectsModule, "qtwindoweffects", nullptr, false);
+        if (!m_windowEffectsModule->p_module)
+        {
+            msg_Dbg(m_intf, "A module providing window effects capability could not be instantiated. " \
+                            "Native background blur effect will not be available. " \
+                            "The application may compensate this with a simulated effect on certain platform(s).");
+            m_failedToLoadWindowEffectsModule = true;
+            vlc_object_delete(m_windowEffectsModule);
+            m_windowEffectsModule = nullptr;
+            return false;
+        }
+    }
+
+    if (!m_windowEffectsModule->isEffectAvailable(WindowEffectsModule::BlurBehind))
+        return false;
+
+    m_windowEffectsModule->setBlurBehind(window, enable);
+    m_blurBehind = enable;
+    return true;
 }

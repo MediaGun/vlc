@@ -26,20 +26,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class VLCInputItem;
 @class VLCPlaylistItem;
-@class VLCAbstractMediaLibraryItem;
+@protocol VLCMediaLibraryItemProtocol;
 
 @interface VLCLibraryImageCache : NSObject
 
-+ (nullable NSImage *)thumbnailForLibraryItem:(VLCAbstractMediaLibraryItem*)libraryItem;
-+ (nullable NSImage *)thumbnailForInputItem:(VLCInputItem*)inputItem;
-+ (nullable NSImage *)thumbnailForPlaylistItem:(VLCPlaylistItem*)playlistItem;
-
-+ (void)thumbnailForLibraryItem:(VLCAbstractMediaLibraryItem *)libraryItem
++ (void)thumbnailForLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem
                  withCompletion:(void(^)(const NSImage *))completionHandler;
 + (void)thumbnailForInputItem:(VLCInputItem *)inputItem
                withCompletion:(void(^)(const NSImage *))completionHandler;
 + (void)thumbnailForPlaylistItem:(VLCPlaylistItem *)playlistItem
                   withCompletion:(void(^)(const NSImage *))completionHandler;
++ (NSImage *)thumbnailAtMrl:(NSString *)smallArtworkMRL;
 
 @end
 

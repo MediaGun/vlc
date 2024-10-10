@@ -40,7 +40,6 @@
 #include <vlc_common.h>
 #include <vlc_actions.h>
 #include <vlc_charset.h>
-#include "config/configuration.h"
 #include "libvlc.h"
 
 static const struct key_descriptor
@@ -223,9 +222,8 @@ uint_fast32_t vlc_str2keycode (const char *name)
                                         sizeof (s_keys[0]), keystrcmp);
     if (d != NULL)
         code = d->i_code;
-    else
-    if (vlc_towc (name, &code) <= 0)
-        code = KEY_UNSET;
+    else if (vlc_towc (name, &code) <= 0)
+        return KEY_UNSET;
 
     if (code != KEY_UNSET)
         code |= mods;
@@ -490,6 +488,8 @@ static void add_wheel_mapping (void **map, uint32_t kmore, uint32_t kless,
 
 /**
  * Sets up all key mappings for a given action.
+ *
+ * \param obj the VLC object to inherit keys from and log to
  * \param map tree (of struct mapping entries) to write mappings to
  * \param confname VLC configuration item to read mappings from
  * \param action action ID
@@ -552,9 +552,11 @@ int libvlc_InternalActionsInit (libvlc_int_t *libvlc)
 #endif
         as->ppsz_keys[i] = s_names2actions[i].psz;
 
+#define STRINGIFY_(x) #x
+#define STRINGIFY(x) STRINGIFY_(x)
         char name[12 + MAXACTION];
 
-        snprintf (name, sizeof (name), "global-key-%s", s_names2actions[i].psz);
+        snprintf (name, sizeof (name), "global-key-%." STRINGIFY(MAXACTION) "s", s_names2actions[i].psz);
         init_action (obj, &as->map, name + 7, s_names2actions[i].id);
         init_action (obj, &as->global_map, name, s_names2actions[i].id);
     }
@@ -626,7 +628,7 @@ vlc_actions_get_keycodes(vlc_object_t *p_obj, const char *psz_key_name,
 {
     assert(strlen( psz_key_name ) <= MAXACTION);
     char varname[12 /* "global-key-" */ + MAXACTION];
-    sprintf( varname, "%skey-%s", b_global ? "global-" : "", psz_key_name );
+    snprintf( varname, ARRAY_SIZE(varname), "%skey-%s", b_global ? "global-" : "", psz_key_name );
 
     *pp_keycodes = NULL;
 

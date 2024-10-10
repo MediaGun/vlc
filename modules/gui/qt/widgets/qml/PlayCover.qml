@@ -18,14 +18,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.Style
+import VLC.Widgets as Widgets
 
-MouseArea {
+Item {
+    id: root
+
     // Settings
 
     width: VLCStyle.play_cover_normal
@@ -33,11 +33,13 @@ MouseArea {
 
     // NOTE: This is the same scaling than the PlayButton, except we make it bigger.
     //       Maybe we could crank this to 1.1.
-    scale: (containsMouse && pressed === false) ? 1.05 : 1.0
+    scale: (hoverHandler.hovered && !tapHandler.pressed) ? 1.05 : 1.0
 
     opacity: (visible) ? 1.0 : 0.0
 
-    hoverEnabled: true
+    activeFocusOnTab: false
+
+    signal tapped(var point)
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
@@ -48,7 +50,7 @@ MouseArea {
 
     Behavior on scale {
         // NOTE: We disable the animation while pressing to make it more impactful.
-        enabled: (pressed === false)
+        enabled: (!tapHandler.pressed)
 
         NumberAnimation {
             duration: VLCStyle.duration_short
@@ -67,7 +69,23 @@ MouseArea {
 
     // Children
 
-    Image {
+    TapHandler {
+        id: tapHandler
+
+        grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+        onSingleTapped: (eventPoint, button) => {
+            root.tapped(point)
+        }
+    }
+
+    HoverHandler {
+        id: hoverHandler
+
+        grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
+    }
+
+    ScaledImage {
         anchors.centerIn: parent
 
         // NOTE: We round this to avoid blurry textures with the QML renderer.
@@ -90,10 +108,9 @@ MouseArea {
     Widgets.IconLabel {
         anchors.centerIn: parent
 
-        text: VLCIcons.play
+        text: VLCIcons.play_filled
 
-        color: (containsMouse) ? theme.accent
-                               : "black"
+        color: (root.hovered) ? theme.accent : "black"
 
         font.pixelSize: Math.round(parent.width / 2)
     }

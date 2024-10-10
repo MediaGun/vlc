@@ -18,19 +18,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Player
 
-import org.videolan.vlc 0.1
 
-Widgets.IconControlButton {
+Widgets.IconToolButton {
 
     enabled: Player.hasMenu
 
-    iconText: VLCIcons.dvd_menu
-    text: I18n.qtr("Menu")
+    text: VLCIcons.dvd_menu
+    description: qsTr("Menu")
 
     onClicked: Player.sectionMenu()
 }

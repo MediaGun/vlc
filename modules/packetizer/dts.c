@@ -28,6 +28,8 @@
 # include "config.h"
 #endif
 
+#include <stdbit.h>
+
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 #include <vlc_codec.h>
@@ -110,7 +112,7 @@ static block_t *GetOutBuffer( decoder_t *p_dec )
     p_dec->fmt_out.audio.i_chan_mode = p_sys->first.i_chan_mode;
     p_dec->fmt_out.audio.i_physical_channels = p_sys->first.i_physical_channels;
     p_dec->fmt_out.audio.i_channels =
-        vlc_popcount( p_dec->fmt_out.audio.i_physical_channels );
+        stdc_count_ones( p_dec->fmt_out.audio.i_physical_channels );
 
     p_dec->fmt_out.i_bitrate = p_sys->first.i_bitrate;
 
@@ -205,7 +207,8 @@ static block_t *PacketizeBlock( decoder_t *p_dec, block_t **pp_block )
 
             /* Check if frame is valid and get frame info */
             if( vlc_dts_header_Parse( &p_sys->first, p_header,
-                                      VLC_DTS_HEADER_SIZE ) != VLC_SUCCESS )
+                                      VLC_DTS_HEADER_SIZE ) != VLC_SUCCESS
+             || p_sys->first.i_frame_size == 0 )
             {
                 msg_Dbg( p_dec, "emulated sync word" );
                 block_SkipByte( &p_sys->bytestream );

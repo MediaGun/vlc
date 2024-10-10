@@ -24,6 +24,7 @@
 #include <vlc_common.h>
 #include <vlc_input_item.h>
 #include <vlc_services_discovery.h>
+#include <vlc_preparser.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -217,6 +218,7 @@ vlc_media_tree_Remove(vlc_media_tree_t *tree, input_item_t *media);
  * Find the node containing the requested input item (and its parent).
  *
  * \param tree the media tree, locked
+ * \param media the media to look for in the tree
  * \param result point to the matching node if the function returns true [OUT]
  * \param result_parent if not NULL, point to the matching node parent
  *                      if the function returns true [OUT]
@@ -233,23 +235,14 @@ vlc_media_tree_Find(vlc_media_tree_t *tree, const input_item_t *media,
  * Preparse a media, and expand it in the media tree on subitems added.
  *
  * \param tree   the media tree (not necessarily locked)
- * \param libvlc the libvlc instance
+ * \param parser a valid preparser
  * \param media  the media to preparse
- * \param id     a task identifier
+ * \param id     a task identifier, cancel it via vlc_preparser_Cancel()
  */
 VLC_API void
-vlc_media_tree_Preparse(vlc_media_tree_t *tree, libvlc_int_t *libvlc,
+vlc_media_tree_Preparse(vlc_media_tree_t *tree, vlc_preparser_t *parser,
                         input_item_t *media, void *id);
 
-
-/**
- * Cancel a media tree preparse request
- *
- * \param libvlc the libvlc instance
- * \param id the preparse task id
- */
-VLC_API void
-vlc_media_tree_PreparseCancel(libvlc_int_t *libvlc, void* id);
 
 /**
  * Media source.
@@ -358,4 +351,3 @@ vlc_media_source_meta_list_Delete(vlc_media_source_meta_list_t *);
 #endif
 
 #endif
-

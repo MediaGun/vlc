@@ -15,6 +15,12 @@ endif
 endif
 endif
 
+DEPS_iconv =
+ifdef HAVE_WINSTORE
+# gnulib uses GetFileInformationByHandle
+DEPS_iconv += alloweduwp $(DEPS_alloweduwp)
+endif
+
 $(TARBALLS)/libiconv-$(LIBICONV_VERSION).tar.gz:
 	$(call download_pkg,$(LIBICONV_URL),iconv)
 
@@ -22,18 +28,13 @@ $(TARBALLS)/libiconv-$(LIBICONV_VERSION).tar.gz:
 
 iconv: libiconv-$(LIBICONV_VERSION).tar.gz .sum-iconv
 	$(UNPACK)
+	$(call update_autoconfig,build-aux)
+	$(call update_autoconfig,libcharset/build-aux)
 	$(APPLY) $(SRC)/iconv/bins.patch
 
-	# use CreateFile2 instead of CreateFile in UWP
+	# use CreateFile2 in Win8 as CreateFileW is forbidden in UWP
 	$(APPLY) $(SRC)/iconv/0001-Use-CreateFile2-in-UWP-builds.patch
 
-	# fix forbidden UWP call which can't be upstreamed as they won't
-	# differentiate for winstore, only _WIN32_WINNT
-	$(APPLY) $(SRC)/iconv/0001-do-not-call-GetHandleInformation-in-Winstore-apps.patch
-
-	$(UPDATE_AUTOCONFIG)
-	cd $(UNPACK_DIR) && cp config.guess config.sub build-aux \
-	                 && mv config.guess config.sub libcharset/build-aux
 	$(MOVE)
 
 ICONV_CONF := --disable-nls

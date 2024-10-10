@@ -61,11 +61,10 @@ signals:
 protected:
     QVariant itemRoleData(MLItem *item, int role) const override;
 
-    std::unique_ptr<MLBaseModel::BaseLoader> createLoader() const override;
+    std::unique_ptr<MLListCacheLoader> createMLLoader() const override;
 
 private:
     void onVlcMlEvent(const MLEvent &event) override;
-    vlc_ml_sorting_criteria_t roleToCriteria(int role) const override;
     vlc_ml_sorting_criteria_t nameToCriteria(QByteArray name) const override;
 
     QString getCover(MLGenre * genre) const;
@@ -73,16 +72,13 @@ private:
     QString m_coverDefault;
 
 private:
-    struct Loader : public BaseLoader
+    struct Loader : public MLListCacheLoader::MLOp
     {
-        Loader(const MLGenreModel &model) : BaseLoader(model) {}
-        size_t count(vlc_medialibrary_t* ml) const override;
-        std::vector<std::unique_ptr<MLItem>> load(vlc_medialibrary_t* ml, size_t index, size_t count) const override;
+        using MLListCacheLoader::MLOp::MLOp;
+        size_t count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const override;
+        std::vector<std::unique_ptr<MLItem>> load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const override;
         std::unique_ptr<MLItem> loadItemById(vlc_medialibrary_t* ml, MLItemId itemId) const override;
     };
-
-private: // Variables
-    static QHash<QByteArray, vlc_ml_sorting_criteria_t> M_names_to_criteria;
 };
 
 

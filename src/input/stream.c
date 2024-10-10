@@ -36,8 +36,8 @@
 #include <vlc_common.h>
 #include <vlc_block.h>
 #include <vlc_access.h>
-#include <vlc_charset.h>
 #include <vlc_interrupt.h>
+#include <vlc_charset.h>
 #include <vlc_stream_extractor.h>
 
 #include <libvlc.h>
@@ -176,16 +176,27 @@ stream_t *(vlc_stream_NewMRL)(vlc_object_t* parent, const char* mrl )
     if( anchor == NULL )
         return stream;
 
-    char const* extra;
-    if( stream_extractor_AttachParsed( &stream, anchor + 1, &extra ) )
+    struct mrl_info mrli;
+    mrl_info_Init( &mrli );
+    if( mrl_FragmentSplit( &mrli, anchor + 1 ) )
     {
-        msg_Err( parent, "unable to open %s", mrl );
         vlc_stream_Delete( stream );
+        mrl_info_Clean( &mrli );
         return NULL;
     }
 
-    if( extra && *extra )
-        msg_Warn( parent, "ignoring extra fragment data: %s", extra );
+    if( stream_extractor_AttachParsed( &stream, &mrli ) )
+    {
+        msg_Err( parent, "unable to open %s", mrl );
+        vlc_stream_Delete( stream );
+        mrl_info_Clean( &mrli );
+        return NULL;
+    }
+
+    if( mrli.extra && *mrli.extra )
+        msg_Warn( parent, "ignoring extra fragment data: %s", mrli.extra );
+
+    mrl_info_Clean( &mrli );
 
     return stream;
 }
@@ -795,12 +806,22 @@ int vlc_stream_vaControl(stream_t *s, int cmd, va_list args)
                 return s->ops->stream.get_size(s, size);
             }
             return VLC_EGENERIC;
-        case STREAM_GET_PTS_DELAY:
-            if (s->ops->get_pts_delay != NULL) {
-                vlc_tick_t *pts_delay = va_arg(args, vlc_tick_t *);
-                return s->ops->get_pts_delay(s, pts_delay);
+        case STREAM_GET_MTIME:
+            if (s->ops->stream.get_mtime != NULL) {
+                uint64_t *mtime = va_arg(args, uint64_t *);
+                return s->ops->stream.get_mtime(s, mtime);
             }
             return VLC_EGENERIC;
+        case STREAM_GET_PTS_DELAY:
+        {
+            vlc_tick_t *pts_delay = va_arg(args, vlc_tick_t *);
+            if (s->ops->stream.get_pts_delay != NULL) {
+                *pts_delay = s->ops->stream.get_pts_delay(s);
+            } else {
+                *pts_delay = DEFAULT_PTS_DELAY;
+            }
+            return VLC_SUCCESS;
+        }
         case STREAM_GET_TITLE_INFO:
             if (s->ops->stream.get_title_info != NULL) {
                 input_title_t ***title_info = va_arg(args, input_title_t ***);

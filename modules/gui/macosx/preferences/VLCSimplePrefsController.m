@@ -146,10 +146,13 @@ static NSString* VLCHotkeysSettingToolbarIdentifier = @"Hotkeys Settings Item Id
 @property (readwrite, weak) NSTableColumn *bannedTableColumn;
 @property (readwrite, weak) NSButton *removeFolderButton;
 @property (readwrite, weak) NSButton *banFolderButton;
+@property (readwrite, weak) NSButton *reloadFolderButton;
 
 - (IBAction)addFolder:(id)sender;
 - (IBAction)removeFolder:(id)sender;
 - (IBAction)banFolder:(id)sender;
+- (IBAction)reloadFolder:(id)sender;
+
 @end
 
 @interface VLCSimplePrefsController() <NSToolbarDelegate, NSWindowDelegate>
@@ -232,7 +235,7 @@ static NSString* VLCHotkeysSettingToolbarIdentifier = @"Hotkeys Settings Item Id
 - (void)setupMediaLibraryControlInterface
 {
     _mediaLibraryManagementController = [[VLCMediaLibraryFolderManagementController alloc] init];
-    _mediaLibraryBanFolderButton.enabled = _mediaLibraryRemoveFolderButton.enabled = NO;
+    _mediaLibraryBanFolderButton.enabled = _mediaLibraryRemoveFolderButton.enabled = _mediaLibraryReloadFolderButton.enabled = NO;
 
     _mediaLibraryFolderTableView.delegate = _mediaLibraryManagementController;
     _mediaLibraryFolderTableView.dataSource = _mediaLibraryManagementController;
@@ -244,6 +247,7 @@ static NSString* VLCHotkeysSettingToolbarIdentifier = @"Hotkeys Settings Item Id
     _mediaLibraryManagementController.pathTableColumn = _mediaLibraryPathTableColumn;
     _mediaLibraryManagementController.removeFolderButton = _mediaLibraryRemoveFolderButton;
     _mediaLibraryManagementController.banFolderButton = _mediaLibraryBanFolderButton;
+    _mediaLibraryManagementController.reloadFolderButton = _mediaLibraryReloadFolderButton;
 
     _mediaLibraryAddFolderButton.target = _mediaLibraryManagementController;
     _mediaLibraryAddFolderButton.action = @selector(addFolder:);
@@ -251,6 +255,8 @@ static NSString* VLCHotkeysSettingToolbarIdentifier = @"Hotkeys Settings Item Id
     _mediaLibraryBanFolderButton.action = @selector(banFolder:);
     _mediaLibraryRemoveFolderButton.target = _mediaLibraryManagementController;
     _mediaLibraryRemoveFolderButton.action = @selector(removeFolder:);
+    _mediaLibraryReloadFolderButton.target = _mediaLibraryManagementController;
+    _mediaLibraryReloadFolderButton.action = @selector(reloadFolder:);
 }
 
 #define CreateToolbarItem(name, desc, img, sel) \
@@ -305,7 +311,7 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
     static NSArray<NSString *> *toolbarIdentifiers = nil;
 
     dispatch_once(&onceToken, ^{
-        if ([[[VLCMain sharedInstance] libraryController] libraryModel]) {
+        if (VLCMain.sharedInstance.libraryController.libraryModel) {
             toolbarIdentifiers = @[VLCIntfSettingToolbarIdentifier,
                                    VLCAudioSettingToolbarIdentifier,
                                    VLCVideoSettingToolbarIdentifier,
@@ -380,7 +386,6 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
     [_input_hardwareAccelerationCheckbox setTitle: _NS("Enable hardware acceleration")];
     [_input_skipLoopLabel setStringValue: _NS("Skip the loop filter for H.264 decoding")];
     [_input_urlhandlerButton setTitle: _NS("Edit default application settings for network protocols")];
-    [_input_skipFramesCheckbox setTitle: _NS("Skip frames")];
     [_input_fastSeekCheckbox setTitle: _NS("Fast seek")];
 
     /* url handler */
@@ -456,6 +461,7 @@ create_toolbar_item(NSString *itemIdent, NSString *name, NSString *desc, NSStrin
     [_mediaLibraryAddFolderButton setTitle:_NS("Add Folder...")];
     [_mediaLibraryBanFolderButton setTitle:_NS("Ban Folder")];
     [_mediaLibraryRemoveFolderButton setTitle:_NS("Remove Folder")];
+    [_mediaLibraryReloadFolderButton setTitle:_NS("Reload Folder")];
     [_mediaLibraryNameTableColumn setTitle:_NS("Name")];
     [_mediaLibraryPresentTableColumn setTitle:_NS("Present")];
     [_mediaLibraryBannedTableColumn setTitle:_NS("Banned")];
@@ -757,7 +763,6 @@ static inline const char * __config_GetLabel(vlc_object_t *p_this, const char *p
     [self setupField:_input_recordTextField forOption:"input-record-path"];
 
     [self setupButton:_input_hardwareAccelerationCheckbox forBoolValue: "videotoolbox"];
-    [self setupButton:_input_skipFramesCheckbox forBoolValue: "skip-frames"];
     [self setupButton:_input_fastSeekCheckbox forBoolValue: "input-fast-seek"];
     [self setupButton:_input_aviPopup forIntList: "avi-index"];
     [self setupButton:_input_skipLoopPopup forIntList: "avcodec-skiploopfilter"];
@@ -888,7 +893,7 @@ static inline const char * __config_GetLabel(vlc_object_t *p_this, const char *p
         [self.window orderOut: sender];
     } else if (sender == _showAllButton) {
         [self.window orderOut: self];
-        [[[VLCMain sharedInstance] preferences] showPrefsWithLevel:[self.window level]];
+        [VLCMain.sharedInstance.preferences showPrefsWithLevel:[self.window level]];
     } else
         msg_Warn(p_intf, "unknown buttonAction sender");
 }
@@ -908,7 +913,7 @@ static inline const char * __config_GetLabel(vlc_object_t *p_this, const char *p
     [alert addButtonWithTitle:_NS("Continue")];
     [alert beginSheetModalForWindow:[sender window] completionHandler:^(NSModalResponse returnCode) {
         if (returnCode == NSAlertSecondButtonReturn) {
-            [[VLCMain sharedInstance] resetPreferences];
+            [VLCMain.sharedInstance resetPreferences];
         }
     }];
 }
@@ -1046,7 +1051,6 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
         config_PutPsz("input-record-path", [[_input_recordTextField stringValue] UTF8String]);
 
         config_PutInt("videotoolbox", [_input_hardwareAccelerationCheckbox state]);
-        config_PutInt("skip-frames", [_input_skipFramesCheckbox state]);
         config_PutInt("input-fast-seek", [_input_fastSeekCheckbox state]);
 
         SaveIntList(_input_aviPopup, "avi-index");
@@ -1106,7 +1110,7 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 
     /* okay, let's save our changes to vlcrc */
     config_SaveConfigFile(p_intf);
-    [[NSNotificationCenter defaultCenter] postNotificationName:VLCConfigurationChangedNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:VLCConfigurationChangedNotification object:nil];
 }
 
 - (void)showSettingsForCategory:(NSView *)categoryView
@@ -1335,7 +1339,7 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 
 - (NSString *)bundleIdentifierForApplicationName:(NSString *)appName
 {
-    NSWorkspace * workspace = [NSWorkspace sharedWorkspace];
+    NSWorkspace * workspace = NSWorkspace.sharedWorkspace;
     NSString * appPath = [workspace fullPathForApplication:appName];
     if (appPath) {
         NSBundle * appBundle = [NSBundle bundleWithPath:appPath];
@@ -1346,12 +1350,12 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 
 - (NSString *)applicationNameForBundleIdentifier:(NSString *)bundleIdentifier
 {
-    return [[[NSFileManager defaultManager] displayNameAtPath:[[NSWorkspace sharedWorkspace] absolutePathForAppBundleWithIdentifier:bundleIdentifier]] stringByDeletingPathExtension];
+    return [[[NSFileManager defaultManager] displayNameAtPath:[NSWorkspace.sharedWorkspace absolutePathForAppBundleWithIdentifier:bundleIdentifier]] stringByDeletingPathExtension];
 }
 
 - (NSImage *)iconForBundleIdentifier:(NSString *)bundleIdentifier
 {
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+    NSWorkspace *workspace = NSWorkspace.sharedWorkspace;
     NSSize iconSize = NSMakeSize(16., 16.);
     NSImage *icon = [workspace iconForFile:[workspace absolutePathForAppBundleWithIdentifier:bundleIdentifier]];
     [icon setSize:iconSize];
@@ -1536,10 +1540,10 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 {
     self = [super init];
     if (self) {
-        _libraryController = [[VLCMain sharedInstance] libraryController];
+        _libraryController = VLCMain.sharedInstance.libraryController;
         _libraryModel = _libraryController.libraryModel;
 
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         [notificationCenter addObserver:self
                                selector:@selector(listOfMonitoredFoldersUpdated:)
                                    name:VLCLibraryModelListOfMonitoredFoldersUpdated
@@ -1550,7 +1554,7 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)listOfMonitoredFoldersUpdated:(NSNotification *)aNotification
@@ -1594,6 +1598,12 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
     [_libraryController removeFolderWithFileURL:[NSURL URLWithString:entryPoint.MRL]];
 }
 
+- (IBAction)reloadFolder:(id)sender
+{
+    VLCMediaLibraryEntryPoint * const entryPoint = _libraryModel.listOfMonitoredFolders[self.libraryFolderTableView.selectedRow];
+    [_libraryController reloadFolderWithFileURL:[NSURL URLWithString:entryPoint.MRL]];
+}
+
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView
 {
     return _libraryModel.listOfMonitoredFolders.count;
@@ -1617,11 +1627,11 @@ static inline void save_string_list(intf_thread_t * p_intf, id object, const cha
 {
     NSInteger selectedRow = self.libraryFolderTableView.selectedRow;
     if (selectedRow == -1) {
-        self.banFolderButton.enabled = self.removeFolderButton.enabled = NO;
+        self.banFolderButton.enabled = self.removeFolderButton.enabled = self.reloadFolderButton.enabled = NO;
         return;
     }
-    self.banFolderButton.enabled = self.removeFolderButton.enabled = YES;
-    VLCMediaLibraryEntryPoint *entryPoint = _libraryModel.listOfMonitoredFolders[selectedRow];
+    self.banFolderButton.enabled = self.removeFolderButton.enabled = self.reloadFolderButton.enabled = YES;
+    VLCMediaLibraryEntryPoint * const entryPoint = _libraryModel.listOfMonitoredFolders[selectedRow];
     [self.banFolderButton setTitle:entryPoint.isBanned ? _NS("Unban Folder") : _NS("Ban Folder")];
 }
 

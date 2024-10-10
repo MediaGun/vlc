@@ -29,6 +29,7 @@
 # include "config.h"
 #endif
 
+#include <stdbit.h>
 #include <errno.h>                                                 /* ENOMEM */
 #include <assert.h>
 #include <math.h>
@@ -307,6 +308,11 @@ error:      wordfree(&we);
     }
 
     size_t count = we.we_wordc;
+    if (count == 0) {
+        ret = VLC_EGENERIC;
+        goto error;
+    }
+
     const char **args = vlc_alloc(count, sizeof (*args));
     if (unlikely(args == NULL))
     {
@@ -336,22 +342,19 @@ error:      wordfree(&we);
     }
 #endif
 
-    if (count > 0)
+    assert(count > 0);
+    const struct command **pp = tfind(&args[0], &sys->commands, cmdcmp);
+
+    if (pp != NULL)
     {
-        const struct command **pp = tfind(&args[0], &sys->commands, cmdcmp);
-
-        if (pp != NULL)
-        {
-            const struct command *c = *pp;
-
-            ret = c->handler.callback(cl, args, count, c->data);
-        }
-        else
-        {
-            cli_printf(cl, _("Unknown command `%s'. Type `help' for help."),
-                      args[0]);
-            ret = VLC_EGENERIC;
-        }
+        const struct command *c = *pp;;
+        ret = c->handler.callback(cl, args, count, c->data);
+    }
+    else
+    {
+        cli_printf(cl, _("Unknown command `%s'. Type `help' for help."),
+                  args[0]);
+        ret = VLC_EGENERIC;
     }
 
 #ifdef HAVE_WORDEXP
@@ -365,7 +368,7 @@ error:      wordfree(&we);
 
 #ifndef _WIN32
 static ssize_t cli_writev(struct cli_client *cl,
-                          const struct iovec *iov, unsigned iovlen)
+                          const struct iovec *iov, int iovlen)
 {
     ssize_t val;
 
@@ -540,7 +543,7 @@ static void cli_client_delete(struct cli_client *cl)
     free(cl);
 }
 
-static void *Run(void *data)
+_Noreturn static void *Run(void *data)
 {
     intf_thread_t *intf = data;
     intf_sys_t *sys = intf->p_sys;
@@ -667,7 +670,7 @@ static bool ReadWin32( intf_thread_t *p_intf, unsigned char *p_buffer, int *pi_s
                         (*pi_size)--;
                         nbBytes++;
                     }
-                    assert( clz( (unsigned char)~(p_buffer[*pi_size]) ) == nbBytes + 1 );
+                    assert( stdc_leading_ones( p_buffer[*pi_size] ) == nbBytes + 1 );
                     // The first utf8 byte will be overridden by a \0
                 }
                 else
@@ -826,7 +829,9 @@ static void *Run( void *data )
 static int Activate( vlc_object_t *p_this )
 {
     intf_thread_t *p_intf = (intf_thread_t*)p_this;
+#ifndef _WIN32
     struct cli_client *cl;
+#endif
     char *psz_host;
     int  *pi_socket = NULL;
 
@@ -877,6 +882,7 @@ static int Activate( vlc_object_t *p_this )
         if (len >= sizeof (addr.sun_path))
         {
             msg_Err( p_intf, "rc-unix value is longer than expected" );
+            free(psz_unix_path);
             goto error;
         }
         memcpy(addr.sun_path, psz_unix_path, len + 1);

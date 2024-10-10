@@ -16,35 +16,43 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Templates as T
+import QtQuick.Layouts
 
-import org.videolan.compat 0.1
-import org.videolan.vlc 0.1
-
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Util
 
 T.Control {
     id: delegate
 
     // Properties
+    required property int index
+    required property var rowModel
+    required property var sortModel
+    required property bool selected
+    required property Widgets.DragItem dragItem
 
-    property var rowModel
-    property var sortModel
+    readonly property bool topContainsDrag: dropAreaLayout.higherDropArea.containsDrag
+    readonly property bool bottomContainsDrag: dropAreaLayout.lowerDropArea.containsDrag
+    readonly property bool containsDrag: (topContainsDrag || bottomContainsDrag)
 
-    property bool selected: false
+    required property real fixedColumnWidth
+    required property real weightedColumnWidth
 
-    readonly property int _index: index
+    readonly property point dragPosition: mapFromItem(dropAreaLayout,
+                                                      dropAreaLayout.dragPosition.x,
+                                                      dropAreaLayout.dragPosition.y)
+
+    // Optional, used to show the drop indicator
+    property alias isDropAcceptable: dropAreaLayout.isDropAcceptable
+
+    // Optional, but required to drop a drag
+    property alias acceptDrop: dropAreaLayout.acceptDrop
 
     property int _modifiersOnLastPress: Qt.NoModifier
-
-    readonly property bool dragActive: hoverArea.drag.active
-
-    property var dragItem
-
-    property bool acceptDrop: false
 
     signal contextMenuButtonClicked(Item menuParent, var menuModel, point globalMousePos)
     signal rightClick(Item menuParent, var menuModel, point globalMousePos)
@@ -52,41 +60,33 @@ T.Control {
 
     signal selectAndFocus(int modifiers, int focusReason)
 
-    signal dropEntered(var drag, bool before)
-    signal dropUpdatePosition(var drag, bool before)
-    signal dropExited(var drag, bool before)
-    signal dropEvent(var drag, var drop, bool before)
-
-    property Component defaultDelegate: Widgets.ScrollingText {
+    property Component defaultDelegate: TableRowDelegate {
         id: defaultDelId
-        property var rowModel: parent.rowModel
-        property var colModel: parent.colModel
-        readonly property ColorContext colorContext: parent.colorContext
-        readonly property bool selected: parent.selected
+        Widgets.TextAutoScroller {
 
-        label: text
-        forceScroll: parent.currentlyFocused
-        width: parent.width
-        clip: scrolling
+            anchors.fill: parent
 
-        Widgets.ListLabel {
-            id: text
+            label: text
+            forceScroll: defaultDelId.currentlyFocused
+            clip: scrolling
 
-            anchors.verticalCenter: parent.verticalCenter
-            text: defaultDelId.rowModel
-                    ? (defaultDelId.rowModel[defaultDelId.colModel.criteria] || "")
-                    : ""
+            Widgets.ListLabel {
+                id: text
 
-            color: defaultDelId.selected
-                ? defaultDelId.colorContext.fg.highlight
-                : defaultDelId.colorContext.fg.primary
+                anchors.verticalCenter: parent.verticalCenter
+                text: defaultDelId.rowModel[defaultDelId.colModel.criteria] ?? ""
+
+                color: defaultDelId.selected
+                    ? defaultDelId.colorContext.fg.highlight
+                    : defaultDelId.colorContext.fg.primary
+            }
         }
     }
     // Settings
 
     hoverEnabled: true
 
-    ListView.delayRemove: dragActive
+    ListView.delayRemove: dragHandler.active
 
     Component.onCompleted: {
         Keys.menuPressed.connect(contextButton.clicked)
@@ -102,82 +102,91 @@ T.Control {
         hovered: delegate.hovered
     }
 
-    background: AnimatedBackground {
-        active: visualFocus
+    // TODO: Qt bug 6.2: QTBUG-103604
+    DoubleClickIgnoringItem {
+        anchors.fill: parent
 
-        animationDuration: VLCStyle.duration_short
-        animate: theme.initialized
-        backgroundColor: delegate.selected ? theme.bg.highlight : theme.bg.primary
-        activeBorderColor: theme.visualFocus
+        z: -1
 
-        MouseArea {
-            id: hoverArea
+        DragHandler {
+            id: dragHandler
 
-            // Settings
+            target: null
 
-            anchors.fill: parent
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
 
-            hoverEnabled: false
+            onActiveChanged: {
+                if (dragItem) {
+                    if (active) {
+                        if (!selected) {
+                            delegate.ListView.view.selectionModel.select(index, ItemSelectionModel.ClearAndSelect)
+                        }
 
-            acceptedButtons: Qt.RightButton | Qt.LeftButton
-
-            drag.target: delegate.dragItem
-
-            drag.axis: Drag.XAndYAxis
-
-            // Events
-
-            onPressed: _modifiersOnLastPress = mouse.modifiers
-
-            onClicked: {
-                if ((mouse.button === Qt.LeftButton) || !delegate.selected) {
-                    delegate.selectAndFocus(mouse.modifiers, Qt.MouseFocusReason)
-                }
-
-                if (mouse.button === Qt.RightButton)
-                    delegate.rightClick(delegate, delegate.rowModel, hoverArea.mapToGlobal(mouse.x, mouse.y))
-            }
-
-            onPositionChanged: {
-                if (drag.active == false)
-                    return;
-
-                const pos = drag.target.parent.mapFromItem(hoverArea, mouseX, mouseY);
-
-                drag.target.x = pos.x + VLCStyle.dragDelta;
-                drag.target.y = pos.y + VLCStyle.dragDelta;
-            }
-
-            onDoubleClicked: {
-                if (mouse.button === Qt.LeftButton)
-                    delegate.itemDoubleClicked(delegate._index, delegate.rowModel)
-            }
-
-            drag.onActiveChanged: {
-                // NOTE: Perform the "click" action because the click action is only executed on mouse
-                //       release (we are in the pressed state) but we will need the updated list on drop.
-                if (drag.active && !delegate.selected) {
-                    delegate.selectAndFocus(_modifiersOnLastPress, index)
-                } else if (delegate.dragItem) {
-                    delegate.dragItem.Drag.drop()
-                }
-
-                delegate.dragItem.Drag.active = drag.active
-            }
-
-            TapHandler {
-                acceptedDevices: PointerDevice.TouchScreen
-
-                onTapped: {
-                    delegate.selectAndFocus(Qt.NoModifier, Qt.MouseFocusReason)
-                    delegate.itemDoubleClicked(delegate._index, delegate.rowModel)
-                }
-
-                onLongPressed: {
-                    delegate.rightClick(delegate, delegate.rowModel, point.scenePosition)
+                        dragItem.Drag.active = true
+                    } else {
+                        dragItem.Drag.drop()
+                    }
                 }
             }
         }
+
+        TapHandler {
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
+
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+            gesturePolicy: TapHandler.ReleaseWithinBounds // TODO: Qt 6.2 bug: Use TapHandler.DragThreshold
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            onSingleTapped: (eventPoint, button) => {
+                initialAction()
+
+                if (!(delegate.selected && button === Qt.RightButton)) {
+                    const view = delegate.ListView.view
+                    view.selectionModel.updateSelection(point.modifiers, view.currentIndex, index)
+                    view.currentIndex = index
+                }
+
+                if (button === Qt.RightButton)
+                    delegate.rightClick(delegate, delegate.rowModel, parent.mapToGlobal(eventPoint.position.x, eventPoint.position.y))
+            }
+
+            onDoubleTapped: (point, button) => {
+                if (button === Qt.LeftButton)
+                    delegate.itemDoubleClicked(delegate.index, delegate.rowModel)
+            }
+
+            Component.onCompleted: {
+                canceled.connect(initialAction)
+            }
+
+            function initialAction() {
+                delegate.forceActiveFocus(Qt.MouseFocusReason)
+            }
+        }
+
+        TapHandler {
+            acceptedDevices: PointerDevice.TouchScreen
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            onTapped: (eventPoint, button) => {
+                delegate.selectAndFocus(Qt.NoModifier, Qt.MouseFocusReason)
+                delegate.itemDoubleClicked(delegate.index, delegate.rowModel)
+            }
+
+            onLongPressed: {
+                delegate.rightClick(delegate, delegate.rowModel, parent.mapToGlobal(point.position.x, point.position.y))
+            }
+        }
+    }
+
+    background: AnimatedBackground {
+        animationDuration: VLCStyle.duration_short
+        enabled: theme.initialized
+        color: delegate.selected ? theme.bg.highlight : theme.bg.primary
+        border.color: visualFocus ? theme.visualFocus : "transparent"
     }
 
     contentItem: Row {
@@ -189,27 +198,39 @@ T.Control {
         Repeater {
             model: delegate.sortModel
 
-            Loader{
-                property var rowModel: delegate.rowModel
-
-                property var colModel: modelData.model
-
-                readonly property int index: delegate._index
-
-                readonly property bool currentlyFocused: delegate.activeFocus
-
-                readonly property bool selected: delegate.selected
-
-                readonly property bool containsMouse: hoverArea.containsMouse
-
-                readonly property ColorContext colorContext: theme
-
-                width: (modelData.size) ? VLCStyle.colWidth(modelData.size) : 0
-
+            //manually load the component as Loader is unable to pass initial/required properties
+            Item {
+                id: loader
+                required property var modelData
+                property TableRowDelegate item: null
+                width: {
+                    if (!!modelData.size)
+                        return modelData.size * delegate.fixedColumnWidth
+                    else if (!!modelData.weight)
+                        return modelData.weight * delegate.weightedColumnWidth
+                    else
+                        return 0
+                }
                 height: parent.height
 
-                sourceComponent: (colModel.colDelegate) ? colModel.colDelegate
-                                                        : delegate.defaultDelegate
+                Component.onCompleted: {
+                    const del = modelData.model.colDelegate || delegate.defaultDelegate
+                    item = del.createObject(loader, {
+                            width: Qt.binding(() => loader.width),
+                            height: Qt.binding(() => loader.height),
+                            rowModel: Qt.binding(() => delegate.rowModel),
+                            colModel: Qt.binding(() => loader.modelData.model),
+                            index: Qt.binding(() => delegate.index),
+                            currentlyFocused: Qt.binding(() => delegate.visualFocus),
+                            selected: Qt.binding(() => delegate.selected),
+                            containsMouse: Qt.binding(() => delegate.hovered),
+                            colorContext: Qt.binding(() => theme),
+                        }
+                    )
+                }
+                Component.onDestruction: {
+                    item?.destroy()
+                }
             }
         }
 
@@ -225,15 +246,32 @@ T.Control {
 
                 // NOTE: We want the contextButton to be contained inside the trailing
                 //       column_spacing.
-                anchors.leftMargin: -width
+                anchors.leftMargin: -width - delegate.leftPadding
 
                 anchors.verticalCenter: parent.verticalCenter
 
-                iconText: VLCIcons.ellipsis
+                text: VLCIcons.ellipsis
 
-                size: VLCStyle.icon_normal
+                font.pixelSize: VLCStyle.icon_normal
+
+                description: qsTr("Menu")
 
                 visible: delegate.hovered
+
+                // NOTE: QTBUG-100543
+                // Hover handling in controls is blocking in Qt 6.2, meaning if this
+                // control handles the hover, delegate itself won't have its `hovered`
+                // set. Since this control is visible when delegate is hovered, there
+                // becomes an infinite loop of visibility when this control is hovered.
+
+                // 1) When delegate is hovered, delegate's hovered property becomes set.
+                // 2) This control becomes visible.
+                // 3) When this control is hovered, delegate's hovered property becomes unset.
+                // 4) This control becomes invisible. Delegate's hovered property becomes set.
+                // * Infinite loop *
+
+                // Disable hovering in this control to prevent twitching due to infinite loop:
+                hoverEnabled: MainCtx.qtQuickControlRejectsHoverEvents()
 
                 onClicked: {
                     if (!delegate.selected)
@@ -248,22 +286,8 @@ T.Control {
         }
     }
 
-    DropArea {
-        enabled: delegate.acceptDrop
-
+    Widgets.ListViewExt.VerticalDropAreaLayout {
+        id: dropAreaLayout
         anchors.fill: parent
-
-        function isBefore(drag) {
-            return drag.y < height/2
-        }
-
-        onEntered: delegate.dropEntered(drag, isBefore(drag))
-
-        onPositionChanged: delegate.dropUpdatePosition(drag, isBefore(drag))
-
-        onExited:delegate.dropExited(drag, isBefore(drag))
-
-        onDropped: delegate.dropEvent(drag, drop, isBefore(drag))
-
     }
 }

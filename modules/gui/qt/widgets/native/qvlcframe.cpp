@@ -23,7 +23,6 @@
 #include <QWindow>
 #include <QScreen>
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QKeyEvent>
 #include <QStyle>
 
@@ -197,6 +196,17 @@ bool QVLCTools::restoreWidgetPosition(qt_intf_t *p_intf,
     return defaultUsed;
 }
 
+QVLCFrame::QVLCFrame(qt_intf_t *_p_intf) : QWidget( NULL ), p_intf( _p_intf )
+{
+    assert(_p_intf);
+
+    if (isWindow())
+    {
+        // If window, set the transient parent:
+        QVLCDialog::setWindowTransientParent(this, nullptr, p_intf);
+    }
+}
+
 void QVLCFrame::keyPressEvent(QKeyEvent *keyEvent)
 {
     if (keyEvent->key() == Qt::Key_Escape)
@@ -225,8 +235,14 @@ void QVLCDialog::keyPressEvent(QKeyEvent *keyEvent)
 
 void QVLCDialog::setWindowTransientParent(QWidget* widget, QWindow* parent, qt_intf_t* p_intf)
 {
-    if (!parent && p_intf)
+    assert(widget);
+    assert(widget->isWindow()); // Do not call this method if widget is not a window.
+
+    if (!parent && p_intf && !p_intf->b_isDialogProvider)
+    {
+        assert(p_intf->p_compositor);
         parent = p_intf->p_compositor->interfaceMainWindow();
+    }
     if (!parent)
         return;
 

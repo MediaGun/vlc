@@ -55,6 +55,7 @@
 #include <QUrl>
 #include <QMimeData>
 #include <QDropEvent>
+#include <QRegularExpression>
 
 #define I_DEVICE_TOOLTIP \
     I_DIR_OR_FOLDER( N_("Select a device or a VIDEO_TS directory"), \
@@ -70,7 +71,7 @@
         targetCombo ## StringList << QString( ppsz_devlist[ i ] ); \
     targetCombo->addItems( QDir( "/dev/" )\
         .entryList( targetCombo ## StringList, QDir::System )\
-        .replaceInStrings( QRegExp("^"), "/dev/" ) \
+        .replaceInStrings( QRegularExpression(QStringLiteral("^")), "/dev/" ) \
     );
 
 static const char psz_devModule[][8] = { "v4l2", "pvr", "dtv",
@@ -352,7 +353,7 @@ DiscOpenPanel::DiscOpenPanel( QWidget *_parent, qt_intf_t *_p_intf ) :
     QComboBox *discCombo = ui.deviceCombo; /* avoid namespacing in macro */
     POPULATE_WITH_DEVS( ppsz_discdevices, discCombo );
     char *psz_config = config_GetPsz( "dvd" );
-    int temp = ui.deviceCombo->findData( psz_config, Qt::UserRole, Qt::MatchStartsWith );
+    int temp = ui.deviceCombo->findData( { const_cast<const char *>( psz_config ) }, Qt::UserRole, Qt::MatchStartsWith );
     free( psz_config );
     if( temp != -1 )
         ui.deviceCombo->setCurrentIndex( temp );
@@ -365,8 +366,7 @@ DiscOpenPanel::DiscOpenPanel( QWidget *_parent, qt_intf_t *_p_intf ) :
     BUTTONACT( ui.audioCDRadioButton, &DiscOpenPanel::updateButtons );
     BUTTONACT( ui.dvdsimple,          &DiscOpenPanel::updateButtons );
     BUTTONACT( ui.browseDiscButton,   &DiscOpenPanel::browseDevice );
-    BUTTON_SET_ACT( ui.ejectButton, "", qtr( "Eject the disc"), &DiscOpenPanel::eject );
-    ui.ejectButton->setIcon( QIcon( ":/menu/eject.svg") );
+    BUTTONACT( ui.ejectButton,  &DiscOpenPanel::eject );
 
     connect( ui.deviceCombo, &QComboBox::editTextChanged, this, &DiscOpenPanel::updateMRL );
     connect( ui.deviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -410,7 +410,7 @@ void DiscOpenPanel::onFocus()
                     displayName = displayName + " - "  + psz_title;
                 }
 
-                ui.deviceCombo->addItem( displayName, psz_drive );
+                ui.deviceCombo->addItem( displayName, qfu(psz_drive) );
                 free( psz_drive );
                 free( psz_title );
             }
@@ -422,7 +422,7 @@ void DiscOpenPanel::onFocus()
     }
 
     char *psz_config = config_GetPsz( "dvd" );
-    int temp = ui.deviceCombo->findData( psz_config, Qt::UserRole, Qt::MatchStartsWith );
+    int temp = ui.deviceCombo->findData( qfu(psz_config), Qt::UserRole, Qt::MatchStartsWith );
     free( psz_config );
     if( temp != -1 )
         ui.deviceCombo->setCurrentIndex( temp );
@@ -861,9 +861,9 @@ void CaptureOpenPanel::initialize()
 
         QStringList nodes = QDir( "/dev/snd" ).entryList( patterns,
                                                           QDir::System );
-        QStringList names = nodes.replaceInStrings( QRegExp("^pcmC"), "hw:" )
-                                 .replaceInStrings( QRegExp("c$"), "" )
-                                 .replaceInStrings( QRegExp("D"), "," );
+        QStringList names = nodes.replaceInStrings( QRegularExpression(QStringLiteral("^pcmC")), "hw:" )
+                                 .replaceInStrings( QRegularExpression(QStringLiteral("c$")), "" )
+                                 .replaceInStrings( QRegularExpression(QStringLiteral("D")), "," );
         v4l2AudioDevice->addItems( names );
     }
     v4l2AudioDevice->clearEditText();
@@ -1082,9 +1082,9 @@ void CaptureOpenPanel::initialize()
 
         QStringList nodes = QDir( "/dev/snd" ).entryList( patterns,
                                                           QDir::System );
-        QStringList names = nodes.replaceInStrings( QRegExp("^pcmC"), "hw:" )
-                                 .replaceInStrings( QRegExp("c$"), "" )
-                                 .replaceInStrings( QRegExp("D"), "," );
+        QStringList names = nodes.replaceInStrings( QRegularExpression(QStringLiteral("^pcmC")), "hw:" )
+                                 .replaceInStrings( QRegularExpression(QStringLiteral("c$")), "" )
+                                 .replaceInStrings( QRegularExpression(QStringLiteral("D")), "," );
         pvrAudioDevice->addItems( names );
     }
     pvrAudioDevice->clearEditText();

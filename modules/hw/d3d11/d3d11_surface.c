@@ -31,7 +31,6 @@
 #include <vlc_common.h>
 #include <vlc_filter.h>
 #include <vlc_picture.h>
-#include <vlc_modules.h>
 
 #include <assert.h>
 
@@ -183,7 +182,7 @@ static int assert_staging(filter_t *p_filter, filter_sys_t *sys, DXGI_FORMAT for
         /* failed with the this format, try a different one */
         UINT supportFlags = D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT;
         const d3d_format_t *new_fmt =
-                FindD3D11Format( p_filter, d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT, 0, 0, 0, DXGI_CHROMA_CPU, supportFlags );
+                FindD3D11Format( p_filter, d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT, 0, 0, 0, 0, DXGI_CHROMA_CPU, supportFlags );
         if (new_fmt && texDesc.Format != new_fmt->formatTexture)
         {
             DXGI_FORMAT srcFormat = texDesc.Format;
@@ -460,11 +459,7 @@ static void D3D11_RGBA(filter_t *p_filter, picture_t *src, picture_t *dst)
 
 static void DeleteFilter( filter_t * p_filter )
 {
-    if( p_filter->p_module )
-    {
-        filter_Close( p_filter );
-        module_unneed( p_filter, p_filter->p_module );
-    }
+    vlc_filter_UnloadModule( p_filter );
 
     es_format_Clean( &p_filter->fmt_in );
     es_format_Clean( &p_filter->fmt_out );
@@ -503,7 +498,7 @@ static filter_t *CreateCPUtoGPUFilter( filter_t *p_this, const es_format_t *p_fm
     es_format_InitFromVideo( &p_filter->fmt_in,  &p_fmt_in->video );
     es_format_InitFromVideo( &p_filter->fmt_out, &p_fmt_in->video );
     p_filter->fmt_out.i_codec = p_filter->fmt_out.video.i_chroma = dst_chroma;
-    p_filter->p_module = module_need( p_filter, "video converter", NULL, false );
+    p_filter->p_module = vlc_filter_LoadModule( p_filter, "video converter", NULL, false );
 
     if( !p_filter->p_module )
     {
@@ -540,6 +535,11 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
         }
 
         picture_UpdatePlanes(dst, lock.pData, lock.RowPitch);
+
+        /* The dx/d3d buffer is always allocated as YV12 */
+        if (dst->format.i_chroma == VLC_CODEC_I420)
+            picture_SwapUV( dst );
+
         picture_context_t *dst_pic_ctx = dst->context;
         dst->context = NULL; // some CPU filters won't like the mix of CPU/GPU
 
@@ -565,6 +565,11 @@ static void NV12_D3D11(filter_t *p_filter, picture_t *src, picture_t *dst)
         }
 
         picture_UpdatePlanes(sys->staging_pic, lock.pData, lock.RowPitch);
+
+        /* The dx/d3d buffer is always allocated as YV12 */
+        if (sys->staging_pic->format.i_chroma == VLC_CODEC_I420)
+            picture_SwapUV( sys->staging_pic );
+
         picture_context_t *staging_pic_ctx = sys->staging_pic->context;
         sys->staging_pic->context = NULL; // some CPU filters won't like the mix of CPU/GPU
 
@@ -613,7 +618,7 @@ static picture_t *AllocateCPUtoGPUTexture(filter_t *p_filter, filter_sys_t *p_sy
 
     d3d11_video_context_t *vctx_sys = GetD3D11ContextPrivate( p_filter->vctx_out );
 
-    const d3d_format_t *cfg = D3D11_RenderFormat(vctx_sys->format ,false);
+    const d3d_format_t *cfg = D3D11_RenderFormat(vctx_sys->format, vctx_sys->secondary ,false);
     if (unlikely(cfg == NULL))
         return NULL;
 
@@ -718,7 +723,6 @@ int D3D11OpenConverter( filter_t *p_filter )
         pixel_bytes = 2;
         break;
     case VLC_CODEC_RGBA:
-    case VLC_CODEC_RGBA10:
         if( p_filter->fmt_in.video.i_chroma != VLC_CODEC_D3D11_OPAQUE_RGBA )
             return VLC_EGENERIC;
         p_filter->ops = &D3D11_RGBA_ops;
@@ -813,7 +817,7 @@ int D3D11OpenCPUConverter( filter_t *p_filter )
     default:
         vlc_assert_unreachable();
     }
-    p_filter->vctx_out = D3D11CreateVideoContext(dec_device, vctx_fmt);
+    p_filter->vctx_out = D3D11CreateVideoContext(dec_device, vctx_fmt, DXGI_FORMAT_UNKNOWN);
     if ( p_filter->vctx_out == NULL )
     {
         msg_Dbg(p_filter, "no video context");

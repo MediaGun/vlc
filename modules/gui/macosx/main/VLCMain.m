@@ -43,14 +43,15 @@
 #include <vlc_url.h>
 #include <vlc_variables.h>
 
+#import "extensions/NSString+Helpers.h"
+
+#import "library/VLCLibraryController.h"
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryWindowController.h"
 
 #import "main/CompatibilityFixes.h"
 #import "main/VLCMain+OldPrefs.h"
 #import "main/VLCApplication.h"
-
-#import "extensions/NSString+Helpers.h"
 
 #import "menus/VLCMainMenu.h"
 #import "menus/VLCStatusBarIcon.h"
@@ -63,7 +64,6 @@
 #import "panels/VLCVideoEffectsWindowController.h"
 #import "panels/VLCTrackSynchronizationWindowController.h"
 
-#import "library/VLCLibraryController.h"
 #import "playlist/VLCPlaylistController.h"
 #import "playlist/VLCPlayerController.h"
 #import "playlist/VLCPlaylistModel.h"
@@ -72,11 +72,12 @@
 #import "preferences/prefs.h"
 #import "preferences/VLCSimplePrefsController.h"
 
-#import "windows/extensions/VLCExtensionsManager.h"
-#import "windows/logging/VLCLogWindowController.h"
-#import "windows/convertandsave/VLCConvertAndSaveWindowController.h"
+#import "windows/VLCDetachedAudioWindow.h"
 #import "windows/VLCOpenWindowController.h"
 #import "windows/VLCOpenInputMetadata.h"
+#import "windows/convertandsave/VLCConvertAndSaveWindowController.h"
+#import "windows/extensions/VLCExtensionsManager.h"
+#import "windows/logging/VLCLogWindowController.h"
 #import "windows/video/VLCVoutView.h"
 #import "windows/video/VLCVideoOutputProvider.h"
 
@@ -115,6 +116,7 @@ NSString *VLCConfigurationChangedNotification = @"VLCConfigurationChangedNotific
     VLCVideoEffectsWindowController *_videoEffectsPanel;
     VLCConvertAndSaveWindowController *_convertAndSaveWindow;
     VLCClickerManager *_clickerManager;
+    VLCDetachedAudioWindow *_detachedAudioWindow;
 
     bool _interfaceIsTerminating; /* Makes sure applicationWillTerminate will be called only once */
 }
@@ -139,33 +141,52 @@ intf_thread_t *getIntf()
 
 int OpenIntf (vlc_object_t *p_this)
 {
-    @autoreleasepool {
-        intf_thread_t *p_intf = (intf_thread_t*) p_this;
-        p_interface_thread = p_intf;
-        msg_Dbg(p_intf, "Starting macosx interface");
+    __block int retcode = VLC_SUCCESS;
+    __block dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), kCFRunLoopDefaultMode, ^{
+        @autoreleasepool {
+            intf_thread_t *p_intf = (intf_thread_t*) p_this;
+            p_interface_thread = p_intf;
+            msg_Dbg(p_intf, "Starting macosx interface");
 
-        @try {
-            [VLCApplication sharedApplication];
-            [VLCMain sharedInstance];
+            @try {
+                VLCApplication * const application = VLCApplication.sharedApplication;
+                NSCAssert(application != nil, @"VLCApplication must not be nil");
 
-            msg_Dbg(p_intf, "Finished loading macosx interface");
-            return VLC_SUCCESS;
-        } @catch (NSException *exception) {
-            msg_Err(p_intf, "Loading the macosx interface failed. Do you have a valid window server?");
-            return VLC_EGENERIC;
+                VLCMain * const main = VLCMain.sharedInstance;
+                NSCAssert(main != nil, @"VLCMain must not be nil");
+
+                msg_Dbg(p_intf, "Finished loading macosx interface");
+            } @catch (NSException *exception) {
+                msg_Err(p_intf, "Loading the macosx interface failed. Do you have a valid window server?");
+                retcode = VLC_EGENERIC;
+                return;
+            }
+            dispatch_semaphore_signal(sem);
+            [NSApp run];
         }
-    }
+    });
+    CFRunLoopWakeUp(CFRunLoopGetMain());
+
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+
+    return retcode;
 }
 
 void CloseIntf (vlc_object_t *p_this)
 {
-    @autoreleasepool {
-        msg_Dbg(p_this, "Closing macosx interface");
-        [[VLCMain sharedInstance] applicationWillTerminate:nil];
-        [VLCMain killInstance];
-    }
-
-    p_interface_thread = nil;
+    void (^release_intf)() = ^{
+        @autoreleasepool {
+            msg_Dbg(p_this, "Closing macosx interface");
+            [VLCMain.sharedInstance applicationWillTerminate:nil];
+            [VLCMain killInstance];
+        }
+        p_interface_thread = nil;
+    };
+    if (CFRunLoopGetCurrent() == CFRunLoopGetMain())
+        release_intf();
+    else
+        dispatch_sync(dispatch_get_main_queue(), release_intf);
 }
 
 /*****************************************************************************
@@ -210,7 +231,7 @@ static VLCMain *sharedInstance = nil;
     if (self) {
         _p_intf = getIntf();
 
-        [VLCApplication sharedApplication].delegate = self;
+        VLCApplication.sharedApplication.delegate = self;
 
         _playlistController = [[VLCPlaylistController alloc] initWithPlaylist:vlc_intf_GetMainPlaylist(_p_intf)];
         _libraryController = [[VLCLibraryController alloc] init];
@@ -245,8 +266,8 @@ static VLCMain *sharedInstance = nil;
     [[SUUpdater sharedUpdater] setDelegate:self];
 #endif
 
-    NSImage *appIconImage = [[VLCApplication sharedApplication] vlcAppIconImage];
-    [[VLCApplication sharedApplication]
+    NSImage *appIconImage = [VLCApplication.sharedApplication vlcAppIconImage];
+    [VLCApplication.sharedApplication
         setApplicationIconImage:appIconImage];
 }
 
@@ -257,7 +278,7 @@ static VLCMain *sharedInstance = nil;
     if (_libraryWindowController == nil) {
         _libraryWindowController = [[VLCLibraryWindowController alloc] initWithLibraryWindow];
     }
-    
+
     [_libraryWindowController.window makeKeyAndOrderFront:nil];
 
     if (!_p_intf)
@@ -302,7 +323,7 @@ static VLCMain *sharedInstance = nil;
         return;
     _interfaceIsTerminating = true;
 
-    NSNotificationCenter *notiticationCenter = [NSNotificationCenter defaultCenter];
+    NSNotificationCenter *notiticationCenter = NSNotificationCenter.defaultCenter;
     if (notification == nil) {
         [notiticationCenter postNotificationName: NSApplicationWillTerminateNotification object: nil];
     }
@@ -497,6 +518,17 @@ static VLCMain *sharedInstance = nil;
 - (VLCCoreDialogProvider *)coreDialogProvider
 {
     return _coredialogs;
+}
+
+- (VLCDetachedAudioWindow *)detachedAudioWindow
+{
+    if (_detachedAudioWindow == nil) {
+        NSWindowController * const windowController = [[NSWindowController alloc] initWithWindowNibName:NSStringFromClass(VLCDetachedAudioWindow.class)];
+        [windowController loadWindow];
+        _detachedAudioWindow = (VLCDetachedAudioWindow *)windowController.window;
+    }
+
+    return _detachedAudioWindow;
 }
 
 @end

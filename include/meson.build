@@ -9,10 +9,11 @@ install_headers(
     'vlc/libvlc_media_list.h',
     'vlc/libvlc_media_list_player.h',
     'vlc/libvlc_media_player.h',
+    'vlc/libvlc_media_track.h',
     'vlc/libvlc_picture.h',
     'vlc/libvlc_renderer_discoverer.h',
-    'vlc/deprecated.h',
     'vlc/libvlc_version.h',
+    'vlc/libvlc_video.h',
     subdir: 'vlc')
 
 # Install VLC plugin headers
@@ -44,7 +45,6 @@ install_headers(
     'vlc_epg.h',
     'vlc_es.h',
     'vlc_es_out.h',
-    'vlc_events.h',
     'vlc_extensions.h',
     'vlc_filter.h',
     'vlc_fingerprinter.h',

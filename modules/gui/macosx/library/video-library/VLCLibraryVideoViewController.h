@@ -22,39 +22,36 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "library/VLCLibraryAbstractSegmentViewController.h"
+
 @class VLCLibraryWindow;
-@class VLCLibraryVideoTableViewDataSource;
-@class VLCLibraryVideoCollectionViewsStackViewController;
+@class VLCLibraryVideoDataSource;
+@class VLCLibraryShowsDataSource;
+
+@protocol VLCMediaLibraryItemProtocol;
 
 NS_ASSUME_NONNULL_BEGIN
 
 // Controller for the video library views
 
-@interface VLCLibraryVideoViewController : NSObject
+@interface VLCLibraryVideoViewController : VLCLibraryAbstractSegmentViewController
 
-@property (readonly) VLCLibraryWindow *libraryWindow;
-@property (readonly) NSView *libraryTargetView;
-@property (readonly) NSView *videoLibraryView;
-@property (readonly) NSSplitView *videoLibrarySplitView;
-@property (readonly) NSScrollView *videoLibraryCollectionViewsStackViewScrollView;
-@property (readonly) NSStackView *videoLibraryCollectionViewsStackView;
-@property (readonly) NSScrollView *videoLibraryGroupSelectionTableViewScrollView;
-@property (readonly) NSTableView *videoLibraryGroupSelectionTableView;
-@property (readonly) NSScrollView *videoLibraryGroupsTableViewScrollView;
-@property (readonly) NSTableView *videoLibraryGroupsTableView;
-@property (readonly) NSSegmentedControl *segmentedTitleControl;
-@property (readonly) NSImageView *placeholderImageView;
-@property (readonly) NSTextField *placeholderLabel;
-@property (readonly) NSView *emptyLibraryView;
+@property (readonly, weak) NSView *videoLibraryView;
+@property (readonly, weak) NSSplitView *videoLibrarySplitView;
+@property (readonly, weak) NSScrollView *videoLibraryCollectionViewScrollView;
+@property (readonly, weak) NSCollectionView *videoLibraryCollectionView;
+@property (readonly, weak) NSScrollView *videoLibraryGroupSelectionTableViewScrollView;
+@property (readonly, weak) NSTableView *videoLibraryGroupSelectionTableView;
+@property (readonly, weak) NSScrollView *videoLibraryGroupsTableViewScrollView;
+@property (readonly, weak) NSTableView *videoLibraryGroupsTableView;
 
-@property (readonly) VLCLibraryVideoTableViewDataSource *libraryVideoTableViewDataSource;
-@property (readonly) VLCLibraryVideoCollectionViewsStackViewController *libraryVideoCollectionViewsStackViewController;
-
-@property (readonly) NSArray<NSLayoutConstraint *> *videoPlaceholderImageViewSizeConstraints;
+@property (readonly, nullable) VLCLibraryVideoDataSource *libraryVideoDataSource;
+@property (readonly, nullable) VLCLibraryShowsDataSource *libraryShowsDataSource;
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow;
 - (void)presentVideoView;
-
+- (void)presentShowsView;
+- (void)presentLibraryItem:(id<VLCMediaLibraryItemProtocol>)libraryItem;
 
 @end
 

@@ -16,12 +16,12 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import org.videolan.vlc 0.1
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
 
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
 
 T.ItemDelegate {
     id: control
@@ -47,16 +47,14 @@ T.ItemDelegate {
         enabled: control.enabled
     }
 
-    background: AnimatedBackground {
-        active: visualFocus
-
-        animate: theme.initialized
-        backgroundColor: control.checked ? theme.bg.highlight : theme.bg.primary
-        activeBorderColor: theme.visualFocus
+    background: Widgets.AnimatedBackground {
+        enabled: theme.initialized
+        color: control.checked ? theme.bg.highlight : theme.bg.primary
+        border.color: visualFocus ? theme.visualFocus : "transparent"
     }
 
     contentItem: Item { // don't use a row, it will move text when control is unchecked
-        IconLabel {
+        Widgets.IconLabel {
             id: checkIcon
 
             height: parent.height
@@ -72,7 +70,7 @@ T.ItemDelegate {
             font.pixelSize: VLCStyle.icon_track
         }
 
-        MenuLabel {
+        Widgets.MenuLabel {
             id: text
 
             anchors.left: checkIcon.right

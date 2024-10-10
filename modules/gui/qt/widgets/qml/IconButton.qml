@@ -15,42 +15,44 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
 
 T.Button {
     id: control
 
     property color color: "white"
-    property string iconText: ""
+    property string description
 
-    width: content.implicitWidth
-    height: content.implicitHeight
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
 
     font.family: VLCIcons.fontFamily
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
     //Accessible
     Accessible.onPressAction: control.clicked()
+    Accessible.name: description
 
-    contentItem: Item {
-        T.Label {
-            id: content
-            anchors.centerIn: parent
-            text: control.iconText
-            color: control.color
-            font: control.font
+    // Tooltip
+    T.ToolTip.visible: (hovered || visualFocus)
+    T.ToolTip.delay: VLCStyle.delayToolTipAppear
+    T.ToolTip.text: description
 
-            //Button text is already exposed
-            Accessible.ignored: true
-        }
+    contentItem: Widgets.IconLabel {
+        font: control.font
+        color: control.color
+        text: control.text
     }
 
     background: Item {

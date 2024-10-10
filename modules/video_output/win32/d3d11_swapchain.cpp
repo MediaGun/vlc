@@ -49,6 +49,7 @@ struct d3d11_local_swapchain
 
     vlc_object_t           *obj = nullptr;
     d3d11_device_t         *d3d_dev = nullptr;
+    bool                   match_display = true;
 
     ComPtr<ID3D11RenderTargetView> swapchainTargetView[DXGI_MAX_RENDER_TARGET];
 };
@@ -84,12 +85,19 @@ static bool UpdateSwapchain( d3d11_local_swapchain *display, const libvlc_video_
     /* favor RGB formats first */
     newPixelFormat = FindD3D11Format( display->obj, display->d3d_dev, 0, DXGI_RGB_FORMAT,
                                       cfg->bitdepth > 8 ? 10 : 8,
-                                      0, 0,
+                                      0, 0, 0,
                                       DXGI_CHROMA_CPU, D3D11_FORMAT_SUPPORT_DISPLAY );
     if (unlikely(newPixelFormat == NULL))
+        // try with alpha
+        newPixelFormat = FindD3D11Format( display->obj, display->d3d_dev, 0, DXGI_RGB_FORMAT,
+                                        cfg->bitdepth > 8 ? 10 : 8,
+                                        0, 0, 1,
+                                        DXGI_CHROMA_CPU, D3D11_FORMAT_SUPPORT_DISPLAY );
+    if (unlikely(newPixelFormat == NULL))
+        // try YUV without alpha
         newPixelFormat = FindD3D11Format( display->obj, display->d3d_dev, 0, DXGI_YUV_FORMAT,
                                           cfg->bitdepth > 8 ? 10 : 8,
-                                          0, 0,
+                                          0, 0, 0,
                                           DXGI_CHROMA_CPU, D3D11_FORMAT_SUPPORT_DISPLAY );
     if (unlikely(newPixelFormat == NULL)) {
         msg_Err(display->obj, "Could not get the SwapChain format.");
@@ -107,7 +115,8 @@ static bool UpdateSwapchain( d3d11_local_swapchain *display, const libvlc_video_
         return false;
     }
 
-    if (!DXGI_UpdateSwapChain( display->sys, dxgiadapter.Get(), display->d3d_dev->d3ddevice, newPixelFormat, cfg ))
+    if (!DXGI_UpdateSwapChain( display->sys, dxgiadapter.Get(), display->d3d_dev->d3ddevice,
+                               newPixelFormat, cfg, display->match_display ))
         return false;
 
     ComPtr<ID3D11Resource> pBackBuffer;
@@ -177,36 +186,16 @@ bool D3D11_LocalSwapchainSelectPlane( void *opaque, size_t plane, void *out )
     return true;
 }
 
-void *D3D11_CreateLocalSwapchainHandleHwnd(vlc_object_t *o, HWND hwnd, d3d11_device_t *d3d_dev)
+void *D3D11_CreateLocalSwapchain(vlc_object_t *o, d3d11_device_t *d3d_dev, dxgi_swapchain *sys, bool match_display)
 {
     d3d11_local_swapchain *display = new (std::nothrow) d3d11_local_swapchain();
     if (unlikely(display == NULL))
         return NULL;
 
-    display->sys = DXGI_CreateLocalSwapchainHandleHwnd(o, hwnd);
-    if (unlikely(display->sys == NULL))
-        return NULL;
-
+    display->sys = sys;
     display->obj = o;
     display->d3d_dev = d3d_dev;
+    display->match_display = match_display;
 
     return display;
 }
-
-#if defined(HAVE_DCOMP_H)
-void *D3D11_CreateLocalSwapchainHandleDComp(vlc_object_t *o, void* dcompDevice, void* dcompVisual, d3d11_device_t *d3d_dev)
-{
-    d3d11_local_swapchain *display = new (std::nothrow) d3d11_local_swapchain();
-    if (unlikely(display == NULL))
-        return NULL;
-
-    display->sys = DXGI_CreateLocalSwapchainHandleDComp(o, dcompDevice, dcompVisual);
-    if (unlikely(display->sys == NULL))
-        return NULL;
-
-    display->obj = o;
-    display->d3d_dev = d3d_dev;
-
-    return display;
-}
-#endif // HAVE_DCOMP_H

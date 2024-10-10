@@ -15,21 +15,22 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-
-import org.videolan.vlc 0.1
-
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import QtQuick
 
 
-Widgets.IconControlButton {
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Menus
+
+Widgets.IconToolButton {
     id: menuBtn
 
     signal requestLockUnlockAutoHide(bool lock)
 
-    iconText: VLCIcons.ellipsis
-    text: I18n.qtr("Menu")
+    text: VLCIcons.ellipsis
+    description: qsTr("Menu")
+    checked: contextMenu.shown
 
     onClicked: contextMenu.popup(this.mapToGlobal(0, 0))
 
@@ -37,8 +38,14 @@ Widgets.IconControlButton {
         id: contextMenu
 
         ctx: MainCtx
+        playerViewVisible: History.match(History.viewPath, ["player"])
 
         onAboutToShow: menuBtn.requestLockUnlockAutoHide(true)
         onAboutToHide: menuBtn.requestLockUnlockAutoHide(false)
+    }
+
+    function forceUnlock() {
+        if(contextMenu)
+            contextMenu.close()
     }
 }

@@ -66,6 +66,7 @@ enum vlc_window_type {
     VLC_WINDOW_TYPE_WAYLAND /**< Wayland surface */,
     VLC_WINDOW_TYPE_DCOMP /**< Win32 DirectComposition */,
     VLC_WINDOW_TYPE_KMS /**< DRM KMS CRTC */,
+    VLC_WINDOW_TYPE_MMAL /**< MMAL window */,
 };
 
 /**
@@ -398,6 +399,7 @@ typedef struct vlc_window {
         struct wl_surface *wl;   /**< Wayland surface (client pointer) */
         void     *dcomp_visual;  /**<  Win32 direct composition visual */
         uint32_t crtc;           /**< KMS CRTC identifier */
+        int      display_id;     /**< MMAL display ID */
     } handle;
 
     /** Display server (mandatory)
@@ -544,7 +546,6 @@ static inline void vlc_window_SetTitle(vlc_window_t *window, const char *title)
  * while the window is enabled.
  *
  * \param window window to enable
- * \param cfg initial configuration for the window
  */
 VLC_API
 int vlc_window_Enable(vlc_window_t *window);

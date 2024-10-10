@@ -16,14 +16,12 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
+import QtQuick.Controls
 
-import org.videolan.vlc 0.1
-import org.videolan.controls 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
 
 
 // NOTE: This rectangle is useful to discern the item against a similar background.
@@ -35,25 +33,29 @@ Rectangle {
 
     property real playIconSize: VLCStyle.play_cover_normal
 
-    property real playCoverBorderWidth: VLCStyle.table_cover_border
-
     property bool playCoverShowPlay: true
 
     // Aliases
 
     property alias source: image.source
-    property bool isImageReady: image.status == RoundImage.Ready
 
-    property alias fallbackImageSource: fallbackImage.source
+    property alias cacheImage: image.cache
+
+    property bool _loadTimeout: false
+
+    property string fallbackImageSource
 
     property alias imageOverlay: overlay.sourceComponent
 
     property alias playCoverVisible: playCoverLoader.visible
     property alias playCoverOpacity: playCoverLoader.opacity
 
+    required property int pictureWidth
+    required property int pictureHeight
+
     // Signals
 
-    signal playIconClicked(var /* MouseEvent */ mouse)
+    signal playIconClicked(var point)
 
     // Settings
 
@@ -61,26 +63,59 @@ Rectangle {
     width: VLCStyle.listAlbumCover_width
 
     Accessible.role: Accessible.Graphic
-    Accessible.name: I18n.qtr("Media cover")
+    Accessible.name: qsTr("Media cover")
 
     // Children
 
-    RoundImage {
+    //delay placeholder showing up
+    Timer {
+        id: timer
+
+        interval: VLCStyle.duration_long
+        onTriggered: root._loadTimeout = true
+    }
+
+    Widgets.RoundImage {
         id: image
 
         anchors.fill: parent
 
         radius: root.radius
+
+        sourceSize.width: root.pictureWidth
+        sourceSize.height: root.pictureHeight
+
+        onStatusChanged: {
+            if (status === Widgets.RoundImage.Loading) {
+                root._loadTimeout = false
+                timer.start()
+            } else {
+                timer.stop()
+            }
+        }
+
+        cache: false
     }
 
-    RoundImage {
+    Widgets.RoundImage {
         id: fallbackImage
 
         anchors.fill: parent
 
         radius: root.radius
 
-        visible: !root.isImageReady
+        visible: image.source.toString() === "" //RoundImage.source is a QUrl
+                 || image.status === Widgets.RoundImage.Error
+                 || (image.status === Widgets.RoundImage.Loading && root._loadTimeout)
+
+        // we only keep this image till there is no main image
+        // try to release the resources otherwise
+        source: visible ? root.fallbackImageSource : ""
+
+        sourceSize.width: root.pictureWidth
+        sourceSize.height: root.pictureHeight
+
+        cache: true
     }
 
     Loader {
@@ -101,7 +136,9 @@ Rectangle {
         sourceComponent: Widgets.PlayCover {
             width: playIconSize
 
-            onClicked: playIconClicked(mouse)
+            Component.onCompleted: {
+                tapped.connect(root.playIconClicked)
+            }
         }
 
         asynchronous: true

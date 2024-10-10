@@ -16,42 +16,39 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Window 2.12
+import QtQuick
+import QtQuick.Window
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Style
 
 
 Window {
-    visible: true
+    visible: MainCtx.playlistVisible
 
-    // TODO: Qt >5.13 use transientParent
-    property QtWindow parentWindow: MainCtx.intfMainWindow
+    transientParent: MainCtx.intfMainWindow
+
+    property alias playlistView: playlistView
 
     width: 350
     minimumWidth: playlistView.minimumWidth
 
-    title: I18n.qtr("Playlist")
+    title: qsTr("Playlist")
     color: theme.bg.primary
 
-    Loader {
-        asynchronous: true
-        source: "qrc:///menus/GlobalShortcuts.qml"
+    onVisibleChanged: {
+        if (visible) {
+            console.assert(transientParent)
+            height = transientParent.height
+            minimumHeight = transientParent.minimumHeight
+            x = transientParent.x + transientParent.width + 10
+            y = transientParent.y
+        }
     }
 
-    Component.onCompleted: {
-        if (!!parentWindow) {
-            height = parentWindow.height
-            minimumHeight = parentWindow.minimumHeight
-
-            x = parentWindow.x + parentWindow.width + 10
-            y = parentWindow.y
-        } else {
-            height = 400
-            minimumHeight = 200
-        }
+    onClosing: {
+        MainCtx.playlistVisible = false
     }
 
     PlaylistListView {

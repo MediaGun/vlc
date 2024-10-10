@@ -15,16 +15,15 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
-import "qrc:///style/"
+import VLC.Style
 
 Row {
     id: root
 
-    property var labels
+    required property var labels
 
     onLabelsChanged: {
         // try to reuse items, texts are assigned with Binding
@@ -46,10 +45,7 @@ Row {
         delegate: T.Label {
             id: label
 
-            bottomPadding: VLCStyle.margin_xxxsmall
-            topPadding: VLCStyle.margin_xxxsmall
-            leftPadding: VLCStyle.margin_xxxsmall
-            rightPadding: VLCStyle.margin_xxxsmall
+            padding: VLCStyle.margin_xxxsmall
 
             visible: index < root.labels.length
             text: index >= root.labels.length ? "" :  root.labels[index]

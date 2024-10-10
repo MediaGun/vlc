@@ -230,7 +230,6 @@ static int Create( filter_t *p_filter )
     switch( p_filter->fmt_in.video.i_chroma )
     {
         case VLC_CODEC_I420:
-        case VLC_CODEC_J420:
             p_sys->drawingPixelFunction = drawPixelI420;
             COLORS_YUV
             break;
@@ -559,20 +558,17 @@ static void FilterBall( filter_t *p_filter, picture_t *p_inpic,
 
     if( !p_sys->p_smooth )
         p_sys->p_smooth =
-                (uint32_t *)vlc_alloc( i_numLines * i_numCols,
-                                       sizeof(uint32_t));
+                vlc_alloc( i_numLines * i_numCols, sizeof(*p_sys->p_smooth));
     p_smooth = p_sys->p_smooth;
 
     if( !p_sys->p_grad_x )
         p_sys->p_grad_x =
-                (int32_t *)vlc_alloc( i_numLines * i_numCols,
-                                      sizeof(int32_t));
+                vlc_alloc( i_numLines * i_numCols, sizeof(*p_sys->p_grad_x));
     p_grad_x = p_sys->p_grad_x;
 
     if( !p_sys->p_grad_y )
         p_sys->p_grad_y =
-                (int32_t *)vlc_alloc( i_numLines * i_numCols,
-                                      sizeof(int32_t));
+                vlc_alloc( i_numLines * i_numCols, sizeof(*p_sys->p_grad_y));
     p_grad_y = p_sys->p_grad_y;
 
     if( !p_smooth || !p_grad_x || !p_grad_y ) return;

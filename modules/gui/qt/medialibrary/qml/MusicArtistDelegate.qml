@@ -18,40 +18,52 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import QtQml.Models
 
-import org.videolan.medialib 0.1
-import org.videolan.controls 0.1
-import org.videolan.vlc 0.1
+import VLC.MediaLibrary
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Util
 
 T.ItemDelegate {
     id: root
 
     // Properties
 
-    /* required */ property MLModel mlModel
+    property ItemView view: ListView.view
+
+    required property var model
+    required property int index
 
     property bool isCurrent: false
+
+    property bool selected: false
+
+    required  property Widgets.MLDragItem dragTarget
 
     // Aliases
     // Private
 
     readonly property bool _isHover: contentItem.containsMouse || root.activeFocus
 
-    // Signals
-
-    signal itemClicked(var mouse)
-
-    signal itemDoubleClicked(var mouse)
-
     // Settings
 
-    implicitHeight: VLCStyle.play_cover_small + (VLCStyle.margin_xsmall * 2)
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding,
+                             implicitIndicatorHeight + topPadding + bottomPadding)
+
+    height: VLCStyle.play_cover_small + (VLCStyle.margin_xsmall * 2)
+
+    verticalPadding: VLCStyle.margin_xsmall
+    horizontalPadding: VLCStyle.margin_normal
+
+    hoverEnabled: true
 
     Accessible.onPressAction: root.itemClicked()
 
@@ -62,125 +74,140 @@ T.ItemDelegate {
         colorSet: ColorContext.Item
 
         focused: root.activeFocus
-        hovered: contentItem.containsMouse
+        hovered: root.hovered
         enabled: root.enabled
     }
 
-    background: Widgets.AnimatedBackground {
-        active: visualFocus
+    // TODO: Qt bug 6.2: QTBUG-103604
+    DoubleClickIgnoringItem {
+        anchors.fill: parent
 
-        animate: theme.initialized
-        backgroundColor: root.isCurrent ? theme.bg.highlight : theme.bg.primary
-        activeBorderColor: theme.visualFocus
+        TapHandler {
+            gesturePolicy: TapHandler.ReleaseWithinBounds // TODO: Qt 6.2 bug: Use TapHandler.DragThreshold
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            // We need this for extra information such as modifiers
+            Component.onCompleted: {
+                canceled.connect(initialAction) // DragHandler stole the event
+            }
+
+            onSingleTapped: (eventPoint, button) => {
+                initialAction()
+
+                if (!(root.selected && button === Qt.RightButton)) {
+                    view.selectionModel.updateSelection(point.modifiers, view.currentIndex, index)
+                    view.currentIndex = index
+                }
+            }
+
+            onDoubleTapped: (eventPoint, button) => {
+                if (button !== Qt.RightButton)
+                    MediaLib.addAndPlay(model.id);
+            }
+
+            function initialAction() {
+                root.forceActiveFocus(Qt.MouseFocusReason)
+            }
+        }
+
+        DragHandler {
+            target: null
+
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
+
+            onActiveChanged: {
+                const target = root.dragTarget
+                if (target) {
+                    if (active) {
+                        if (!selected) {
+                            view.selectionModel.select(index, ItemSelectionModel.ClearAndSelect)
+                            view.currentIndex = index
+                        }
+
+                        target.Drag.active = true
+                    } else {
+                        target.Drag.drop()
+                    }
+                }
+            }
+        }
     }
 
-    contentItem: MouseArea {
-        hoverEnabled: true
-
-        drag.axis: Drag.XAndYAxis
-
-        drag.target: Widgets.DragItem {
-            indexes: [index]
-
-            titleRole: "name"
-
-            onRequestData: {
-                setData(identifier, [model])
-            }
-
-            function getSelectedInputItem(cb) {
-                return MediaLib.mlInputItem([model.id], cb)
-            }
-        }
-
-        drag.onActiveChanged: {
-            const dragItem = drag.target;
-
-            if (drag.active == false)
-                dragItem.Drag.drop();
-
-            dragItem.Drag.active = drag.active;
-        }
-
-        onPositionChanged: {
-            if (drag.active == false) return;
-
-            const pos = drag.target.parent.mapFromItem(root, mouseX, mouseY);
-
-            drag.target.x = pos.x + VLCStyle.dragDelta;
-            drag.target.y = pos.y + VLCStyle.dragDelta;
-        }
-
-        onClicked: itemClicked(mouse)
-
-        onDoubleClicked: itemDoubleClicked(mouse)
+    background: Widgets.AnimatedBackground {
+        enabled: theme.initialized
+        color: (root.isCurrent || root.selected) ? theme.bg.highlight : theme.bg.primary
+        border.color: visualFocus ? theme.visualFocus : "transparent"
 
         Widgets.CurrentIndicator {
-            length: parent.height - (margin * 2)
+            anchors {
+                left: parent.left
+                leftMargin: VLCStyle.margin_xxxsmall
+                verticalCenter: parent.verticalCenter
+            }
 
-            margin: VLCStyle.dp(4, VLCStyle.scale)
+            implicitHeight: parent.height * 3 / 4
 
             visible: isCurrent
         }
+    }
 
-        RowLayout {
-            anchors.fill: parent
+    contentItem: RowLayout {
+        spacing: VLCStyle.margin_xsmall
 
-            anchors.leftMargin: VLCStyle.margin_normal
-            anchors.rightMargin: VLCStyle.margin_normal
-            anchors.topMargin: VLCStyle.margin_xsmall
-            anchors.bottomMargin: VLCStyle.margin_xsmall
+        Widgets.RoundImage {
+            implicitWidth: VLCStyle.play_cover_small
+            implicitHeight: VLCStyle.play_cover_small
+            Layout.fillHeight: true
+            Layout.preferredWidth: height
 
-            spacing: VLCStyle.margin_xsmall
+            radius: width
 
-            RoundImage {
-                Layout.preferredWidth: VLCStyle.play_cover_small
-                Layout.preferredHeight: Layout.preferredWidth
+            source: (model.cover) ? model.cover
+                                  : VLCStyle.noArtArtistSmall
+            sourceSize.width: width
+            sourceSize.height: height
 
-                radius: width
+            Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
 
-                source: (model.cover) ? model.cover
-                                      : VLCStyle.noArtArtistSmall
+            Rectangle {
+                anchors.fill: parent
 
-                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+                radius: VLCStyle.play_cover_small
 
-                Rectangle {
-                    anchors.fill: parent
+                color: "transparent"
 
-                    radius: VLCStyle.play_cover_small
+                border.width: VLCStyle.dp(1, VLCStyle.scale)
 
-                    color: "transparent"
-
-                    border.width: VLCStyle.dp(1, VLCStyle.scale)
-
-                    border.color: (isCurrent || _isHover) ? theme.accent
-                                                          : theme.border
-                }
+                border.color: (isCurrent || _isHover) ? theme.accent
+                                                      : theme.border
             }
+        }
 
-            Widgets.ScrollingText {
-                label: artistName
+        Widgets.TextAutoScroller {
+            label: artistName
 
-                forceScroll: root.isCurrent || root._isHover
-                clip: scrolling
+            forceScroll: root.isCurrent || root.visualFocus
+            clip: scrolling
 
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+            implicitHeight: artistName.implicitHeight
+            implicitWidth: artistName.implicitWidth
 
-                Widgets.ListLabel {
-                    id: artistName
+            Layout.fillWidth: true
+            Layout.fillHeight: true
 
-                    anchors {
-                        verticalCenter: parent.verticalCenter
-                    }
+            Widgets.ListLabel {
+                id: artistName
 
-                    text: (model.name) ? model.name
-                                       : I18n.qtr("Unknown artist")
-
-                    color: theme.fg.primary
+                anchors {
+                    verticalCenter: parent.verticalCenter
                 }
-            }
 
+                text: (model.name) ? model.name
+                                   : qsTr("Unknown artist")
+
+                color: theme.fg.primary
+            }
         }
     }
 }

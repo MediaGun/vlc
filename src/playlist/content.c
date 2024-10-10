@@ -58,7 +58,8 @@ vlc_playlist_ItemsReset(vlc_playlist_t *playlist)
 }
 
 static void
-vlc_playlist_ItemsInserted(vlc_playlist_t *playlist, size_t index, size_t count)
+vlc_playlist_ItemsInserted(vlc_playlist_t *playlist, size_t index, size_t count,
+                           bool subitems)
 {
     if (playlist->order == VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM)
         randomizer_Add(&playlist->randomizer,
@@ -79,7 +80,7 @@ vlc_playlist_ItemsInserted(vlc_playlist_t *playlist, size_t index, size_t count)
     for (size_t i = index; i < index + count; ++i)
     {
         vlc_playlist_item_t *item = playlist->items.data[i];
-        vlc_playlist_AutoPreparse(playlist, item->media);
+        vlc_playlist_AutoPreparse(playlist, item->media, subitems);
     }
 }
 
@@ -175,7 +176,8 @@ vlc_playlist_ItemReplaced(vlc_playlist_t *playlist, size_t index)
                         &playlist->items.data[index], 1);
     vlc_playlist_state_NotifyChanges(playlist, &state);
 
-    vlc_playlist_AutoPreparse(playlist, playlist->items.data[index]->media);
+    vlc_playlist_AutoPreparse(playlist, playlist->items.data[index]->media,
+                              false);
 }
 
 size_t
@@ -282,8 +284,8 @@ vlc_playlist_Insert(vlc_playlist_t *playlist, size_t index,
         return ret;
     }
 
-    vlc_playlist_ItemsInserted(playlist, index, count);
-    vlc_player_InvalidateNextMedia(playlist->player);
+    vlc_playlist_ItemsInserted(playlist, index, count, true);
+    vlc_playlist_UpdateNextMedia(playlist);
 
     return VLC_SUCCESS;
 }
@@ -299,7 +301,7 @@ vlc_playlist_Move(vlc_playlist_t *playlist, size_t index, size_t count,
     vlc_vector_move_slice(&playlist->items, index, count, target);
 
     vlc_playlist_ItemsMoved(playlist, index, count, target);
-    vlc_player_InvalidateNextMedia(playlist->player);
+    vlc_playlist_UpdateNextMedia(playlist);
 }
 
 void
@@ -320,7 +322,7 @@ vlc_playlist_Remove(vlc_playlist_t *playlist, size_t index, size_t count)
     if (current_media_changed)
         vlc_playlist_SetCurrentMedia(playlist, playlist->current);
     else
-        vlc_player_InvalidateNextMedia(playlist->player);
+        vlc_playlist_UpdateNextMedia(playlist);
 }
 
 static int
@@ -379,13 +381,13 @@ vlc_playlist_Expand(vlc_playlist_t *playlist, size_t index,
                 vlc_vector_remove_slice(&playlist->items, index + 1, count - 1);
                 return ret;
             }
-            vlc_playlist_ItemsInserted(playlist, index + 1, count - 1);
+            vlc_playlist_ItemsInserted(playlist, index + 1, count - 1, false);
         }
 
         if ((ssize_t) index == playlist->current)
             vlc_playlist_SetCurrentMedia(playlist, playlist->current);
         else
-            vlc_player_InvalidateNextMedia(playlist->player);
+            vlc_playlist_UpdateNextMedia(playlist);
     }
 
     return VLC_SUCCESS;

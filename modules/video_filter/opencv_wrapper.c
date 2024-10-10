@@ -131,7 +131,6 @@ typedef struct
     IplImage *p_cv_image[VOUT_MAX_PLANES];
 
     filter_t *p_opencv;
-    char* psz_inner_name;
 
     picture_t hacked_pic;
 } filter_sys_t;
@@ -166,18 +165,18 @@ static int Create( filter_t* p_filter )
         return VLC_ENOMEM;
     }
 
-    p_sys->psz_inner_name = var_InheritString( p_filter, "opencv-filter-name" );
-    if( p_sys->psz_inner_name )
+    char *psz_inner_name = var_InheritString( p_filter, "opencv-filter-name" );
+    if( psz_inner_name )
         p_sys->p_opencv->p_module =
             module_need( p_sys->p_opencv,
                          "opencv internal filter",
-                         p_sys->psz_inner_name,
+                         psz_inner_name,
                          true );
 
     if( !p_sys->p_opencv->p_module )
     {
-        msg_Err( p_filter, "can't open internal opencv filter: %s", p_sys->psz_inner_name );
-        free( p_sys->psz_inner_name );
+        msg_Err( p_filter, "can't open internal opencv filter: %s", psz_inner_name );
+        free( psz_inner_name );
         vlc_object_delete(p_sys->p_opencv);
         free( p_sys );
 
@@ -239,7 +238,8 @@ static int Create( filter_t* p_filter )
         p_sys->f_scale,
         p_sys->i_internal_chroma,
         p_sys->i_wrapper_output,
-        p_sys->psz_inner_name);
+        psz_inner_name);
+    free( psz_inner_name );
 
 #ifndef NDEBUG
     msg_Dbg( p_filter, "opencv_wrapper successfully started" );
@@ -266,9 +266,7 @@ static void Destroy( filter_t* p_filter )
     ReleaseImages( p_filter );
 
     // Release the internal OpenCV filter.
-    filter_Close( p_sys->p_opencv );
-    module_unneed( p_sys->p_opencv, p_sys->p_opencv->p_module );
-    vlc_object_delete(p_sys->p_opencv);
+    vlc_filter_Delete( p_sys->p_opencv );
 
     free( p_sys );
 }
@@ -436,9 +434,16 @@ static picture_t* Filter( filter_t* p_filter, picture_t* p_pic )
                         p_sys->p_proc_image,
                         &(p_sys->p_proc_image->format),
                         &fmt_out );
-
-            picture_CopyPixels( p_outpic, p_outpic_tmp );
-            CopyInfoAndRelease( p_outpic, p_outpic_tmp );
+            if (unlikely(!p_outpic_tmp))
+            {
+                picture_Release(p_outpic);
+                p_outpic = NULL;
+            }
+            else
+            {
+                picture_CopyPixels( p_outpic, p_outpic_tmp );
+                CopyInfoAndRelease( p_outpic, p_outpic_tmp );
+            }
         } else if( p_sys->i_internal_chroma == CINPUT ) {
             picture_CopyPixels( p_outpic, p_sys->p_proc_image );
             picture_CopyProperties( p_outpic, p_sys->p_proc_image );

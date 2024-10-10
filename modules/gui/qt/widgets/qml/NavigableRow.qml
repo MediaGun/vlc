@@ -16,10 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
+import VLC.MainInterface
 
 T.Control {
     id: root
@@ -39,10 +39,10 @@ T.Control {
 
     // Settings
 
-    implicitWidth: Math.max(background ? background.implicitWidth : 0,
-        (contentItem ? contentItem.implicitWidth : 0) + leftPadding + rightPadding)
-    implicitHeight: Math.max(background ? background.implicitHeight : 0,
-        (contentItem ? contentItem.implicitHeight : 0) + topPadding + bottomPadding)
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
 
     Navigation.navigable: (_countEnabled > 0)
 
@@ -105,7 +105,7 @@ T.Control {
 
     Keys.priority: Keys.AfterItem
 
-    Keys.onPressed: root.Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => root.Navigation.defaultKeyAction(event)
 
     // Functions
 
@@ -134,24 +134,16 @@ T.Control {
 
     // Childs
 
-    Component {
-        id: enabledConnection
-
-        Connections {
-            onEnabledChanged: root._countEnabled += (target.enabled ? 1 : -1)
-        }
-    }
-
     contentItem: Row {
         spacing: root.spacing
 
         Repeater{
             id: repeater
 
-            onItemAdded: {
+            onItemAdded: (index, item) => {
                 if (item.enabled) root._countEnabled += 1;
 
-                enabledConnection.createObject(item, { target: item });
+                item.onEnabledChanged.connect(() => { root._countEnabled += (item.enabled ? 1 : -1) })
 
                 item.Navigation.parentItem = root;
 
@@ -186,7 +178,9 @@ T.Control {
                 };
             }
 
-            onItemRemoved: if (item.enabled) root._countEnabled -= 1
+            onItemRemoved: (index, item) => {
+                if (item.enabled) root._countEnabled -= 1
+            }
         }
     }
 }

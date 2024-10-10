@@ -15,18 +15,16 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
-import QtQml.Models 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import QtQml.Models
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Util
+import VLC.Style
 
 T.ItemDelegate {
     id: root
@@ -35,7 +33,8 @@ T.ItemDelegate {
 
     property real pictureWidth: VLCStyle.colWidth(1)
     property real pictureHeight: pictureWidth
-    property int titleMargin: VLCStyle.margin_xsmall
+    property int titleTopMargin: VLCStyle.gridItemTitle_topMargin
+    property int subtitleTopMargin: VLCStyle.gridItemSubtitle_topMargin
     property Item dragItem: null
 
     readonly property int selectedBorderWidth: VLCStyle.gridItemSelectedBorder
@@ -51,12 +50,11 @@ T.ItemDelegate {
     // Aliases
 
     property alias image: picture.source
-    property alias isImageReady: picture.isImageReady
+    property alias cacheImage: picture.cacheImage
     property alias fallbackImage: picture.fallbackImageSource
 
     property alias title: titleLabel.text
     property alias subtitle: subtitleTxt.text
-    property alias playCoverBorderWidth: picture.playCoverBorderWidth
     property alias playCoverShowPlay: picture.playCoverShowPlay
     property alias playIconSize: picture.playIconSize
     property alias pictureRadius: picture.radius
@@ -69,8 +67,8 @@ T.ItemDelegate {
 
     signal playClicked
     signal addToPlaylistClicked
-    signal itemClicked(Item menuParent, int key, int modifier)
-    signal itemDoubleClicked(Item menuParent, int keys, int modifier)
+    signal itemClicked(int modifier)
+    signal itemDoubleClicked(int modifier)
     signal contextMenuButtonClicked(Item menuParent, point globalMousePos)
 
     // Settings
@@ -78,7 +76,7 @@ T.ItemDelegate {
     implicitWidth: layout.implicitWidth
     implicitHeight: layout.implicitHeight
 
-    highlighted: (mouseHoverHandler.hovered || visualFocus)
+    highlighted: (hovered || visualFocus)
 
     Accessible.role: Accessible.Cell
     Accessible.name: title
@@ -158,8 +156,85 @@ T.ItemDelegate {
         id: theme
         colorSet: ColorContext.Item
 
-        focused: root.activeFocus
+        focused: root.visualFocus
         hovered: root.hovered
+    }
+
+    // TODO: Qt bug 6.2: QTBUG-103604
+    DoubleClickIgnoringItem {
+        anchors.fill: parent
+
+        DragHandler {
+            id: dragHandler
+
+            target: null
+
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
+
+            onActiveChanged: {
+                if (dragItem) {
+                    if (active && !selected) {
+                        root.itemClicked(root._modifiersOnLastPress)
+                    }
+
+                    if (active)
+                        dragItem.Drag.active = true
+                    else
+                        dragItem.Drag.drop()
+                }
+            }
+        }
+
+        TapHandler {
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
+
+            acceptedButtons: Qt.RightButton | Qt.LeftButton
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            gesturePolicy: TapHandler.ReleaseWithinBounds // TODO: Qt 6.2 bug: Use TapHandler.DragThreshold
+
+            onSingleTapped: (eventPoint, button) => {
+                initialAction()
+
+                // FIXME: The signals are messed up in this item.
+                //        Right click does not fire itemClicked?
+                if (button === Qt.RightButton)
+                    contextMenuButtonClicked(picture, parent.mapToGlobal(eventPoint.position.x, eventPoint.position.y));
+                else
+                    root.itemClicked(point.modifiers);
+            }
+
+            onDoubleTapped: (eventPoint, button) => {
+                if (button === Qt.LeftButton)
+                    root.itemDoubleClicked(point.modifiers)
+            }
+
+            Component.onCompleted: {
+                canceled.connect(initialAction)
+            }
+
+            function initialAction() {
+                _modifiersOnLastPress = point.modifiers
+
+                root.forceActiveFocus(Qt.MouseFocusReason)
+            }
+        }
+
+        TapHandler {
+            acceptedDevices: PointerDevice.TouchScreen
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            onTapped: (eventPoint, button) => {
+                root.itemClicked(Qt.NoModifier)
+                root.itemDoubleClicked(Qt.NoModifier)
+            }
+
+            onLongPressed: {
+                contextMenuButtonClicked(picture, parent.mapToGlobal(point.position.x, point.position.y));
+            }
+        }
     }
 
     background: AnimatedBackground {
@@ -169,190 +244,128 @@ T.ItemDelegate {
         x: - selectedBorderWidth
         y: - selectedBorderWidth
 
-        active: visualFocus
-        animate: theme.initialized
+        enabled: theme.initialized
 
         //don't show the backgroud unless selected
-        backgroundColor: root.selected ?  theme.bg.highlight : theme.bg.primary
-        activeBorderColor: theme.visualFocus
-        visible: animationRunning || active || root.selected || root.hovered
+        color: root.selected ?  theme.bg.highlight : theme.bg.primary
+        border.color: visualFocus ? theme.visualFocus : "transparent"
     }
 
-    contentItem: MouseArea {
-        implicitWidth: layout.implicitWidth
-        implicitHeight: layout.implicitHeight
+    contentItem: ColumnLayout {
+        id: layout
 
-        acceptedButtons: Qt.RightButton | Qt.LeftButton
+        spacing: 0
 
-        drag.target: root.dragItem
+        Widgets.MediaCover {
+            id: picture
 
-        drag.axis: Drag.XAndYAxis
+            playCoverVisible: false
+            playCoverOpacity: 0
+            radius: VLCStyle.gridCover_radius
+            color: theme.bg.secondary
 
-        onClicked: {
-            if (mouse.button === Qt.RightButton)
-                contextMenuButtonClicked(picture, root.mapToGlobal(mouse.x,mouse.y));
-            else {
-                root.itemClicked(picture, mouse.button, mouse.modifiers);
+            Layout.preferredWidth: root.width
+            Layout.preferredHeight: (root.pictureHeight / root.pictureWidth) * root.width
+            Layout.alignment: Qt.AlignCenter
+
+            pictureWidth: root.pictureWidth
+            pictureHeight: root.pictureHeight
+
+            onPlayIconClicked: (point) => {
+                // emulate a mouse click before delivering the play signal as to select the item
+                // this helps in updating the selection and restore of initial index in the parent views
+                root.itemClicked(point.modifiers)
+                root.playClicked()
+            }
+
+            DefaultShadow {
+                id: unselectedShadow
+
+                anchors.centerIn: parent
+
+                visible: opacity > 0
+
+                sourceItem: parent
+
+                width: parent.width + viewportHorizontalOffset
+                height: parent.height + viewportVerticalOffset
+
+                rectWidth: sourceSize.width
+                rectHeight: sourceSize.height
+
+                sourceSize: Qt.size(128, 128)
+            }
+
+            DoubleShadow {
+                id: selectedShadow
+
+                anchors.centerIn: parent
+
+                visible: opacity > 0
+                opacity: 0
+
+                sourceItem: parent
+
+                width: parent.width + viewportHorizontalOffset
+                height: parent.height + viewportVerticalOffset
+
+                rectWidth: sourceSize.width
+                rectHeight: sourceSize.height
+
+                sourceSize: Qt.size(128, 128)
+
+                primaryVerticalOffset: VLCStyle.dp(6, VLCStyle.scale)
+                primaryBlurRadius: VLCStyle.dp(18, VLCStyle.scale)
+
+                secondaryVerticalOffset: VLCStyle.dp(32, VLCStyle.scale)
+                secondaryBlurRadius: VLCStyle.dp(72, VLCStyle.scale)
             }
         }
 
-        onDoubleClicked: {
-            if (mouse.button === Qt.LeftButton)
-                root.itemDoubleClicked(picture,mouse.buttons, mouse.modifiers)
-        }
+        Widgets.TextAutoScroller {
+            id: titleTextRect
 
-        onPressed: _modifiersOnLastPress = mouse.modifiers
+            label: titleLabel
+            forceScroll: highlighted
+            visible: root.title !== ""
+            clip: scrolling
 
-        onPositionChanged: {
-            if (drag.active) {
-                const pos = drag.target.parent.mapFromItem(root, mouseX, mouseY)
-                drag.target.x = pos.x + VLCStyle.dragDelta
-                drag.target.y = pos.y + VLCStyle.dragDelta
-            }
-        }
+            Layout.preferredWidth: Math.min(titleLabel.implicitWidth, root.width)
+            Layout.preferredHeight: titleLabel.height
+            Layout.topMargin: root.titleTopMargin
+            Layout.alignment: root.textAlignHCenter ? Qt.AlignCenter : Qt.AlignLeft
 
-        drag.onActiveChanged: {
-            // perform the "click" action because the click action is only executed on mouse release (we are in the pressed state)
-            // but we will need the updated list on drop
-            if (drag.active && !selected) {
-                root.itemClicked(picture, Qt.LeftButton, root._modifiersOnLastPress)
-            } else if (root.dragItem) {
-                root.dragItem.Drag.drop()
-            }
-            root.dragItem.Drag.active = drag.active
-        }
+            Widgets.ListLabel {
+                id: titleLabel
 
-        TapHandler {
-            acceptedDevices: PointerDevice.TouchScreen
-
-            onTapped: {
-                root.itemClicked(picture, Qt.LeftButton, Qt.NoModifier)
-                root.itemDoubleClicked(picture, Qt.LeftButton, Qt.NoModifier)
-            }
-
-            onLongPressed: {
-                contextMenuButtonClicked(picture, point.scenePosition);
-            }
-        }
-
-        HoverHandler {
-            id: mouseHoverHandler
-            acceptedDevices: PointerDevice.Mouse
-        }
-
-        ColumnLayout {
-            id: layout
-
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 0
-
-            Widgets.MediaCover {
-                id: picture
-
-                playCoverVisible: false
-                playCoverOpacity: 0
-                radius: VLCStyle.gridCover_radius
-                color: theme.bg.secondary
-
-                Layout.preferredWidth: pictureWidth
-                Layout.preferredHeight: pictureHeight
-
-                onPlayIconClicked: {
-                    // emulate a mouse click before delivering the play signal as to select the item
-                    // this helps in updating the selection and restore of initial index in the parent views
-                    root.itemClicked(picture, mouse.button, mouse.modifiers)
-                    root.playClicked()
-                }
-
-                DoubleShadow {
-                    id: unselectedShadow
-
-                    anchors.fill: parent
-                    anchors.margins: VLCStyle.dp(1) // outside border (unselected)
-                    z: -1
-
-                    opacity: 0.62
-                    visible: opacity > 0
-
-                    xRadius: parent.radius
-                    yRadius: parent.radius
-
-                    primaryVerticalOffset: VLCStyle.dp(1, VLCStyle.scale)
-                    primaryBlurRadius: VLCStyle.dp(3, VLCStyle.scale)
-
-                    secondaryVerticalOffset: VLCStyle.dp(6, VLCStyle.scale)
-                    secondaryBlurRadius: VLCStyle.dp(14, VLCStyle.scale)
-                }
-
-                DoubleShadow {
-                    id: selectedShadow
-
-                    anchors.fill: parent
-                    anchors.margins: VLCStyle.dp(1)
-                    z: -1
-
-                    visible: opacity > 0
-                    opacity: 0
-
-                    xRadius: parent.radius
-                    yRadius: parent.radius
-
-                    primaryVerticalOffset: VLCStyle.dp(6, VLCStyle.scale)
-                    primaryBlurRadius: VLCStyle.dp(18, VLCStyle.scale)
-
-                    secondaryVerticalOffset: VLCStyle.dp(32, VLCStyle.scale)
-                    secondaryBlurRadius: VLCStyle.dp(72, VLCStyle.scale)
-                }
-            }
-
-            Widgets.ScrollingText {
-                id: titleTextRect
-
-                label: titleLabel
-                forceScroll: highlighted
-                visible: root.title !== ""
-                clip: scrolling
-
-                Layout.preferredWidth: Math.min(titleLabel.implicitWidth, pictureWidth)
-                Layout.preferredHeight: titleLabel.height
-                Layout.topMargin: root.titleMargin
-                Layout.alignment: root.textAlignHCenter ? Qt.AlignCenter : Qt.AlignLeft
-
-                Widgets.ListLabel {
-                    id: titleLabel
-
-                    height: implicitHeight
-                    color: root.selected
-                        ? theme.fg.highlight
-                        : theme.fg.primary
-                    textFormat: Text.PlainText
-                }
-            }
-
-            Widgets.MenuCaption {
-                id: subtitleTxt
-
-                visible: text !== ""
-                text: root.subtitle
-                elide: Text.ElideRight
+                height: implicitHeight
                 color: root.selected
                     ? theme.fg.highlight
-                    : theme.fg.secondary
-                textFormat: Text.PlainText
+                    : theme.fg.primary
+            }
+        }
 
-                Layout.preferredWidth: Math.min(pictureWidth, implicitWidth)
-                Layout.alignment: root.textAlignHCenter ? Qt.AlignCenter : Qt.AlignLeft
-                Layout.topMargin: VLCStyle.margin_xsmall
+        Widgets.MenuCaption {
+            id: subtitleTxt
 
-                ToolTip.delay: VLCStyle.delayToolTipAppear
-                ToolTip.text: subtitleTxt.text
-                ToolTip.visible: subtitleTxtMouseHandler.hovered
+            visible: text !== ""
+            text: root.subtitle
+            elide: Text.ElideRight
+            color: root.selected
+                ? theme.fg.highlight
+                : theme.fg.secondary
 
-                HoverHandler {
-                    id: subtitleTxtMouseHandler
-                    acceptedDevices: PointerDevice.Mouse
-                }
+            Layout.preferredWidth: Math.min(root.width, implicitWidth)
+            Layout.alignment: root.textAlignHCenter ? Qt.AlignCenter : Qt.AlignLeft
+            Layout.topMargin: root.subtitleTopMargin
+
+            ToolTip.delay: VLCStyle.delayToolTipAppear
+            ToolTip.text: subtitleTxt.text
+            ToolTip.visible: subtitleTxtMouseHandler.hovered
+
+            HoverHandler {
+                id: subtitleTxtMouseHandler
+                acceptedDevices: PointerDevice.Mouse
             }
         }
     }

@@ -15,15 +15,13 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQml.Models 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQml.Models
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
 
-import "qrc:///style/"
-import "qrc:///util/" as Util
+import VLC.Style
+import VLC.Util
 
 ListView {
     id: playerBtnDND
@@ -34,6 +32,7 @@ ListView {
 
     currentIndex: -1
     highlightFollowsCurrentItem: false
+    boundsBehavior: Flickable.StopAtBounds
 
     property bool containsDrag: footerItem.dropVisible
 
@@ -43,7 +42,6 @@ ListView {
 
     ScrollBar.horizontal: ScrollBar {
         id: scrollBar
-        policy: playerBtnDND.contentWidth > playerBtnDND.width ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
     }
 
     remove: Transition {
@@ -97,8 +95,8 @@ ListView {
         id: theme
         colorSet: ColorContext.View
     }
-    
-    Util.FlickableScrollHandler {
+
+    DefaultFlickableScrollHandler {
         fallbackScroll: true
         enabled: true
     }
@@ -114,11 +112,9 @@ ListView {
     }
 
     footer: Item {
-        anchors.verticalCenter: parent.verticalCenter
+        implicitHeight: playerBtnDND.height
 
-        implicitHeight: VLCStyle.icon_medium
-
-        BindingCompat on implicitWidth {
+        Binding on implicitWidth {
             delayed: true
             value: Math.max(implicitHeight, playerBtnDND.width - x)
         }
@@ -126,13 +122,14 @@ ListView {
         property alias dropVisible: footerDropArea.containsDrag
 
         Rectangle {
+            id: footerDropIndicator
+            anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
 
             z: 2
 
             implicitWidth: VLCStyle.dp(2, VLCStyle.scale)
+            implicitHeight: VLCStyle.icon_medium
 
             visible: dropVisible
             color: theme.accent
@@ -141,16 +138,21 @@ ListView {
         DropArea {
             id: footerDropArea
 
-            anchors.fill: parent
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: footerDropIndicator.top
+                bottom: footerDropIndicator.bottom
+            }
 
-            onEntered: {
+            onEntered: (drag) => {
                 if (drag.source.dndView === playerBtnDND &&
                         drag.source.DelegateModel.itemsIndex === playerBtnDND.count - 1) {
                     drag.accepted = false
                 }
             }
 
-            onDropped: {
+            onDropped: (drop) => {
                 let destIndex = playerBtnDND.count
 
                 if (drag.source.dndView === playerBtnDND)
@@ -162,11 +164,12 @@ ListView {
     }
 
     delegate: EditorDNDDelegate {
-        anchors.verticalCenter: (!!parent) ? parent.verticalCenter : undefined
+        height: Math.min((contentItem.implicitHeight > 0) ? contentItem.implicitHeight : Number.MAX_VALUE, VLCStyle.controlLayoutHeight)
 
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         dndView: playerBtnDND
 
-        BindingCompat {
+        Binding {
             when: dropArea.containsDrag
             value: true
 

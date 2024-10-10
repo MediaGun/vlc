@@ -32,15 +32,10 @@
 # include "config.h"
 #endif
 
-#include <inttypes.h>
-
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 
-#include <time.h>
-
 #include <vlc_meta.h>
-#include <vlc_charset.h>
 #include <vlc_input.h>
 #include <vlc_demux.h>
 #include <vlc_aout.h> /* For reordering */
@@ -53,37 +48,44 @@
 #include <algorithm>
 #include <map>
 #include <stdexcept>
+#include <functional>
 
 /* libebml and matroska */
-#include "ebml/EbmlHead.h"
-#include "ebml/EbmlSubHead.h"
-#include "ebml/EbmlStream.h"
-#include "ebml/EbmlContexts.h"
-#include "ebml/EbmlVoid.h"
-#include "ebml/EbmlVersion.h"
+#include <ebml/EbmlVersion.h>
+#include <ebml/EbmlHead.h>
+#include <ebml/EbmlSubHead.h>
+#include <ebml/EbmlStream.h>
+#include <ebml/EbmlContexts.h>
+#include <ebml/EbmlVoid.h>
 
-#include "matroska/KaxAttachments.h"
-#include "matroska/KaxAttached.h"
-#include "matroska/KaxBlock.h"
-#include "matroska/KaxBlockData.h"
-#include "matroska/KaxChapters.h"
-#include "matroska/KaxCluster.h"
-#include "matroska/KaxClusterData.h"
-#include "matroska/KaxContexts.h"
-#include "matroska/KaxCues.h"
-#include "matroska/KaxCuesData.h"
-#include "matroska/KaxInfo.h"
-#include "matroska/KaxInfoData.h"
-#include "matroska/KaxSeekHead.h"
-#include "matroska/KaxSegment.h"
-#include "matroska/KaxTag.h"
-#include "matroska/KaxTags.h"
-#include "matroska/KaxTracks.h"
-#include "matroska/KaxTrackAudio.h"
-#include "matroska/KaxTrackVideo.h"
-#include "matroska/KaxTrackEntryData.h"
-#include "matroska/KaxContentEncoding.h"
-#include "matroska/KaxVersion.h"
+#include <matroska/KaxVersion.h>
+#include <matroska/KaxAttachments.h>
+#include <matroska/KaxAttached.h>
+#include <matroska/KaxBlock.h>
+#include <matroska/KaxBlockData.h>
+#include <matroska/KaxChapters.h>
+#include <matroska/KaxCluster.h>
+#include <matroska/KaxClusterData.h>
+#include <matroska/KaxContexts.h>
+#include <matroska/KaxCues.h>
+#include <matroska/KaxCuesData.h>
+#include <matroska/KaxInfo.h>
+#include <matroska/KaxInfoData.h>
+#include <matroska/KaxSeekHead.h>
+#include <matroska/KaxSegment.h>
+#include <matroska/KaxTag.h>
+#include <matroska/KaxTags.h>
+#include <matroska/KaxTracks.h>
+#include <matroska/KaxTrackAudio.h>
+#include <matroska/KaxTrackVideo.h>
+#include <matroska/KaxTrackEntryData.h>
+#include <matroska/KaxContentEncoding.h>
+
+#define GlobalTimestamp()   GlobalTimecode()
+#define InitTimestamp(t,s)  InitTimecode(t,s)
+using KaxClusterTimestamp    = libmatroska::KaxClusterTimecode;
+using KaxTimestampScale      = libmatroska::KaxTimecodeScale;
+using KaxTrackTimestampScale = libmatroska::KaxTrackTimecodeScale;
 
 #include "stream_io_callback.hpp"
 
@@ -110,14 +112,51 @@ enum
     MATROSKA_ENCODING_SCOPE_NEXT = 4 /* unsupported */
 };
 
+enum chapter_codec_id
+{
+    MATROSKA_CHAPTER_CODEC_NATIVE  = 0,
+    MATROSKA_CHAPTER_CODEC_DVD     = 1,
+};
+
 #define MKVD_TIMECODESCALE 1000000
 
-#define MKV_IS_ID( el, C ) ( el != NULL && (el->operator const EbmlId&()) == (C::ClassInfos.ClassId()) && !el->IsDummy() )
+#define MKV_IS_ID( el, C ) ( el != NULL && (el->operator const EbmlId&()) == EBML_ID(C) && !el->IsDummy() )
 #define MKV_CHECKED_PTR_DECL( name, type, src ) type * name = MKV_IS_ID(src, type) ? static_cast<type*>(src) : NULL
 #define MKV_CHECKED_PTR_DECL_CONST( name, type, src ) const type * name = MKV_IS_ID(src, type) ? static_cast<const type*>(src) : NULL
 
+class MissingMandatory : public std::runtime_error
+{
+public:
+    MissingMandatory(const char * type_name)
+        :std::runtime_error(std::string("missing mandatory element without a default ") + type_name)
+    {}
+};
 
-using namespace LIBMATROSKA_NAMESPACE;
+template <typename Type>
+Type & GetMandatoryChild(const EbmlMaster & Master)
+{
+  auto p = static_cast<Type *>(Master.FindFirstElt(EBML_INFO(Type)));
+  if (p == nullptr)
+  {
+    throw MissingMandatory(EBML_INFO_NAME(EBML_INFO(Type)));
+  }
+  return *p;
+}
+#if LIBEBML_VERSION < 0x020000
+template <typename Type>
+Type * FindChild(const EbmlMaster & Master)
+{
+  return static_cast<Type *>(Master.FindFirstElt(EBML_INFO(Type)));
+}
+
+template <typename Type>
+Type * FindNextChild(const EbmlMaster & Master, const Type & PastElt)
+{
+  return static_cast<Type *>(Master.FindNextElt(PastElt));
+}
+#endif
+
+using namespace libmatroska;
 
 void BlockDecode( demux_t *p_demux, KaxBlock *block, KaxSimpleBlock *simpleblock,
                   KaxBlockAdditions *additions,
@@ -133,10 +172,15 @@ struct matroska_stream_c
     bool isUsed() const;
 
     vlc_stream_io_callback io_callback;
-    EbmlStream         estream;
+    matroska_iostream_c    estream;
 
     std::vector<matroska_segment_c*> segments;
 };
+
+class chapter_codec_cmds_c;
+using chapter_cmd_match = std::function<bool(const chapter_codec_cmds_c &)>;
+
+using chapter_uid = uint64_t;
 
 
 /*****************************************************************************
@@ -190,6 +234,7 @@ class mkv_track_t
         PrivateTrackData *p_sys;
 
         bool            b_discontinuity;
+        bool            b_has_alpha;
 
         /* informative */
         std::string str_codec_name;

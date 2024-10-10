@@ -27,10 +27,6 @@
 #include "mlthreadpool.hpp"
 #include "mlqmltypes.hpp"
 
-#include "util/qmlinputitem.hpp"
-
-class MLCustomCover;
-
 namespace vlc {
 namespace playlist {
 class Media;
@@ -39,6 +35,7 @@ class Media;
 
 struct vlc_medialibrary_t;
 
+class MLThreadRunner;
 class RunOnMLThreadBaseRunner;
 
 class MediaLib : public QObject
@@ -51,15 +48,9 @@ public:
     Q_PROPERTY(QString discoveryEntryPoint READ discoveryEntryPoint NOTIFY discoveryEntryPointChanged FINAL)
     Q_PROPERTY(bool idle READ idle NOTIFY idleChanged FINAL)
 
-    enum MLTaskStatus {
-        ML_TASK_STATUS_SUCCEED,
-        ML_TASK_STATUS_CANCELED
-    };
-
 public:
-    MediaLib(qt_intf_t* _intf, QObject* _parent = nullptr );
-
-    void destroy();
+    MediaLib(qt_intf_t* _intf, vlc::playlist::PlaylistController* playlistController, QObject* _parent = nullptr );
+    ~MediaLib();
 
     Q_INVOKABLE void addToPlaylist(const MLItemId &itemId, const QStringList &options = {});
     Q_INVOKABLE void addToPlaylist(const QString& mrl, const QStringList &options = {});
@@ -74,7 +65,7 @@ public:
 
     Q_INVOKABLE void reload();
 
-    Q_INVOKABLE void mlInputItem(const QVariantList& variantList, QJSValue callback);
+    Q_INVOKABLE void mlInputItem(const QVector<MLItemId>& itemIdVector, QJSValue callback);
 
     inline bool idle() const { return m_idle; }
     inline int discoveryPending() const { return m_discoveryPending; }
@@ -178,9 +169,6 @@ public:
      */
     void cancelMLTask(const QObject* object, quint64 taskId);
 
-   MLCustomCover *customCover() const;
-   void setCustomCover(MLCustomCover *newCustomCover);
-
 signals:
     void discoveryStarted();
     void discoveryCompleted();
@@ -190,17 +178,11 @@ signals:
     void idleChanged();
 
 private:
-    //use the destroy function
-    ~MediaLib();
     static void onMediaLibraryEvent( void* data, const vlc_ml_event_t* event );
-
-private slots:
-    void runOnMLThreadDone(RunOnMLThreadBaseRunner* runner, quint64 target, const QObject* object, int status);
-    void runOnMLThreadTargetDestroyed(QObject * object);
 
 private:
     qt_intf_t* m_intf;
-    MLCustomCover *m_customCover {};
+    vlc::playlist::PlaylistController* m_playlistController = nullptr;
 
     bool m_idle = false;
     bool m_discoveryPending = false;
@@ -210,16 +192,46 @@ private:
     /* Medialibrary */
     vlc_medialibrary_t* m_ml;
     std::unique_ptr<vlc_ml_event_callback_t, std::function<void(vlc_ml_event_callback_t*)>> m_event_cb;
+    MLThreadRunner* m_runner = nullptr;
 
+    QMap<QVector<MLItemId>, QVector<QJSValue>> m_inputItemQuery;
+};
+
+class MLThreadRunner : public QObject
+{
+    Q_OBJECT
+
+public:
+    enum MLTaskStatus {
+        ML_TASK_STATUS_SUCCEED,
+        ML_TASK_STATUS_CANCELED
+    };
+
+    MLThreadRunner(vlc_medialibrary_t* ml);
+    ~MLThreadRunner();
+
+    void destroy();
+    void cancelMLTask(const QObject* object, quint64 taskId);
+
+    template<typename Ctx>
+    quint64 runOnMLThread(const QObject* obj,
+                          std::function<void (vlc_medialibrary_t*, Ctx&)> mlFun,
+                          std::function<void (quint64 taskId, Ctx&)> uiFun,
+                          const char* queue);
+
+private:
+    vlc_medialibrary_t* m_ml = nullptr;
     MLThreadPool m_mlThreadPool;
 
-    /* run on ml thread properties */
     bool m_shuttingDown = false;
     quint64 m_taskId = 1;
     QMap<quint64, RunOnMLThreadBaseRunner*> m_runningTasks;
     QMultiMap<const QObject*, quint64> m_objectTasks;
 
-    QMap<QVariantList, QVector<QJSValue>> m_inputItemQuery;
+
+private slots:
+    void runOnMLThreadDone(RunOnMLThreadBaseRunner* runner, quint64 target, const QObject* object, int status);
+    void runOnMLThreadTargetDestroyed(QObject * object);
 };
 
 class RunOnMLThreadBaseRunner : public QObject, public QRunnable
@@ -257,11 +269,11 @@ public:
     {
         if (m_canceled)
         {
-            emit done(this, m_taskId, m_obj, MediaLib::ML_TASK_STATUS_CANCELED);
+            emit done(this, m_taskId, m_obj, MLThreadRunner::ML_TASK_STATUS_CANCELED);
             return;
         }
         m_mlFun(m_ml, m_ctx);
-        emit done(this, m_taskId, m_obj, MediaLib::ML_TASK_STATUS_SUCCEED);
+        emit done(this, m_taskId, m_obj, MLThreadRunner::ML_TASK_STATUS_SUCCEED);
     }
 
     //called from UI thread
@@ -285,7 +297,7 @@ private:
 };
 
 template<typename Ctx>
-quint64 MediaLib::runOnMLThread(const QObject* obj,
+quint64 MLThreadRunner::runOnMLThread(const QObject* obj,
                             std::function<void (vlc_medialibrary_t*, Ctx&)> mlFun,
                             std::function<void (quint64 taskId, Ctx&)> uiFun,
                             const char* queue)
@@ -295,10 +307,19 @@ quint64 MediaLib::runOnMLThread(const QObject* obj,
 
     auto taskId = m_taskId++;
     auto runnable = new RunOnMLThreadRunner<Ctx>(taskId, obj, mlFun, uiFun, m_ml);
-    connect(runnable, &RunOnMLThreadBaseRunner::done, this, &MediaLib::runOnMLThreadDone);
-    connect(obj, &QObject::destroyed, this, &MediaLib::runOnMLThreadTargetDestroyed);
+    connect(runnable, &RunOnMLThreadBaseRunner::done, this, &MLThreadRunner::runOnMLThreadDone);
+    connect(obj, &QObject::destroyed, this, &MLThreadRunner::runOnMLThreadTargetDestroyed);
     m_runningTasks.insert(taskId, runnable);
     m_objectTasks.insert(obj, taskId);
     m_mlThreadPool.start(runnable, queue);
     return taskId;
+}
+
+template<typename Ctx>
+quint64 MediaLib::runOnMLThread(const QObject* obj,
+                                    std::function<void (vlc_medialibrary_t*, Ctx&)> mlFun,
+                                    std::function<void (quint64 taskId, Ctx&)> uiFun,
+                                    const char* queue)
+{
+    return m_runner->runOnMLThread<Ctx>(obj, mlFun, uiFun, queue);
 }

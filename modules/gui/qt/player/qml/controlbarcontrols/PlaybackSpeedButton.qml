@@ -16,22 +16,26 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///player/" as P
+import VLC.MainInterface
+import VLC.Style
+import VLC.Player
+import VLC.Widgets
+import VLC.Util
 
-ControlButtonPopup {
+PopupIconToolButton {
     id: root
 
     popup.width: VLCStyle.dp(256, VLCStyle.scale)
 
-    text: I18n.qtr("Playback Speed")
+    text: qsTr("Playback Speed")
 
-    popupContent: P.PlaybackSpeed {
+    description: qsTr("change playback speed")
+
+    popup.contentItem: PlaybackSpeed {
         colorContext.palette: root.colorContext.palette
 
         Navigation.parentItem: root
@@ -40,17 +44,68 @@ ControlButtonPopup {
         Navigation.rightItem: root
     }
 
-    // Children
-
-    T.Label {
-        anchors.centerIn: parent
+    contentItem: T.Label {
+        verticalAlignment: Text.AlignVCenter
+        horizontalAlignment: Text.AlignHCenter
 
         font.pixelSize: VLCStyle.fontSize_normal
 
-        text: !root.paintOnly ? I18n.qtr("%1x").arg(+Player.rate.toFixed(2))
-                              : I18n.qtr("1x")
+        text: !root.paintOnly ? qsTr("%1x").arg(+Player.rate.toFixed(2))
+                              : qsTr("1x")
 
-        // IconToolButton.background is a AnimatedBackground
-        color: root.background.foregroundColor
+        color: root.color
+    }
+
+    // TODO: Qt bug 6.2: QTBUG-103604
+    DoubleClickIgnoringItem {
+        anchors.fill: parent
+
+        z: -1
+
+        WheelHandler {
+            onWheel: (event) => {
+                if (!root.popup.contentItem || !root.popup.contentItem.slider) {
+                    event.accepted = false
+                    return
+                }
+
+                let delta = 0
+
+                if (event.angleDelta.x)
+                    delta = event.angleDelta.x
+                else if (event.angleDelta.y)
+                    delta = event.angleDelta.y
+                else {
+                    event.accepted = false
+                    return
+                }
+
+                if (event.inverted)
+                    delta = -delta
+
+                event.accepted = true
+
+                delta = delta / 8 / 15
+
+                let func
+                if (delta > 0)
+                    func = root.popup.contentItem.slider.increase
+                else
+                    func = root.popup.contentItem.slider.decrease
+
+                for (let i = 0; i < Math.ceil(Math.abs(delta)); ++i)
+                    func()
+            }
+        }
+
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+
+            enabled: root.popup.contentItem && root.popup.contentItem.slider
+
+            onTapped: (eventPoint, button) => {
+                root.popup.contentItem.slider.value = 0
+            }
+        }
     }
 }

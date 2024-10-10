@@ -100,7 +100,6 @@ static const struct
     { "rtsp", "_rtsp._tcp", false },
     { "chromecast", "_googlecast._tcp", true },
 };
-#define NB_PROTOCOLS (sizeof(protocols) / sizeof(*protocols))
 
 static char* get_string_list_value( AvahiStringList* txt, const char* key )
 {
@@ -254,9 +253,9 @@ static void resolve_callback(
 
     if( event == AVAHI_RESOLVER_FAILURE )
     {
-        msg_Err( p_sys->parent,
-                 "failed to resolve service '%s' of type '%s' in domain '%s'",
-                 name, type, domain );
+        msg_Warn( p_sys->parent,
+                  "failed to resolve service '%s' of type '%s' in domain '%s'",
+                  name, type, domain );
     }
     else if( event == AVAHI_RESOLVER_FOUND )
     {
@@ -266,10 +265,10 @@ static void resolve_callback(
         AvahiStringList *asl = NULL;
         input_item_t *p_input = NULL;
 
-        msg_Info( p_sys->parent, "service '%s' of type '%s' in domain '%s' port %i",
-                  name, type, domain, port );
+        msg_Dbg( p_sys->parent, "service '%s' of type '%s' in domain '%s' port %i",
+                 name, type, domain, port );
 
-        avahi_address_snprint(a, (sizeof(a)/sizeof(a[0]))-1, address);
+        avahi_address_snprint(a, sizeof(a)-1, address);
         if( protocol == AVAHI_PROTO_INET6 )
             if( asprintf( &psz_addr, "[%s]", a ) == -1 )
             {
@@ -279,7 +278,7 @@ static void resolve_callback(
 
         const char *psz_protocol = NULL;
         bool is_renderer = false;
-        for( unsigned int i = 0; i < NB_PROTOCOLS; i++ )
+        for (size_t i = 0; i < ARRAY_SIZE(protocols); i++)
         {
             if( !strcmp(type, protocols[i].psz_service_name) )
             {
@@ -455,7 +454,7 @@ static int OpenCommon( discovery_sys_t *p_sys )
         goto error;
     }
 
-    for( unsigned i = 0; i < NB_PROTOCOLS; i++ )
+    for (size_t i = 0; i < ARRAY_SIZE(protocols); i++)
     {
         if( protocols[i].b_renderer != p_sys->renderer )
             continue;

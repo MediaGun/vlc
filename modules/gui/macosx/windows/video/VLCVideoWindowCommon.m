@@ -95,7 +95,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (void)awakeFromNib
@@ -110,7 +110,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
         _videoViewController = [[VLCMainVideoViewController alloc] init];
     }
 
-    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter addObserver:self
                            selector:@selector(mediaMetadataChanged:)
                                name:VLCPlayerMetadataChangedForCurrentMedia
@@ -127,7 +127,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     o_temp_view = [[NSView alloc] init];
     [o_temp_view setAutoresizingMask:NSViewHeightSizable | NSViewWidthSizable];
 
-    _playerController = [[[VLCMain sharedInstance] playlistController] playerController];
+    _playerController = VLCMain.sharedInstance.playlistController.playerController;
     _videoViewController = [[VLCMainVideoViewController alloc] init];
 
     [self mediaMetadataChanged:nil];
@@ -144,7 +144,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 
 - (void)mediaMetadataChanged:(NSNotification *)aNotification
 {
-    VLCPlaylistController *playlistController = [[VLCMain sharedInstance] playlistController];
+    VLCPlaylistController *playlistController = VLCMain.sharedInstance.playlistController;
     VLCInputItem *inputItem = [playlistController currentlyPlayingInputItem];
     if (inputItem == NULL || _playerController.playerState == VLC_PLAYER_STATE_STOPPED) {
         [self setTitle:_NS("VLC media player")];
@@ -250,7 +250,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 
     NSInteger i_currLevel = [self level];
     // self.fullscreen and _inFullscreenTransition must not be true yet
-    [[[VLCMain sharedInstance] voutProvider] updateWindowLevelForHelperWindows: NSNormalWindowLevel];
+    [VLCMain.sharedInstance.voutProvider updateWindowLevelForHelperWindows: NSNormalWindowLevel];
     [self setLevel:NSNormalWindowLevel];
     i_originalLevel = i_currLevel;
 
@@ -281,7 +281,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     _inFullscreenTransition = NO;
 
     if ([self hasActiveVideo]) {
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
         if (![_videoViewController.view isHidden]) {
             [notificationCenter postNotificationName:VLCVideoWindowShouldShowFullscreenController object:self];
         }
@@ -317,7 +317,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 {
     _inFullscreenTransition = NO;
 
-    [[[VLCMain sharedInstance] voutProvider] updateWindowLevelForHelperWindows: i_originalLevel];
+    [VLCMain.sharedInstance.voutProvider updateWindowLevelForHelperWindows: i_originalLevel];
     [self setLevel:i_originalLevel];
 }
 
@@ -351,7 +351,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     /* Make sure we don't see the window flashes in float-on-top mode */
     NSInteger i_currLevel = [self level];
     // self.fullscreen must not be true yet
-    [[[VLCMain sharedInstance] voutProvider] updateWindowLevelForHelperWindows: NSNormalWindowLevel];
+    [VLCMain.sharedInstance.voutProvider updateWindowLevelForHelperWindows: NSNormalWindowLevel];
     [self setLevel:NSNormalWindowLevel];
     i_originalLevel = i_currLevel; // would be overwritten by previous call
 
@@ -484,7 +484,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     [o_fullscreen_window makeKeyWindow];
     [o_fullscreen_window setAcceptsMouseMovedEvents: YES];
 
-    NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter postNotificationName:VLCVideoWindowDidEnterFullscreen object:self];
     [notificationCenter postNotificationName:VLCVideoWindowShouldShowFullscreenController object:self];
 
@@ -614,7 +614,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 
     o_fullscreen_window = nil;
 
-    [[[VLCMain sharedInstance] voutProvider] updateWindowLevelForHelperWindows: i_originalLevel];
+    [VLCMain.sharedInstance.voutProvider updateWindowLevelForHelperWindows: i_originalLevel];
     [self setLevel:i_originalLevel];
 
     [self setAlphaValue: config_GetFloat("macosx-opaqueness")];

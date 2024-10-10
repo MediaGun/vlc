@@ -15,43 +15,54 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
-import org.videolan.medialib 0.1
+import VLC.MainInterface
+import VLC.MediaLibrary
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Util
+import VLC.Style
 
 Widgets.GridItem {
     id: root
 
-    property alias showNewIndicator: image.visible
+    property bool showNewIndicator: false
     
-    property var labels: [
-        model.resolution_name || "",
-        model.channel || ""
-    ].filter(function(a) { return a !== "" })
+    property var labels
 
     function play() {
         if ( model.id !== undefined ) {
             MediaLib.addAndPlay( model.id )
-            g_mainDisplay.showPlayer()
+            MainCtx.requestShowPlayerView()
         }
     }
 
-    image: model.thumbnail || VLCStyle.noArtVideoCover
-    title: model.title || I18n.qtr("Unknown title")
-    subtitle: model.duration.formatHMS() || ""
+    image: model.thumbnail || ""
+    fallbackImage: VLCStyle.noArtVideoCover
+
+    title: model.title || qsTr("Unknown title")
+    subtitle: model?.duration?.formatHMS() ?? ""
     pictureWidth: VLCStyle.gridCover_video_width
     pictureHeight: VLCStyle.gridCover_video_height
-    playCoverBorderWidth: VLCStyle.gridCover_video_border
-    titleMargin: VLCStyle.margin_xxsmall
 
     pictureOverlay: Item {
         width: root.pictureWidth
         height: root.pictureHeight
+
+        Widgets.ScaledImage {
+            id: image
+
+            anchors.right: parent.right
+            anchors.top: parent.top
+
+            width: VLCStyle.gridItem_newIndicator
+            height: width
+
+            visible: root.showNewIndicator
+
+            source: VLCStyle.newIndicator
+        }
 
         Widgets.VideoQualityLabels {
             anchors {
@@ -82,18 +93,4 @@ Widgets.GridItem {
     }
 
     onPlayClicked: root.play()
-
-    Image {
-        id: image
-
-        anchors.right: parent.right
-        anchors.top: parent.top
-
-        width: VLCStyle.gridItem_newIndicator
-        height: width
-
-        visible: false
-
-        source: VLCStyle.newIndicator
-    }
 }

@@ -15,9 +15,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
+import VLC.MainInterface
+import VLC.Dialogs
 
 Item {
 
@@ -46,9 +47,13 @@ Item {
     ShortcutExt{ sequence:"F1"; onActivated: DialogsProvider.helpDialog() }
     ShortcutExt{ sequence:"F10"; onActivated: MainCtx.toggleToolbarMenu() }
     ShortcutExt{ sequence:"F11"; onActivated: MainCtx.toggleInterfaceFullScreen() }
+    ShortcutExt{ sequence:"Ctrl+H"; onActivated: MainCtx.minimalView = !MainCtx.minimalView; }
+
+    ShortcutExt{ sequence: StandardKey.ZoomIn; onActivated: MainCtx.incrementIntfUserScaleFactor(true) }
+    ShortcutExt{ sequence: StandardKey.ZoomOut; onActivated: MainCtx.incrementIntfUserScaleFactor(false) }
 
     Loader {
         active: MainCtx.mediaLibraryAvailable
-        source: "qrc:///menus/GlobalShortcutsMedialib.qml"
+        source: "qrc:///qt/qml/VLC/Menus/GlobalShortcutsMedialib.qml"
     }
 }

@@ -34,6 +34,70 @@
 #include <vlc_input.h>
 #include <vlc_vector.h>
 
+enum
+{
+    PALETTE_RED = 0,
+    PALETTE_GREEN,
+    PALETTE_BLUE,
+    PALETTE_BLACK,
+};
+
+// packed RGBA in memory order
+const uint8_t rgbpal[4][4] = {[PALETTE_RED] =   { 0xFF, 0x00, 0x00, 0xFF },
+                              [PALETTE_GREEN] = { 0x00, 0xFF, 0x00, 0xFF },
+                              [PALETTE_BLUE] =  { 0x00, 0x00, 0xFF, 0xFF },
+                              [PALETTE_BLACK] = { 0x00, 0x00, 0x00, 0xFF }};
+
+// packed YUVA in memory order
+const uint8_t yuvpal[4][4] = {[PALETTE_RED] =   { 0x4C, 0x54, 0xFF, 0xFF },
+                              [PALETTE_GREEN] = { 0x95, 0x2B, 0x15, 0xFF },
+                              [PALETTE_BLUE] =  { 0x1D, 0xFF, 0x6B, 0xFF },
+                              [PALETTE_BLACK] = { 0x00, 0x80, 0x80, 0xFF }};
+
+#define GLYPH_COLS 6
+#define GLYPH_ROWS 10
+
+static const uint8_t glyph10_bitmap[3][GLYPH_ROWS] =
+    {
+        [PALETTE_BLUE] = {
+            /*Unicode: U+0042 (B) , Width: 6 */
+        0xfc,  //%%%%%%
+        0xfc,  //%%%%%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xf0,  //%%%%..
+        0xf0,  //%%%%..
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xfc,  //%%%%%%
+        0xfc,  //%%%%%%
+        }, [PALETTE_GREEN] = {
+            /*Unicode: U+0047 (G) , Width: 6 */
+        0xfc,  //%%%%%%
+        0xfc,  //%%%%%%
+        0xc0,  //%%....
+        0xc0,  //%%....
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xfc,  //%%%%%%
+        0xfc,  //%%%%%%
+        }, [PALETTE_RED] = {
+            /*Unicode: U+0052 (R) , Width: 6 */
+        0xfc,  //%%%%%%
+        0xfc,  //%%%%%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xf0,  //%%%%..
+        0xf0,  //%%%%..
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        0xcc,  //%%..%%
+        }
+};
+
 static ssize_t
 var_InheritSsize(vlc_object_t *obj, const char *name)
 {
@@ -119,78 +183,78 @@ var_Read_float(const char *psz)
     return atof(psz);
 }
 
+#define FREE_CB(x) free(x)
+#define NO_FREE(x) (void) x
+
 #define OPTIONS_AUDIO(Y) \
-    Y(audio, packetized, bool, add_bool, Bool, true) \
-    Y(audio, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID) \
-    Y(audio, channels, unsigned, add_integer, Unsigned, 2) \
-    Y(audio, format, vlc_fourcc_t, add_string, Fourcc, "f32l") \
-    Y(audio, rate, unsigned, add_integer, Unsigned, 44100) \
-    Y(audio, sample_length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(40)) \
-    Y(audio, sinewave, bool, add_bool, Bool, true) \
-    Y(audio, sinewave_frequency, unsigned, add_integer, Integer, 500) \
-    Y(audio, sinewave_amplitude, float, add_float, Float, 0.2)
+    Y(audio, packetized, bool, add_bool, Bool, true, NO_FREE) \
+    Y(audio, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID, NO_FREE) \
+    Y(audio, channels, unsigned, add_integer, Unsigned, 2, NO_FREE) \
+    Y(audio, format, vlc_fourcc_t, add_string, Fourcc, "f32l", NO_FREE) \
+    Y(audio, rate, unsigned, add_integer, Unsigned, 48000, NO_FREE) \
+    Y(audio, sample_length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(40), NO_FREE) \
+    Y(audio, sinewave, bool, add_bool, Bool, true, NO_FREE) \
+    Y(audio, sinewave_frequency, unsigned, add_integer, Integer, 500, NO_FREE) \
+    Y(audio, sinewave_amplitude, float, add_float, Float, 0.2, NO_FREE)
 
 #define OPTIONS_VIDEO(Y) \
-    Y(video, packetized, bool, add_bool, Bool, true)\
-    Y(video, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID) \
-    Y(video, chroma, vlc_fourcc_t, add_string, Fourcc, "I420") \
-    Y(video, width, unsigned, add_integer, Unsigned, 640) \
-    Y(video, height, unsigned, add_integer, Unsigned, 480) \
-    Y(video, frame_rate, unsigned, add_integer, Unsigned, 25) \
-    Y(video, frame_rate_base, unsigned, add_integer, Unsigned, 1) \
-    Y(video, orientation, unsigned, add_integer, Unsigned, ORIENT_NORMAL)
+    Y(video, packetized, bool, add_bool, Bool, true, NO_FREE) \
+    Y(video, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID, NO_FREE) \
+    Y(video, chroma, vlc_fourcc_t, add_string, Fourcc, "I420", NO_FREE) \
+    Y(video, width, unsigned, add_integer, Unsigned, 640, NO_FREE) \
+    Y(video, height, unsigned, add_integer, Unsigned, 480, NO_FREE) \
+    Y(video, frame_rate, unsigned, add_integer, Unsigned, 25, NO_FREE) \
+    Y(video, frame_rate_base, unsigned, add_integer, Unsigned, 1, NO_FREE) \
+    Y(video, colorbar, bool, add_bool, Bool, false, NO_FREE) \
+    Y(video, orientation, unsigned, add_integer, Unsigned, ORIENT_NORMAL, NO_FREE) \
+    Y(video, image_count, unsigned, add_integer, Unsigned, 0, NO_FREE)
 
 #define OPTIONS_SUB(Y) \
-    Y(sub, packetized, bool, add_bool, Bool, true)\
-    Y(sub, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID) \
-    Y(sub, format, vlc_fourcc_t, add_string, Fourcc, "subt") \
-    Y(sub, page, unsigned, add_integer, Integer, 0)
+    Y(sub, packetized, bool, add_bool, Bool, true, NO_FREE) \
+    Y(sub, add_track_at, vlc_tick_t, add_integer, Integer, VLC_TICK_INVALID, NO_FREE) \
+    Y(sub, format, vlc_fourcc_t, add_string, Fourcc, "subt", NO_FREE) \
+    Y(sub, page, unsigned, add_integer, Integer, 0, NO_FREE)
 
 /* var_name, type, module_header_type, getter, default_value */
 #define OPTIONS_GLOBAL(X) \
-    X(node_count, ssize_t, add_integer, Ssize, 0) \
-    X(length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(5000)) \
-    X(audio_track_count, ssize_t, add_integer, Ssize, 0) \
-    X(video_track_count, ssize_t, add_integer, Ssize, 0) \
-    X(sub_track_count, ssize_t, add_integer, Ssize, 0) \
-    X(input_sample_length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(40) ) \
-    X(title_count, ssize_t, add_integer, Ssize, 0 ) \
-    X(chapter_count, ssize_t, add_integer, Ssize, 0) \
-    X(null_names, bool, add_bool, Bool, false) \
-    X(program_count, ssize_t, add_integer, Ssize, 0) \
-    X(can_seek, bool, add_bool, Bool, true) \
-    X(can_pause, bool, add_bool, Bool, true) \
-    X(can_control_pace, bool, add_bool, Bool, true) \
-    X(can_control_rate, bool, add_bool, Bool, true) \
-    X(can_record, bool, add_bool, Bool, true) \
-    X(error, bool, add_bool, Bool, false) \
-    X(pts_delay, unsigned, add_integer, Unsigned, MS_FROM_VLC_TICK(DEFAULT_PTS_DELAY)) \
-    X(config, char *, add_string, String, NULL )
+    X(node_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(5000), NO_FREE) \
+    X(audio_track_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(video_track_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(sub_track_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(input_sample_length, vlc_tick_t, add_integer, Integer, VLC_TICK_FROM_MS(40), NO_FREE) \
+    X(title_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(chapter_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(null_names, bool, add_bool, Bool, false, NO_FREE) \
+    X(program_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(attachment_count, ssize_t, add_integer, Ssize, 0, NO_FREE) \
+    X(can_seek, bool, add_bool, Bool, true, NO_FREE) \
+    X(can_pause, bool, add_bool, Bool, true, NO_FREE) \
+    X(can_control_pace, bool, add_bool, Bool, true, NO_FREE) \
+    X(can_control_rate, bool, add_bool, Bool, true, NO_FREE) \
+    X(can_record, bool, add_bool, Bool, true, NO_FREE) \
+    X(error, bool, add_bool, Bool, false, NO_FREE) \
+    X(pts_delay, vlc_tick_t, add_integer, Unsigned, DEFAULT_PTS_DELAY, NO_FREE) \
+    X(discontinuities, char *, add_string, String, NULL, FREE_CB) \
+    X(config, char *, add_string, String, NULL, FREE_CB)
 
-#define DECLARE_OPTION(var_name, type, module_header_type, getter, default_value)\
+#define DECLARE_OPTION(var_name, type, module_header_type, getter, default_value, free_cb) \
     type var_name;
-#define DECLARE_SUBOPTION(a,b,c,d,e,f) DECLARE_OPTION(b,c,d,e,f)
-
-#define OVERRIDE_OPTION(group_name, var_name, type, module_header_type, getter, default_value) \
-    if (!strcmp(""#var_name, config_chain->psz_name)) \
-    { \
-        track->group_name.var_name = var_Read_ ## type(config_chain->psz_value); \
-        break; \
-    }
+#define DECLARE_SUBOPTION(a,b,c,d,e,f,g) DECLARE_OPTION(b,c,d,e,f,g)
 
 #define READ(var_name, member_name, getter) \
     sys->member_name = var_Inherit##getter(obj, "mock-"#var_name);
-#define READ_OPTION(var_name, type, module_header_type, getter, default_value) \
+#define READ_OPTION(var_name, type, module_header_type, getter, default_value, free_cb) \
     READ(var_name, var_name, getter)
-#define READ_SUBOPTION(group_name, var_name, type, module_header_type, getter, default_value) \
+#define READ_SUBOPTION(group_name, var_name, type, module_header_type, getter, default_value, free_cb) \
     READ(group_name##_##var_name, group_name.var_name, getter)
 
-#define DECLARE_MODULE_OPTIONS(var_name, type, module_header_type, getter, default_value) \
+#define DECLARE_MODULE_OPTIONS(var_name, type, module_header_type, getter, default_value, free_cb) \
     module_header_type("mock-"#var_name, default_value, #var_name, NULL) \
     change_volatile() \
     change_safe()
-#define DECLARE_MODULE_SUBOPTIONS(a,b,c,d,e,f) \
-    DECLARE_MODULE_OPTIONS(a##_##b,c,d,e,f)
+#define DECLARE_MODULE_SUBOPTIONS(a,b,c,d,e,f,g) \
+    DECLARE_MODULE_OPTIONS(a##_##b,c,d,e,f,g)
 
 struct mock_video_options
 {
@@ -225,6 +289,13 @@ static_assert(offsetof(struct mock_video_options, add_track_at) ==
 static_assert(offsetof(struct mock_video_options, add_track_at) ==
               offsetof(struct mock_sub_options, add_track_at), "inconsistent offset");
 
+struct pcr_point
+{
+    vlc_tick_t oldpcr;
+    vlc_tick_t newpcr;
+};
+typedef struct VLC_VECTOR(struct pcr_point) pcr_point_vector;
+
 struct demux_sys
 {
     mock_track_vector tracks;
@@ -235,12 +306,23 @@ struct demux_sys
 
     int current_title;
     vlc_tick_t chapter_gap;
+    int current_chapter;
+
+    uint8_t bar_colors[PICTURE_PLANE_MAX][PICTURE_PLANE_MAX];
+    bool b_colors;
 
     unsigned int updates;
     OPTIONS_GLOBAL(DECLARE_OPTION)
     struct mock_video_options video;
     struct mock_audio_options audio;
     struct mock_sub_options sub;
+
+    char *art_url;
+
+    pcr_point_vector pcr_points;
+    size_t next_pcr_index;
+
+    bool eof_requested;
 };
 #undef X
 
@@ -290,6 +372,100 @@ CreateTitle(demux_t *demux, size_t idx)
     return t;
 }
 
+static input_attachment_t *
+CreateAttachment(demux_t *demux, const char *prefix_name, size_t index)
+{
+    input_attachment_t *attach = NULL;
+    picture_t *pic = NULL;
+    block_t *block = NULL;
+
+    char *name;
+    int ret = asprintf(&name, "%s %zu", prefix_name, index);
+    if (ret < 0)
+        return NULL;
+
+    pic = picture_New(VLC_CODEC_RGB24, 100, 100, 1, 1);
+    if (pic == NULL)
+        goto end;
+
+    memset(pic->p[0].p_pixels, 0x80, pic->p[0].i_lines * pic->p[0].i_pitch);
+
+    ret = picture_Export(VLC_OBJECT(demux), &block, NULL, pic, VLC_CODEC_BMP,
+                         0, 0, false);
+    if (ret != VLC_SUCCESS)
+        goto end;
+
+    attach = vlc_input_attachment_New(name, "image/bmp", "Mock Attach Desc",
+                                      block->p_buffer, block->i_buffer);
+
+end:
+    if (block != NULL)
+        block_Release(block);
+    if (pic != NULL)
+        picture_Release(pic);
+    free(name);
+    return attach;
+}
+
+static int
+GetAttachments(demux_t *demux, input_attachment_t ***attach_array_p,
+               int *attach_count_p)
+{
+    struct demux_sys *sys = demux->p_sys;
+    assert(sys->attachment_count > 0);
+    size_t attachment_count = sys->attachment_count;
+
+    input_attachment_t **attach_array =
+        vlc_alloc(sys->attachment_count, sizeof(*attach_array));
+    if (attach_array == NULL)
+        return VLC_ENOMEM;
+
+    for (size_t i = 0; i < attachment_count; i++)
+    {
+        attach_array[i] = CreateAttachment(demux, "Mock Attach", i);
+
+        if (attach_array[i] == NULL)
+        {
+            if (i == 0)
+            {
+                free(attach_array);
+                return VLC_ENOMEM;
+            }
+            *attach_array_p = attach_array;
+            *attach_count_p = i;
+            return VLC_SUCCESS;
+        }
+
+        if (sys->art_url == NULL
+         && asprintf(&sys->art_url, "attachment://%s",
+                     attach_array[i]->psz_name) == -1)
+            sys->art_url = NULL;
+    }
+
+    *attach_array_p = attach_array;
+    *attach_count_p = sys->attachment_count;
+
+    return VLC_SUCCESS;
+}
+
+static vlc_meta_t *
+CreateMeta(demux_t *demux)
+{
+    struct demux_sys *sys = demux->p_sys;
+
+    vlc_meta_t *meta = vlc_meta_New();
+    if (meta == NULL)
+        return NULL;
+
+    vlc_meta_SetArtist(meta, "VideoLAN");
+    vlc_meta_SetGenre(meta, "Best Media Player");
+
+    if (sys->art_url != NULL)
+        vlc_meta_SetArtURL(meta, sys->art_url);
+
+    return meta;
+}
+
 static int
 Control(demux_t *demux, int query, va_list args)
 {
@@ -307,10 +483,18 @@ Control(demux_t *demux, int query, va_list args)
             *va_arg(args, bool *) = sys->can_control_pace;
             return VLC_SUCCESS;
         case DEMUX_GET_PTS_DELAY:
-            *va_arg(args, vlc_tick_t *) = VLC_TICK_FROM_MS(sys->pts_delay);
+            *va_arg(args, vlc_tick_t *) = sys->pts_delay;
             return VLC_SUCCESS;
         case DEMUX_GET_META:
-            return VLC_EGENERIC;
+        {
+            vlc_meta_t *meta_out = va_arg(args, vlc_meta_t *);
+            vlc_meta_t *meta = CreateMeta(demux);
+            if (meta == NULL)
+                return VLC_ENOMEM;
+            vlc_meta_Merge(meta_out, meta);
+            vlc_meta_Delete(meta);
+            return VLC_SUCCESS;
+        }
         case DEMUX_GET_SIGNAL:
             return VLC_EGENERIC;
         case DEMUX_SET_PAUSE_STATE:
@@ -335,6 +519,7 @@ Control(demux_t *demux, int query, va_list args)
                 {
                     sys->pts = sys->audio_pts = sys->video_pts =
                         (seekpoint_idx * sys->chapter_gap) + VLC_TICK_0;
+                    sys->current_chapter = seekpoint_idx;
                     return VLC_SUCCESS;
                 }
             }
@@ -356,7 +541,7 @@ Control(demux_t *demux, int query, va_list args)
         case DEMUX_GET_SEEKPOINT:
             if (sys->chapter_gap != VLC_TICK_INVALID)
             {
-                *va_arg(args, int *) = sys->pts / sys->chapter_gap;
+                *va_arg(args, int *) = sys->current_chapter;
                 return VLC_SUCCESS;
             }
             return VLC_EGENERIC;
@@ -422,7 +607,14 @@ Control(demux_t *demux, int query, va_list args)
         case DEMUX_HAS_UNSUPPORTED_META:
             return VLC_EGENERIC;
         case DEMUX_GET_ATTACHMENTS:
-            return VLC_EGENERIC;
+        {
+            input_attachment_t ***attach_array_p = va_arg(args, input_attachment_t***);
+            int *attach_count_p = va_arg(args, int *);
+            if (sys->attachment_count <= 0)
+                return VLC_EGENERIC;
+
+            return GetAttachments(demux, attach_array_p, attach_count_p);
+        }
         case DEMUX_CAN_RECORD:
             *va_arg(args, bool *) = sys->can_record;
             return VLC_SUCCESS;
@@ -528,11 +720,56 @@ CreateVideoBlock(demux_t *demux, struct mock_track *track)
         .free = video_block_free_cb
     };
 
+    unsigned range = pic->format.p_palette ? 3 : 255;
+    unsigned delay = 2550 / range;
+
     size_t block_len = 0;
     for (int i = 0; i < pic->i_planes; ++i)
         block_len += pic->p[i].i_lines * pic->p[i].i_pitch;
-    memset(pic->p[0].p_pixels, (sys->video_pts / VLC_TICK_FROM_MS(10)) % 255,
-           block_len);
+
+    uint8_t pixel = (sys->video_pts / VLC_TICK_FROM_MS(delay)) % range;
+    if (sys->b_colors)
+    {
+        int bars = __MAX(3, pic->p[0].i_pixel_pitch);
+        unsigned lines_per_color = pic->p[0].i_visible_lines / bars;
+        for (int bar = 0; bar < bars; bar++)
+        {
+            for (unsigned y=bar*lines_per_color; y < (bar+1)*lines_per_color; y++)
+            {
+                for (int x=0; x < pic->p[0].i_visible_pitch; x += pic->p[0].i_pixel_pitch)
+                {
+                    memcpy(&pic->p[0].p_pixels[x + y*pic->p[0].i_pitch], &sys->bar_colors[bar], pic->p[0].i_pixel_pitch);
+                }
+            }
+        }
+    }
+    else
+        memset(pic->p[0].p_pixels, pixel, block_len);
+
+    if(pic->format.p_palette && pixel < PALETTE_BLACK)
+    {
+        unsigned incx = pic->p[0].i_pitch / GLYPH_COLS / 2;
+        unsigned incy = pic->p[0].i_lines / GLYPH_ROWS / 2;
+        uint8_t *p = pic->p[0].p_pixels;
+        for(unsigned y=0; y<GLYPH_ROWS; y++)
+        {
+            for(unsigned yrepeat=0; yrepeat<incy; yrepeat++)
+            {
+                uint8_t *q = p;
+                for(unsigned x=0; x<GLYPH_COLS; x++)
+                {
+                    uint8_t mask = 0x80 >> x;
+                    if( glyph10_bitmap[pixel][y] & mask )
+                        memset(q, PALETTE_BLACK, incx);
+                    else
+                        memset(q, pixel, incx);
+                    q += incx;
+                }
+                p += pic->p[0].i_visible_pitch;
+            }
+        }
+    }
+
     return block_Init(&video->b, &cbs, pic->p[0].p_pixels, block_len);
     (void) demux;
 }
@@ -658,6 +895,17 @@ ConfigureVideoTrack(demux_t *demux,
         return VLC_EGENERIC;
     }
 
+    if(chroma == VLC_CODEC_RGBP || chroma == VLC_CODEC_YUVP)
+    {
+        fmt->video.p_palette = malloc(sizeof(video_palette_t));
+        if(!fmt->video.p_palette)
+            return VLC_EGENERIC;
+        fmt->video.p_palette->i_entries = 4;
+        memcpy(fmt->video.p_palette->palette,
+               chroma == VLC_CODEC_RGBP ? rgbpal : yuvpal,
+               sizeof(rgbpal));
+    }
+
     fmt->i_codec = chroma;
     fmt->video.i_chroma = chroma;
     fmt->video.i_width = fmt->video.i_visible_width = options->width;
@@ -667,6 +915,47 @@ ConfigureVideoTrack(demux_t *demux,
     fmt->video.orientation = options->orientation;
 
     fmt->b_packetized = options->packetized;
+
+    if (options->colorbar && !vlc_fourcc_IsYUV(chroma) && desc->plane_count == 1)
+    {
+        struct demux_sys *sys = demux->p_sys;
+        sys->b_colors = true;
+
+        unsigned bars = __MAX(3, desc->pixel_size);
+        for (unsigned bar = 0; bar < bars; bar++)
+        {
+            memset(&sys->bar_colors[bar], 0, sizeof(*sys->bar_colors));
+            if (desc->pixel_bits == 15)
+            {
+                // ONLY Little-Endian FOR NOW to match AVI
+
+                // only first 2 bytes of bar_colors are used
+                if (bar == 0)
+                    SetWLE(&sys->bar_colors[bar], 0x1F << 10);
+                else if (bar == 1)
+                    SetWLE(&sys->bar_colors[bar], 0x1F << 5);
+                else if (bar == 2)
+                    SetWLE(&sys->bar_colors[bar], 0x1F << 0);
+            }
+            else if (desc->pixel_bits == 16)
+            {
+                // ONLY Little-Endian FOR NOW to match AVI
+
+                // only first 2 bytes of bar_colors are used
+                if (bar == 0)
+                    SetWLE(&sys->bar_colors[bar], 0x1F << 11);
+                else if (bar == 1)
+                    SetWLE(&sys->bar_colors[bar], 0x3F << 5);
+                else if (bar == 2)
+                    SetWLE(&sys->bar_colors[bar], 0x1F << 0);
+            }
+            else if (desc->pixel_bits == 32 || desc->pixel_bits == 24)
+                // write 0xFF on the offset of the bar
+                sys->bar_colors[bar][bar] = 0xFF;
+            else
+                sys->b_colors = false; // unsupported RGB type
+        }
+    }
 
     return VLC_SUCCESS;
 }
@@ -764,18 +1053,26 @@ static int
 OverrideTrackOptions(const config_chain_t *config_chain,
                      struct mock_track *track)
 {
+#define OVERRIDE_SUBOPTION(group_name, var_name, type, module_header_type, getter, default_value, free_cb) \
+    if (!strcmp(""#var_name, config_chain->psz_name)) \
+    { \
+        free_cb(track->group_name.var_name); \
+        track->group_name.var_name = var_Read_ ## type(config_chain->psz_value); \
+        break; \
+    }
+
     for (; config_chain ; config_chain = config_chain->p_next)
     {
         switch (track->fmt.i_cat)
         {
             case VIDEO_ES:
-                OPTIONS_VIDEO(OVERRIDE_OPTION)
+                OPTIONS_VIDEO(OVERRIDE_SUBOPTION)
                         break;
             case AUDIO_ES:
-                OPTIONS_AUDIO(OVERRIDE_OPTION)
+                OPTIONS_AUDIO(OVERRIDE_SUBOPTION)
                         break;
             case SPU_ES:
-                OPTIONS_SUB(OVERRIDE_OPTION)
+                OPTIONS_SUB(OVERRIDE_SUBOPTION)
                         break;
             default:
                 vlc_assert_unreachable();
@@ -870,6 +1167,13 @@ DemuxVideo(demux_t *demux, vlc_tick_t step_length, vlc_tick_t end_pts)
             switch (track->fmt.i_cat)
             {
                 case VIDEO_ES:
+
+                    if (track->video.image_count >= 1)
+                    {
+                        track->video.image_count--;
+                        if (track->video.image_count == 0)
+                            sys->eof_requested = true;
+                    }
                     block = CreateVideoBlock(demux, track);
                     break;
                 case SPU_ES:
@@ -908,6 +1212,16 @@ Demux(demux_t *demux)
     if (ret != VLC_SUCCESS)
         return VLC_DEMUXER_EGENERIC;
 
+    if (sys->pcr_points.size > sys->next_pcr_index)
+    {
+        const struct pcr_point *pt = &sys->pcr_points.data[sys->next_pcr_index];
+        if (sys->pts >= pt->oldpcr)
+        {
+            sys->audio_pts = sys->video_pts = sys->pts = pt->newpcr;
+            sys->next_pcr_index++;
+        }
+    }
+
     vlc_tick_t prev_pts = sys->pts;
     if (sys->audio_track_count > 0
      && (sys->video_track_count > 0 || sys->sub_track_count > 0))
@@ -919,6 +1233,16 @@ Demux(demux_t *demux)
 
     if (sys->pts > sys->length)
         sys->pts = sys->length;
+
+    if (sys->chapter_gap > 0)
+    {
+        int chapter_index = sys->pts / sys->chapter_gap;
+        if (chapter_index != sys->current_chapter)
+        {
+            sys->updates |= INPUT_UPDATE_SEEKPOINT;
+            sys->current_chapter = chapter_index;
+        }
+    }
 
     if (!sys->can_control_pace)
     {
@@ -968,6 +1292,9 @@ Demux(demux_t *demux)
 
     if (ret != VLC_SUCCESS)
         return VLC_DEMUXER_EGENERIC;
+
+    if (sys->eof_requested)
+        return VLC_DEMUXER_EOF;
 
     return eof ? VLC_DEMUXER_EOF : VLC_DEMUXER_SUCCESS;
 }
@@ -1128,14 +1455,91 @@ Close(vlc_object_t *obj)
     demux_t *demux = (demux_t*)obj;
     struct demux_sys *sys = demux->p_sys;
 
-    free( sys->config );
+#define FREE_OPTIONS(var_name, type, module_header_type, getter, default_value, free_cb) \
+    free_cb(sys->var_name);
+#define FREE_SUBOPTIONS(group_name, var_name, type, module_header_type, getter, default_value, free_cb) \
+    free_cb(track->group_name.var_name);
+
+    OPTIONS_GLOBAL(FREE_OPTIONS);
 
     struct mock_track *track;
     vlc_vector_foreach(track, &sys->tracks)
     {
+        OPTIONS_AUDIO(FREE_SUBOPTIONS);
+        OPTIONS_VIDEO(FREE_SUBOPTIONS);
+        OPTIONS_SUB(FREE_SUBOPTIONS);
+
         DeleteTrack(demux, track);
     }
     vlc_vector_clear(&sys->tracks);
+    vlc_vector_clear(&sys->pcr_points);
+
+    free(sys->art_url);
+}
+
+static int
+ParseDiscontinuities(demux_t *demux)
+{
+    /* the 'discontinuities' option is in the following format:
+     * "(oldpcr_1,newpcr_1)(oldpcr_2,newpcr_2)...(oldpcr_n,newpcr_n)"
+     *
+     * Example: "(1000000,5000000)(7000000,1000000)"
+     * After 1s, there will be a discontinuity to 5s
+     * 2s after the previous discontinuity, there will be an other one to 1s
+     * */
+    struct demux_sys *sys = demux->p_sys;
+    assert(sys->discontinuities != NULL);
+
+    size_t discontinuities_len = strlen(sys->discontinuities);
+    size_t pcr_count = 0;
+
+    for (size_t i = 0; i < discontinuities_len; ++i)
+        if (sys->discontinuities[i] == ',')
+            pcr_count++;
+
+    if (pcr_count == 0)
+    {
+        msg_Err(demux, "ParseDiscontinuities: 0 points parsed");
+        return VLC_EINVAL;
+    }
+
+    if (!vlc_vector_push_hole(&sys->pcr_points, pcr_count))
+        return VLC_ENOMEM;
+
+    char *savetpr;
+    size_t index = 0;
+    for (const char *str = strtok_r(sys->discontinuities, "(", &savetpr);
+         str != NULL; str = strtok_r(NULL, "(", &savetpr))
+    {
+        char *endptr;
+        long long oldpcrval = strtoll(str, &endptr, 10);
+        if (oldpcrval == LLONG_MIN || oldpcrval == LLONG_MAX || endptr == str
+         || *endptr != ',')
+        {
+            vlc_vector_clear(&sys->pcr_points);
+            msg_Err(demux, "ParseDiscontinuities: invalid first value: '%s' "
+                    "at index %zu", str, index);
+            return VLC_EINVAL;
+        }
+
+        str = endptr + 1;
+        long long newpcrval = strtoll(str, &endptr, 10);
+        if (newpcrval == LLONG_MIN || newpcrval == LLONG_MAX || endptr == str
+         || *endptr != ')')
+        {
+            vlc_vector_clear(&sys->pcr_points);
+            msg_Err(demux, "ParseDiscontinuities: invalid second value: '%s' "
+                    "at index %zu", str, index);
+            return VLC_EINVAL;
+        }
+
+        assert(index < pcr_count);
+        struct pcr_point *point = &sys->pcr_points.data[index++];
+        point->oldpcr = oldpcrval;
+        point->newpcr = newpcrval;
+    }
+
+    return VLC_SUCCESS;
 }
 
 static int
@@ -1151,7 +1555,10 @@ Open(vlc_object_t *obj)
         return VLC_ENOMEM;
 
     demux->p_sys = sys;
+    sys->eof_requested = false;
     vlc_vector_init(&sys->tracks);
+    vlc_vector_init(&sys->pcr_points);
+    sys->next_pcr_index = 0;
 
     if (var_LocationParse(obj, demux->psz_location, "mock-") != VLC_SUCCESS)
         return VLC_ENOMEM;
@@ -1160,6 +1567,7 @@ Open(vlc_object_t *obj)
     OPTIONS_AUDIO(READ_SUBOPTION)
     OPTIONS_VIDEO(READ_SUBOPTION)
     OPTIONS_SUB(READ_SUBOPTION)
+    sys->art_url = NULL;
 
     if (sys->node_count > 0)
     {
@@ -1167,6 +1575,8 @@ Open(vlc_object_t *obj)
         demux->pf_readdir = Readdir;
         return VLC_SUCCESS;
     }
+
+    sys->b_colors = false;
 
     if (sys->chapter_count > 0 && sys->title_count == 0)
         sys->title_count++;
@@ -1244,6 +1654,13 @@ Open(vlc_object_t *obj)
                 sys->config[i] = ':';
     }
 
+    if (sys->discontinuities != NULL)
+    {
+        ret = ParseDiscontinuities(demux);
+        if (ret != VLC_SUCCESS)
+            goto error;
+    }
+
     /* Read per track config chain */
     for (char *psz_in = sys->config; psz_in;)
     {
@@ -1292,6 +1709,7 @@ Open(vlc_object_t *obj)
     sys->current_title = 0;
     sys->chapter_gap = sys->chapter_count > 0 ?
                        (sys->length / sys->chapter_count) : VLC_TICK_INVALID;
+    sys->current_chapter = 0;
     sys->updates = 0;
 
     demux->pf_control = Control;

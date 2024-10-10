@@ -22,8 +22,10 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "library/VLCLibraryTableView.h"
 #import "library/VLCLibraryCollectionViewDataSource.h"
+#import "library/VLCLibraryTableViewDataSource.h"
+
+#include "views/iCarousel/iCarousel.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -31,11 +33,13 @@ NS_ASSUME_NONNULL_BEGIN
 @class VLCLibraryAudioGroupDataSource;
 @class VLCMediaLibraryAlbum;
 
-typedef NS_ENUM(NSUInteger, VLCAudioLibrarySegment) {
-    VLCAudioLibraryArtistsSegment = 0,
+typedef NS_ENUM(NSInteger, VLCAudioLibrarySegment) {
+    VLCAudioLibraryUnknownSegment = -1,
+    VLCAudioLibraryArtistsSegment,
     VLCAudioLibraryAlbumsSegment,
     VLCAudioLibrarySongsSegment,
-    VLCAudioLibraryGenresSegment
+    VLCAudioLibraryGenresSegment,
+    VLCAudioLibraryRecentsSegment
 };
 
 extern NSString * const VLCLibrarySongsTableViewSongPlayingColumnIdentifier;
@@ -54,25 +58,28 @@ extern NSString * const VLCLibraryAlbumSortDescriptorKey;
 extern NSString * const VLCLibraryPlayCountSortDescriptorKey;
 extern NSString * const VLCLibraryYearSortDescriptorKey;
 
-@interface VLCLibraryAudioDataSource : NSObject <VLCLibraryTableViewDataSource, VLCLibraryCollectionViewDataSource>
+extern NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification;
 
-@property (readwrite, assign) VLCLibraryModel *libraryModel;
-@property (readwrite, assign) VLCLibraryAudioGroupDataSource *audioGroupDataSource;
-@property (readwrite, assign) NSTableView *collectionSelectionTableView;
-@property (readwrite, assign) NSTableView *groupSelectionTableView;
-@property (readwrite, assign) NSTableView *songsTableView;
-@property (readwrite, assign) NSCollectionView *collectionView;
-@property (readwrite, assign) NSTableView *gridModeListTableView;
-@property (readwrite, assign) NSCollectionView *gridModeListSelectionCollectionView;
+@interface VLCLibraryAudioDataSource : NSObject <VLCLibraryTableViewDataSource, VLCLibraryCollectionViewDataSource, iCarouselDataSource>
+
+@property (readwrite, weak) VLCLibraryModel *libraryModel;
+@property (readwrite, weak) NSTableView *collectionSelectionTableView;
+@property (readwrite, weak) NSTableView *songsTableView;
+@property (readwrite, weak) NSCollectionView *collectionView;
+@property (readwrite, weak) iCarousel *carouselView;
+@property (readwrite, weak) NSTableView *gridModeListTableView;
 
 @property (nonatomic, readwrite, assign) VLCAudioLibrarySegment audioLibrarySegment;
+@property (readwrite, strong) VLCLibraryAudioGroupDataSource *audioGroupDataSource;
 
+@property (readonly) size_t collectionToDisplayCount;
+@property (readonly) NSInteger displayedCollectionCount;
+@property (readonly) BOOL displayedCollectionUpdating;
+
++ (void)setupCollectionView:(NSCollectionView *)collectionView;
 - (void)setup;
-- (void)setupCollectionView:(NSCollectionView *)collectionView;
-
 - (void)reloadData;
-- (void)tableView:(NSTableView * const)tableView selectRow:(NSInteger)row;
-
+- (void)tableView:(NSTableView * const)tableView selectRowIndices:(NSIndexSet * const)indices;
 
 @end
 

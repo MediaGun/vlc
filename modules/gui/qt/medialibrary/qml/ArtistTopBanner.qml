@@ -15,19 +15,19 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
-import QtQml.Models 2.12
-import QtGraphicalEffects 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
+import QtQml.Models
+import Qt5Compat.GraphicalEffects
 
-import org.videolan.medialib 0.1
-import org.videolan.controls 0.1
-import org.videolan.vlc 0.1
+import VLC.MainInterface
+import VLC.MediaLibrary
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
-import "qrc:///util/Helpers.js" as Helpers
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Util
 
 FocusScope {
     id: root
@@ -39,7 +39,7 @@ FocusScope {
     implicitHeight: VLCStyle.artistBanner_height
 
     Accessible.role: Accessible.Pane
-    Accessible.name: I18n.qtr("Artist banner")
+    Accessible.name: qsTr("Artist banner")
 
     function setCurrentItemFocus(reason) {
         playActionBtn.forceActiveFocus(reason);
@@ -60,29 +60,23 @@ FocusScope {
 
         asynchronous: true
         source: artist.cover || VLCStyle.noArtArtist
-        sourceSize: artist.cover ? Qt.size(MainCtx.screen ? Helpers.alignUp(MainCtx.screen.availableGeometry.width, 32) : 1024, 0)
+        sourceSize: artist.cover ? Qt.size(Helpers.alignUp(Screen.desktopAvailableWidth, 32), 0)
                                  : undefined
         mipmap: !!artist.cover
         fillMode: artist.cover ? Image.PreserveAspectCrop : Image.Tile
-        visible: !blurLoader.active
+        visible: layer.enabled
+        cache: (source === VLCStyle.noArtArtist)
 
         // Single pass linear filtering, in case the effect is not available:
-        layer.enabled: visible
+        layer.enabled: (GraphicsInfo.shaderType === GraphicsInfo.UnknownShadingLanguage)
         layer.smooth: true
         layer.textureSize: Qt.size(width * .75, height * .75)
     }
 
-    Loader {
-        id: blurLoader
+    FastBlur {
         anchors.fill: background
-
-        // Don't care Qt 6 Qt5Compat RHI compatible graphical effects for now
-        active: (GraphicsInfo.api === GraphicsInfo.OpenGL)
-
-        sourceComponent: FastBlur {
-            source: background
-            radius: VLCStyle.dp(4, VLCStyle.scale)
-        }
+        source: background
+        radius: VLCStyle.dp(4, VLCStyle.scale)
     }
 
     Rectangle {
@@ -108,8 +102,10 @@ FocusScope {
             implicitHeight: VLCStyle.cover_normal
             implicitWidth: VLCStyle.cover_normal
 
-            RoundImage {
+            Widgets.RoundImage {
                 source: artist.cover || VLCStyle.noArtArtist
+                sourceSize.width: width
+                sourceSize.height: height
                 anchors.fill: parent
                 radius: VLCStyle.cover_normal
             }
@@ -136,7 +132,7 @@ FocusScope {
             Widgets.SubtitleLabel {
                 Layout.fillWidth: true
 
-                text: artist.name || I18n.qtr("No artist")
+                text: artist.name || qsTr("No artist")
                 color: theme.fg.primary
 
                 Layout.maximumWidth: parent.width
@@ -147,7 +143,7 @@ FocusScope {
 
                 Layout.topMargin: VLCStyle.margin_xxxsmall
 
-                text: I18n.qtr("%1 Songs").arg(artist.nb_tracks)
+                text: qsTr("%1 Songs").arg(artist.nb_tracks)
                 color: theme.fg.secondary
             }
 
@@ -164,8 +160,8 @@ FocusScope {
                 model: ObjectModel {
                     Widgets.ActionButtonPrimary {
                         id: playActionBtn
-                        iconTxt: VLCIcons.play_outline
-                        text: I18n.qtr("Play all")
+                        iconTxt: VLCIcons.play
+                        text: qsTr("Play all")
                         focus: true
 
                         //we probably want to keep this button like the other action buttons
@@ -177,7 +173,7 @@ FocusScope {
                     Widgets.ActionButtonOverlay {
                         id: enqueueActionBtn
                         iconTxt: VLCIcons.enqueue
-                        text: I18n.qtr("Enqueue all")
+                        text: qsTr("Enqueue all")
                         onClicked: MediaLib.addToPlaylist( artist.id )
                     }
                 }

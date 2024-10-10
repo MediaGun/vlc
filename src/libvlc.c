@@ -63,6 +63,7 @@
 #include <vlc_modules.h>
 #include <vlc_media_library.h>
 #include <vlc_thumbnailer.h>
+#include <vlc_tracer.h>
 
 #include "libvlc.h"
 
@@ -180,7 +181,10 @@ int libvlc_InternalInit( libvlc_int_t *p_libvlc, int i_argc,
     }
 
     vlc_LogInit(p_libvlc);
-    vlc_tracer_Init(p_libvlc);
+
+    char *tracer_name = var_InheritString(p_libvlc, "tracer");
+    priv->tracer = vlc_tracer_Create(VLC_OBJECT(p_libvlc), tracer_name);
+    free(tracer_name);
 
     /*
      * Support for gettext
@@ -352,9 +356,6 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
     if ( priv->p_thumbnailer )
         vlc_thumbnailer_Release( priv->p_thumbnailer );
 
-    libvlc_InternalDialogClean( p_libvlc );
-    libvlc_InternalKeystoreClean( p_libvlc );
-
 #ifdef ENABLE_VLM
     /* Destroy VLM if created in libvlc_InternalInit */
     if( priv->p_vlm )
@@ -387,6 +388,8 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
     if( priv->media_source_provider )
         vlc_media_source_provider_Delete( priv->media_source_provider );
 
+    libvlc_InternalDialogClean( p_libvlc );
+    libvlc_InternalKeystoreClean( p_libvlc );
     libvlc_InternalActionsClean( p_libvlc );
 
     /* Save the configuration */
@@ -394,7 +397,8 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
         config_AutoSaveConfigFile( p_libvlc );
 
     vlc_LogDestroy(p_libvlc->obj.logger);
-    vlc_tracer_Destroy(p_libvlc);
+    if (priv->tracer != NULL)
+        vlc_tracer_Destroy(priv->tracer);
     /* Free module bank. It is refcounted, so we call this each time  */
     module_EndBank (true);
 #if defined(_WIN32) || defined(__OS2__)
@@ -450,58 +454,9 @@ static void GetFilenames( libvlc_int_t *p_vlc, unsigned n,
     }
 }
 
-int vlc_MetadataRequest(libvlc_int_t *libvlc, input_item_t *item,
-                        input_item_meta_request_option_t i_options,
-                        const struct vlc_metadata_cbs *cbs,
-                        void *cbs_userdata,
-                        int timeout, void *id)
+vlc_preparser_t *
+libvlc_GetMainPreparser(libvlc_int_t *libvlc)
 {
     libvlc_priv_t *priv = libvlc_priv(libvlc);
-
-    if (unlikely(priv->parser == NULL))
-        return VLC_ENOMEM;
-
-    return vlc_preparser_Push( priv->parser, item, i_options, cbs,
-                                 cbs_userdata, timeout, id );
-}
-
-/**
- * Requests extraction of the meta data for an input item (a.k.a. preparsing).
- * The actual extraction is asynchronous. It can be cancelled with
- * libvlc_MetadataCancel()
- */
-int libvlc_MetadataRequest(libvlc_int_t *libvlc, input_item_t *item,
-                           input_item_meta_request_option_t i_options,
-                           const struct vlc_metadata_cbs *cbs,
-                           void *cbs_userdata,
-                           int timeout, void *id)
-{
-    libvlc_priv_t *priv = libvlc_priv(libvlc);
-    assert(i_options & META_REQUEST_OPTION_SCOPE_ANY);
-
-    if (unlikely(priv->parser == NULL))
-        return VLC_ENOMEM;
-
-    vlc_mutex_lock( &item->lock );
-    if( item->i_preparse_depth == 0 )
-        item->i_preparse_depth = 1;
-    vlc_mutex_unlock( &item->lock );
-
-    return vlc_MetadataRequest(libvlc, item, i_options, cbs, cbs_userdata, timeout, id);
-}
-
-/**
- * Cancels extraction of the meta data for an input item.
- *
- * This does nothing if the input item is already processed or if it was not
- * added with libvlc_MetadataRequest()
- */
-void libvlc_MetadataCancel(libvlc_int_t *libvlc, void *id)
-{
-    libvlc_priv_t *priv = libvlc_priv(libvlc);
-
-    if (unlikely(priv->parser == NULL))
-        return;
-
-    vlc_preparser_Cancel(priv->parser, id);
+    return priv->parser;
 }

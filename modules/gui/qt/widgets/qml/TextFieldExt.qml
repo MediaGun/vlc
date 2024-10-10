@@ -16,12 +16,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
+import QtQuick.Controls
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
+import VLC.Style
 
 TextField {
     id: control
@@ -38,7 +37,11 @@ TextField {
     selectedTextColor : theme.fg.highlight
     selectionColor : theme.bg.highlight
     color : theme.fg.primary
+    placeholderTextColor: theme.fg.secondary
+
     font.pixelSize: VLCStyle.fontSize_normal
+
+    verticalAlignment: Text.AlignVCenter
 
     background: Rectangle {
         implicitWidth: 200

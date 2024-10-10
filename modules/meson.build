@@ -76,43 +76,87 @@ if not jack_dep.found()
         required: false)
 endif
 
+frameworks = {}
+framework_conditions = [
+    {
+        'frameworks': [
+            'Foundation',
+            'CoreFoundation',
+            'Security',
+            'CoreMedia',
+            'AVFoundation',
+            'CoreVideo',
+            'VideoToolbox',
+            'AudioToolbox',
+            'IOKit',
+            'QuartzCore',
+            'CoreText',
+            'CoreAudio',
+            'CoreImage',
+            'CoreGraphics',
+            'AVKit',
+        ],
+        'condition': host_system == 'darwin'
+    },
+    {
+        'frameworks': [
+            'Cocoa',
+            'OpenGL',
+            'AudioUnit',
+        ],
+        'condition': have_osx
+    },
+    {
+        'frameworks': [
+            'UIKit',
+            'OpenGLES',
+        ],
+        'condition': have_ios or have_tvos
+    },
+]
+
+foreach framework_spec : framework_conditions
+    foreach framework_name : framework_spec['frameworks']
+        if not framework_spec['condition']
+            # Not-found dependency
+            frameworks += { framework_name: disabler() }
+        else
+            frameworks += { framework_name: dependency(framework_name, required: framework_spec['condition']) }
+        endif
+    endforeach
+endforeach
+
 # Darwin-specific dependencies
-if host_system == 'darwin'
-    security_dep = dependency('Security', required: true)
-    coremedia_dep = dependency('CoreMedia', required: true)
-    avfoundation_dep = dependency('AVFoundation', required: true)
-    corevideo_dep = dependency('CoreVideo', required: true)
-    videotoolbox_dep = dependency('VideoToolbox', required: true)
-    audiotoolbox_dep = dependency('AudioToolbox', required: true)
-    iokit_dep = dependency('IOKit', required: true)
-    quartz_dep = dependency('QuartzCore', required: true)
-    coretext_dep = dependency('CoreText', required: true)
-    coreaudio_dep = dependency('CoreAudio', required: true)
-    coreimage_dep = dependency('CoreImage', required: true)
-    coregraphics_dep = dependency('CoreGraphics', required: true)
-endif
+security_dep = frameworks['Security']
+coremedia_dep = frameworks['CoreMedia']
+avfoundation_dep = frameworks['AVFoundation']
+corevideo_dep = frameworks['CoreVideo']
+videotoolbox_dep = frameworks['VideoToolbox']
+audiotoolbox_dep = frameworks['AudioToolbox']
+iokit_dep = frameworks['IOKit']
+quartz_dep = frameworks['QuartzCore']
+coretext_dep = frameworks['CoreText']
+coreaudio_dep = frameworks['CoreAudio']
+coreimage_dep = frameworks['CoreImage']
+coregraphics_dep = frameworks['CoreGraphics']
+avkit_dep = frameworks['AVKit']
 
 # macOS specific dependencies
-if have_osx
-    cocoa_dep = dependency('Cocoa', required: true)
-    opengl_dep = dependency('OpenGL', required: true)
-    audiounit_dep = dependency('AudioUnit', required: true)
-endif
+cocoa_dep = frameworks['Cocoa']
+opengl_dep = frameworks['OpenGL']
+audiounit_dep = frameworks['AudioUnit']
 
 # iOS/tvOS specific dependencies
-if have_ios or have_tvos
-    uikit_dep = dependency('UIKit', required: true)
-    opengles_dep = dependency('OpenGLES', required: true)
-endif
+uikit_dep = frameworks['UIKit']
+opengles_dep = frameworks['OpenGLES']
+
 
 # Windows-specific dependencies
-if host_system == 'windows'
 
-    # WASAPI-related dependency
-    ksuser_lib = cc.find_library('ksuser',
-                                 has_headers: ['audioclient.h'],
-                                 required: get_option('wasapi'))
-endif
+# WASAPI-related dependency
+ksuser_lib = cc.find_library('ksuser',
+                             has_headers: ['audioclient.h'],
+                             required: host_system == 'windows' and get_option('wasapi'))
 
 # Helper libraries for modules
 # These are helper libraries used by some modules
@@ -123,6 +167,8 @@ if pulse_dep.found()
         dependencies: [libvlccore_dep, pulse_dep],
         link_with: [vlc_libcompat],
     )
+else
+    libvlc_pulse = disabler()
 endif
 
 # SRT
@@ -135,9 +181,9 @@ librist_dep = dependency('librist', required: get_option('rist'))
 mtp_dep = dependency('libmtp', version: '>=1.0.0', required: get_option('mtp'))
 
 # FFmpeg
-avformat_dep = dependency('libavformat', version: '>= 53.21.0', required: get_option('avformat'))
-avcodec_dep  = dependency('libavcodec', version: '>= 57.37.100', required: get_option('avcodec'))
-avutil_dep   = dependency('libavutil', version: '>= 55.22.101', required: false)
+avformat_dep = dependency('libavformat', version: '>= 58.29.100', required: get_option('avformat'))
+avcodec_dep  = dependency('libavcodec', version: '>= 58.54.100', required: get_option('avcodec'))
+avutil_dep   = dependency('libavutil', version: '>= 56.31.100', required: false)
 
 # Freetype, used by text_renderer and ASS access
 freetype_dep = dependency('freetype2', required: get_option('freetype'))
@@ -152,9 +198,30 @@ rsvg_dep = dependency('librsvg-2.0', version: '>= 2.9.0', required: get_option('
 libgcrypt_dep = dependency('libgcrypt',
                             version: '>= 1.6.0',
                             required: get_option('libgcrypt'))
+# Rust support
+cargo_bin = find_program('cargo', required: get_option('rust'))
+
+# JSON library
+json_bison_files = bison_gen.process('demux/json/grammar.y')
+json_lex_files = flex_gen.process('demux/json/lexicon.l')
+
+vlc_json_lib = static_library('vlc_json',
+    sources: [
+      json_bison_files,
+      json_lex_files,
+      'demux/json/json.c',
+    ],
+    include_directories: [vlc_include_dirs, 'demux/json/'],
+    install: false,
+    pic: true
+)
 
 # Array that holds all enabled VLC module dicts
 vlc_modules = []
+vlc_rust_modules = []
+
+# video chroma modules
+subdir('video_chroma')
 
 # codec modules
 subdir('codec')
@@ -213,9 +280,6 @@ subdir('spu')
 # text renderer modules
 subdir('text_renderer')
 
-# video chroma modules
-subdir('video_chroma')
-
 # video filter modules
 subdir('video_filter')
 
@@ -235,16 +299,17 @@ subdir('lua')
 # This has to be declared here as it needs to end up
 # in the modules folder, not in gui/qt/ subfolder as
 # vlc-static would not find it there.
-if qt5_dep.found()
+if qt6_dep.found()
     executable('vlc-qt-check',
         files('gui/qt/vlc-qt-check.cpp'),
-        dependencies: [qt5_dep, qt_extra_deps],
+        dependencies: [qt6_dep, qt_extra_deps],
         include_directories: [vlc_include_dirs],
         build_by_default: true,
         install: true,
         install_dir: get_option('libexecdir'),
         c_args : qt_extra_flags,
         cpp_args : qt_extra_flags,
+        link_args : qt_link_args,
     )
 endif
 
@@ -256,6 +321,8 @@ endif
 # array is then iterated over and a library is defined for each
 # entry with the needed build definition for a VLC plugin.
 #
+vlc_plugins_targets = {}
+vlc_plugins_manifest = {}
 foreach module : vlc_modules
     if not module.has_key('name')
         error('Got invalid vlc_modules entry without \'name\' key')
@@ -277,6 +344,8 @@ foreach module : vlc_modules
         'c_args',
         'cpp_args',
         'objc_args',
+        'extra_files',
+        'enabled',
     ]
     foreach key : module.keys()
         if key not in valid_dict_keys
@@ -285,24 +354,145 @@ foreach module : vlc_modules
         endif
     endforeach
 
+    if not module.get('enabled', true)
+        continue
+    endif
+
     common_args = [
         '-DMODULE_STRING="@0@"'.format(module['name']),
         '-DVLC_DYNAMIC_PLUGIN'
     ]
 
-    library(module['name'] + '_plugin',
+    kwargs = {}
+
+    if module.has_key('link_language')
+        kwargs += { link_language: module.get('link_language') }
+    endif
+
+    vlc_plugin = library(
+        module['name'] + '_plugin',
         module['sources'],
         link_with: [module.get('link_with', []), vlc_libcompat],
         link_args: module.get('link_args', []),
         link_depends: module.get('link_depends', []),
-        link_language: module.get('link_language', []),
         include_directories: [module.get('include_directories', []), vlc_include_dirs],
         dependencies: [module.get('dependencies', []), libvlccore_dep],
         c_args: [module.get('c_args', []), common_args],
         cpp_args: [module.get('cpp_args', []), common_args],
         objc_args: [module.get('objc_args', []), common_args],
+        extra_files: module.get('extra_files', []),
         build_by_default: true,
         install: true,
-        install_dir: get_option('libdir') / 'vlc/plugins'
+        install_dir: get_option('libdir') / 'vlc/plugins',
+        kwargs: kwargs
     )
+    vlc_plugins_targets += {
+        module['name']: vlc_plugin
+    }
+    vlc_plugins_manifest += {
+        module['name']: module
+    }
 endforeach
+
+# Rust/cargo common handling code
+if get_option('rust').enabled()
+    rust_optimization_args = {
+        'plain': [],
+        '0': [],
+        'g': ['-C', 'opt-level=0'],
+        '1': ['-C', 'opt-level=1'],
+        '2': ['-C', 'opt-level=2'],
+        '3': ['-C', 'opt-level=3'],
+        's': ['-C', 'opt-level=s'],
+    }
+    
+    print_static_libs_rustc = run_command([cargo_rustc_static_libs, cargo_bin],
+        check: true, capture: true)
+    rust_common_link_args = print_static_libs_rustc.stdout().split()
+
+    # Do not try to reorder those two operations, they may triger a bug in
+    # meson where array += element is not equal to array += array
+    rust_flags = get_option('extra_rust_flags')
+    rust_flags += rust_optimization_args[get_option('optimization')]
+    
+    cargo_target_dir = join_paths(meson.current_build_dir(), 'cargo_target')
+
+    extra_cargo_args = []
+    module_cargo_depends = []
+    if get_option('vendored_rust_deps') != 'no'
+        if get_option('vendored_rust_deps') == 'yes'
+            cargo_fetch_deps_tgt = custom_target('cargo_fetch_deps',
+                capture: false,
+                console: true,
+                build_by_default: true,
+                input: files('Cargo.lock'),
+                output: 'cargo_vendored_deps',
+                command: [cargo_bin, 'vendor', '--locked', '--versioned-dirs', '--manifest-path',
+                    files('Cargo.toml'), '@OUTPUT@'],
+            )
+            vendored_rust_deps_sources = cargo_fetch_deps_tgt.full_path()
+            module_cargo_depends = [cargo_fetch_deps_tgt]
+        else
+            vendored_rust_deps_sources = get_option('vendored_rust_deps')
+        endif
+
+        extra_cargo_args += ['--offline',
+            '--config', 'source.crates-io.replace-with="vendored-sources"',
+            '--config', f'source.vendored-sources.directory="@vendored_rust_deps_sources@"']
+    endif
+
+    foreach module : vlc_rust_modules
+        if not module.has_key('name')
+            error('Got invalid vlc_rust_modules entry without \'name\' key')
+        endif
+        if not module.has_key('sources')
+            error('The vlc_rust_modules entry for ' + module['name'] + ' has no sources')
+        endif
+        if not module.has_key('cargo_toml')
+            error('The vlc_rust_modules entry for ' + module['name'] + ' has no cargo_toml')
+        endif
+
+        # This list MUST be kept in sync with the keys used below!
+        valid_dict_keys = [
+            'name',
+            'sources',
+            'cargo_toml',
+            'link_with',
+            'link_depends',
+            'dependencies',
+        ]
+        foreach key : module.keys()
+            if key not in valid_dict_keys
+                error('Invalid key \'@0@\' found in vlc_rust_modules entry for \'@1@\''
+                    .format(key, module['name']))
+            endif
+        endforeach
+
+        module_cargo = custom_target(module['name'] + '_cargo',
+            build_by_default: true,
+            input: module['cargo_toml'],
+            depends: module_cargo_depends,
+            depfile: 'lib' + module['name'] + '.d',
+            output: 'lib' + module['name'] + '.a',
+            env: {
+              'RUSTFLAGS': rust_flags,
+              'CARGO_TARGET_DIR': cargo_target_dir,
+            },
+            command: [cargo_output, '--output', '@OUTDIR@', '--depfile',
+                cargo_bin, 'rustc', '--quiet', '--color=always', '--crate-type=staticlib',
+                '--locked', extra_cargo_args, '--manifest-path', module['cargo_toml']]
+        )
+
+        library(module['name'] + '_plugin',
+            # FIXME(meson): `module_cargo` shouldn't be in `link_whole` because it prevents dead code
+            # elimination but meson doesn't yet have any way of setting the symbols to export and since
+            # `module_cargo` is an archive file everything is exported so nothing is really.
+            link_whole: module_cargo,
+            link_with: module.get('link_with', []),
+            link_args: [module.get('link_args', []), rust_common_link_args],
+            link_depends: module.get('link_depends', []),
+            dependencies: [module.get('dependencies', []), libvlccore_dep],
+            build_by_default: true,
+        )
+    endforeach
+endif

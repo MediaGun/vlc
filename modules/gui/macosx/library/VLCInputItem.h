@@ -37,6 +37,7 @@ extern NSString *VLCInputItemPreparsingSkipped;
 extern NSString *VLCInputItemPreparsingFailed;
 extern NSString *VLCInputItemPreparsingTimeOut;
 extern NSString *VLCInputItemPreparsingSucceeded;
+extern NSString * const VLCInputItemCommonDataDifferingFlagString;
 
 @interface VLCInputItem : NSObject<VLCLocallyManipulableItemProtocol>
 
@@ -49,7 +50,7 @@ extern NSString *VLCInputItemPreparsingSucceeded;
 @property (readwrite) NSString *name;
 @property (readwrite) NSString *title;
 @property (readwrite) NSString *artist;
-@property (readwrite) NSString *albumName;
+@property (readwrite) NSString *album;
 @property (readwrite) NSString *trackNumber;
 @property (readwrite) NSString *genre;
 @property (readwrite) NSString *copyright;
@@ -71,7 +72,7 @@ extern NSString *VLCInputItemPreparsingSucceeded;
 @property (readonly) vlc_tick_t duration;
 @property (readonly) enum input_item_type_e inputType;
 @property (readonly) struct input_item_node_t *subTree;
-@property (readonly) NSURL *artworkURL;
+@property (readwrite) NSURL *artworkURL;
 @property (readonly) BOOL preparsed;
 @property (readonly) BOOL isStream;
 
@@ -81,9 +82,12 @@ extern NSString *VLCInputItemPreparsingSucceeded;
 - (int)preparseInputItem;
 - (int)writeMetadataToFile;
 
-- (NSImage*)thumbnailWithSize:(NSSize)size;
+- (void)thumbnailWithSize:(NSSize)size 
+        completionHandler:(void (^)(NSImage * _Nullable))completionHandler;
 
 @end
+
+NSDictionary<NSString *, id> * const commonInputItemData(NSArray<VLCInputItem*> * const inputItems);
 
 @interface VLCInputNode : NSObject
 

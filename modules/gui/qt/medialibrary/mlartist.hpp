@@ -19,34 +19,21 @@
 #ifndef MLARTIST_HPP
 #define MLARTIST_HPP
 
-#include <QObject>
 #include <QString>
-#include <memory>
 
-#include "mlalbum.hpp"
 #include "mlhelper.hpp"
 #include "mlqmltypes.hpp"
 
-extern "C" {
-    typedef struct vlc_ml_artist_t vlc_ml_artist_t;
-};
-
-class MLArtist : public QObject, public MLItem
+class MLArtist : public MLItem
 {
-    Q_OBJECT
-
 public:
-    MLArtist(const vlc_ml_artist_t *_data, QObject *_parent = nullptr);
+    MLArtist(const vlc_ml_artist_t *_data);
 
     QString getName() const;
     QString getShortBio() const;
     QString getCover() const;
     unsigned int getNbAlbums() const;
     unsigned int getNbTracks() const;
-
-    Q_INVOKABLE QString getPresName() const;
-    Q_INVOKABLE QString getPresImage() const;
-    Q_INVOKABLE QString getPresInfo() const;
 
 private:
     QString m_name;

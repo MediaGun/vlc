@@ -24,9 +24,10 @@
 #define EXTENSIONS_HPP
 
 #include "qt.hpp"
-#include "util/singleton.hpp"
 
 #include <cassert>
+#include <unordered_set>
+#include <QHash>
 
 #include <QDialog>
 class QObject;
@@ -45,34 +46,25 @@ extern "C" {
     typedef struct extension_t extension_t;
 };
 
-class ExtensionsDialogProvider : public QObject, public Singleton<ExtensionsDialogProvider>
+class ExtensionsDialogProvider : public QObject
 {
     /** This is the dialog provider for Extensions dialogs
      * @todo Add a setExtManager() function (with vlc_object_hold)
      **/
-    friend class Singleton<ExtensionsDialogProvider>;
-
     Q_OBJECT
 
-private:
-    qt_intf_t *p_intf;
-    extensions_manager_t *p_extensions_manager;
+public:
+    ExtensionsDialogProvider( qt_intf_t *p_intf = nullptr);
+    virtual ~ExtensionsDialogProvider();
 
-private slots:
+    void UpdateExtDialog( extension_dialog_t *p_dialog );
+
+private:
     ExtensionDialog* CreateExtDialog( extension_dialog_t *p_dialog );
     int DestroyExtDialog( extension_dialog_t *p_dialog );
-    ExtensionDialog* UpdateExtDialog( extension_dialog_t *p_dialog );
 
-public:
-    void ManageDialog( extension_dialog_t *p_dialog );
-
-signals:
-    void SignalDialog( extension_dialog_t *p_dialog );
-
-private:
-    ExtensionsDialogProvider( qt_intf_t *p_intf = nullptr,
-                             extensions_manager_t *p_mgr = nullptr );
-    virtual ~ExtensionsDialogProvider();
+    std::unordered_set<ExtensionDialog*> m_dialogs;
+    qt_intf_t *p_intf = nullptr;
 };
 
 
@@ -81,35 +73,30 @@ class ExtensionDialog : public QDialog
     Q_OBJECT
 private:
     qt_intf_t *p_intf;
-    extensions_manager_t *p_extensions_manager;
     extension_t *p_extension;
     extension_dialog_t *p_dialog;
     bool has_lock; ///< Indicates whether Qt thread owns the lock
     QGridLayout *layout;
-    QSignalMapper *clickMapper;
-    QSignalMapper *inputMapper;
-    QSignalMapper *selectMapper;
+    QHash<QObject*, extension_widget_t*> m_widgetMapping;
 
     QWidget *CreateWidget( extension_widget_t *p_widget );
     QWidget *UpdateWidget( extension_widget_t *p_widget );
     void DestroyWidget( extension_widget_t *p_widget, bool b_cond = true );
+
+    void setWidgetMapping(QObject* widget, extension_widget_t *ext_widget);
+    extension_widget_t* getWidgetMapping(QObject* widget) const;
 
 protected:
     void closeEvent( QCloseEvent* ) override;
     void keyPressEvent( QKeyEvent* ) override;
 
 private slots:
-    int TriggerClick( QObject *object );
-    void SyncInput( QObject *object );
-    void SyncSelection( QObject *object );
-    void parentDestroyed();
-
-signals:
-    void destroyDialog( extension_dialog_t *p_dialog );
+    int TriggerClick();
+    void SyncInput();
+    void SyncSelection();
 
 public:
     ExtensionDialog( qt_intf_t *p_intf,
-                     extensions_manager_t *p_mgr,
                      extension_dialog_t *p_dialog );
     virtual ~ExtensionDialog();
 
@@ -117,17 +104,6 @@ public:
 
     // FIXME: This totally sucks (access to has_lock)
     friend class ExtensionsDialogProvider;
-};
-
-class WidgetMapper : public QObject
-{
-    Q_OBJECT
-private:
-    extension_widget_t *p_widget;
-public:
-    WidgetMapper( QObject* parent, extension_widget_t *_p_widget ) :
-            QObject(parent), p_widget(_p_widget) {}
-    extension_widget_t* getWidget() { return p_widget; }
 };
 
 #endif // EXTENSIONS_HPP

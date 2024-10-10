@@ -87,10 +87,11 @@ typedef struct
     soxr_t  last_soxr;
     double  f_fixed_ratio;
     size_t  i_last_olen;
-    vlc_tick_t i_last_pts;
+    vlc_tick_t i_next_pts;
 } filter_sys_t;
 
 static block_t *Resample( filter_t *, block_t * );
+static block_t *FixedResample( filter_t *, block_t * );
 static block_t *Drain( filter_t * );
 static void     Flush( filter_t * );
 
@@ -134,6 +135,8 @@ Open( vlc_object_t *p_obj, bool b_change_ratio )
     filter_sys_t *p_sys = calloc( 1, sizeof( filter_sys_t ) );
     if( unlikely( p_sys == NULL ) )
         return VLC_ENOMEM;
+
+    p_sys->i_next_pts = VLC_TICK_INVALID;
 
     /* Setup SoXR */
     int64_t i_vlc_q = var_InheritInteger( p_obj, "soxr-resampler-quality" );
@@ -195,7 +198,15 @@ Open( vlc_object_t *p_obj, bool b_change_ratio )
         .flush = Flush,
         .close = Close,
     };
-    p_filter->ops = &filter_ops;
+    static const struct vlc_filter_operations fixed_filter_ops =
+    {
+        .filter_audio = FixedResample,
+        .drain_audio = Drain,
+        .flush = Flush,
+        .close = Close,
+    };
+
+    p_filter->ops = b_change_ratio ? &filter_ops : &fixed_filter_ops;
     p_filter->p_sys = p_sys;
     return VLC_SUCCESS;
 }
@@ -275,6 +286,7 @@ SoXR_Resample( filter_t *p_filter, soxr_t soxr, block_t *p_in, size_t i_olen )
 
     if( p_in )
     {
+        p_sys->i_next_pts = p_in->i_pts + p_out->i_length;
         p_sys->i_last_olen = i_olen;
         p_sys->last_soxr = soxr;
     }
@@ -305,84 +317,87 @@ Resample( filter_t *p_filter, block_t *p_in )
 {
     filter_sys_t *p_sys = p_filter->p_sys;
     const vlc_tick_t i_pts = p_in->i_pts;
+    assert( p_sys->vr_soxr != NULL );
 
-    if( p_sys->vr_soxr )
+    /* "audio resampler" with variable ratio: use the fixed resampler when
+     * the ratio is the same than the fixed one, otherwise use the variable
+     * resampler. */
+
+    soxr_t soxr;
+    block_t *p_flushed_out = NULL, *p_out = NULL;
+    const double f_ratio = p_filter->fmt_out.audio.i_rate
+                         / (double) p_filter->fmt_in.audio.i_rate;
+    size_t i_olen = SoXR_GetOutLen( p_in->i_nb_samples,
+        f_ratio > p_sys->f_fixed_ratio ? f_ratio : p_sys->f_fixed_ratio );
+
+    if( f_ratio != p_sys->f_fixed_ratio )
     {
-        /* "audio resampler" with variable ratio: use the fixed resampler when
-         * the ratio is the same than the fixed one, otherwise use the variable
-         * resampler. */
-
-        soxr_t soxr;
-        block_t *p_flushed_out = NULL, *p_out = NULL;
-        const double f_ratio = p_filter->fmt_out.audio.i_rate
-                             / (double) p_filter->fmt_in.audio.i_rate;
-        size_t i_olen = SoXR_GetOutLen( p_in->i_nb_samples,
-            f_ratio > p_sys->f_fixed_ratio ? f_ratio : p_sys->f_fixed_ratio );
-
-        if( f_ratio != p_sys->f_fixed_ratio )
-        {
-            /* using variable resampler */
-            soxr_set_io_ratio( p_sys->vr_soxr, 1 / f_ratio, 0 /* instant change */ );
-            soxr = p_sys->vr_soxr;
-        }
-        else if( f_ratio == 1.0f )
-        {
-            /* not using any resampler */
-            soxr = NULL;
-            p_out = p_in;
-        }
-        else
-        {
-            /* using fixed resampler */
-            soxr = p_sys->soxr;
-        }
-
-        /* If the new soxr is different than the last one, flush it */
-        if( p_sys->last_soxr && soxr != p_sys->last_soxr && p_sys->i_last_olen )
-        {
-            p_flushed_out = SoXR_Resample( p_filter, p_sys->last_soxr,
-                                           NULL, p_sys->i_last_olen );
-            if( soxr )
-                msg_Dbg( p_filter, "Using '%s' engine", soxr_engine( soxr ) );
-        }
-
-        if( soxr )
-        {
-            assert( !p_out );
-            p_out = SoXR_Resample( p_filter, soxr, p_in, i_olen );
-            if( !p_out )
-                goto error;
-        }
-
-        if( p_flushed_out )
-        {
-            /* Prepend the flushed output data to p_out */
-            const unsigned i_nb_samples = p_flushed_out->i_nb_samples
-                                        + p_out->i_nb_samples;
-
-            block_ChainAppend( &p_flushed_out, p_out );
-            p_out = block_ChainGather( p_flushed_out );
-            if( !p_out )
-                goto error;
-            p_out->i_nb_samples = i_nb_samples;
-        }
-        p_out->i_pts = i_pts;
-        return p_out;
+        /* using variable resampler */
+        soxr_set_io_ratio( p_sys->vr_soxr, 1 / f_ratio, 0 /* instant change */ );
+        soxr = p_sys->vr_soxr;
+    }
+    else if( f_ratio == 1.0f )
+    {
+        /* not using any resampler */
+        soxr = NULL;
+        p_out = p_in;
     }
     else
     {
-        /* "audio converter" with fixed ratio */
-
-        const size_t i_olen = SoXR_GetOutLen( p_in->i_nb_samples,
-                                              p_sys->f_fixed_ratio );
-        block_t *p_out = SoXR_Resample( p_filter, p_sys->soxr, p_in, i_olen );
-        if( p_out )
-            p_out->i_pts = i_pts;
-        return p_out;
+        /* using fixed resampler */
+        soxr = p_sys->soxr;
     }
+
+    /* If the new soxr is different than the last one, flush it */
+    if( p_sys->last_soxr && soxr != p_sys->last_soxr && p_sys->i_last_olen )
+    {
+        p_flushed_out = SoXR_Resample( p_filter, p_sys->last_soxr,
+                                       NULL, p_sys->i_last_olen );
+        if( soxr )
+            msg_Dbg( p_filter, "Using '%s' engine", soxr_engine( soxr ) );
+    }
+
+    if( soxr )
+    {
+        assert( !p_out );
+        p_out = SoXR_Resample( p_filter, soxr, p_in, i_olen );
+        if( !p_out )
+            goto error;
+    }
+
+    if( p_flushed_out )
+    {
+        /* Prepend the flushed output data to p_out */
+        const unsigned i_nb_samples = p_flushed_out->i_nb_samples
+                                    + p_out->i_nb_samples;
+
+        block_ChainAppend( &p_flushed_out, p_out );
+        p_out = block_ChainGather( p_flushed_out );
+        if( !p_out )
+            goto error;
+        p_out->i_nb_samples = i_nb_samples;
+    }
+    p_out->i_pts = i_pts;
+    return p_out;
 error:
     block_Release( p_in );
     return NULL;
+}
+
+static block_t *
+FixedResample( filter_t *p_filter, block_t *p_in )
+{
+    /* "audio converter" with fixed ratio */
+    filter_sys_t *p_sys = p_filter->p_sys;
+    const vlc_tick_t i_pts = p_in->i_pts;
+    assert( p_sys->vr_soxr == NULL );
+
+    const size_t i_olen = SoXR_GetOutLen( p_in->i_nb_samples,
+                                          p_sys->f_fixed_ratio );
+    block_t *p_out = SoXR_Resample( p_filter, p_sys->soxr, p_in, i_olen );
+    if( p_out )
+        p_out->i_pts = i_pts;
+    return p_out;
 }
 
 static block_t *
@@ -391,8 +406,16 @@ Drain( filter_t *p_filter )
     filter_sys_t *p_sys = p_filter->p_sys;
 
     if( p_sys->last_soxr && p_sys->i_last_olen )
-        return SoXR_Resample( p_filter, p_sys->last_soxr, NULL,
-                              p_sys->i_last_olen );
+    {
+        block_t *p_out = SoXR_Resample( p_filter, p_sys->last_soxr, NULL,
+                                        p_sys->i_last_olen );
+        if( p_out != NULL )
+        {
+            assert( p_sys->i_next_pts != VLC_TICK_INVALID );
+            p_out->i_pts = p_sys->i_next_pts;
+        }
+        return p_out;
+    }
     else
         return NULL;
 }
@@ -408,4 +431,5 @@ Flush( filter_t *p_filter )
         p_sys->i_last_olen = 0;
         p_sys->last_soxr = NULL;
     }
+    p_sys->i_next_pts = VLC_TICK_INVALID;
 }

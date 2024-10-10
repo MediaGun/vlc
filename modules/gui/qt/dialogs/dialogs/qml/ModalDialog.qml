@@ -15,16 +15,17 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
-import QtGraphicalEffects 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Util
+import VLC.Style
 
 Dialog {
     id: control
@@ -34,8 +35,9 @@ Dialog {
     focus: true
     modal: true
 
-    x: (rootWindow.x + rootWindow.width - width) / 2
-    y: (rootWindow.y + rootWindow.height - height) / 2
+
+    anchors.centerIn: Overlay.overlay
+
     padding: VLCStyle.margin_normal
     margins: VLCStyle.margin_large
 
@@ -44,19 +46,29 @@ Dialog {
                     + (footer && footer.visible ? footer.implicitHeight + spacing : 0)
                     + (contentHeight > 0 ? contentHeight + topPadding + bottomPadding : 0)
 
+    closePolicy: Popup.CloseOnEscape
+
     readonly property ColorContext colorContext: ColorContext {
         id: theme
         palette: VLCStyle.palette
         colorSet: ColorContext.Window
     }
 
-    Overlay.modal: GaussianBlur {
-        source: ShaderEffectSource {
-            sourceItem: control.rootWindow
-            live: true
+    Overlay.modal: Item {
+        FastBlur {
+            anchors.fill: parent
+            anchors.topMargin: MainCtx.windowExtendedMargin
+            anchors.leftMargin: MainCtx.windowExtendedMargin
+            anchors.rightMargin: MainCtx.windowExtendedMargin
+            anchors.bottomMargin: MainCtx.windowExtendedMargin
+
+            source: ShaderEffectSource {
+                sourceItem: control.rootWindow
+                live: true
+                hideSource: true
+            }
+            radius: 12
         }
-        radius: 12
-        samples: 16
     }
 
     background: Rectangle {

@@ -26,13 +26,9 @@
 %option nostdinit
 %option nounput
 %option noyywrap
-%option prefix="json" outfile="lex.yy.c"
+%option prefix="json"
 
 %{
-
-#ifdef HAVE_CONFIG_H
-# include <config.h>
-#endif
 
 #include <stdbool.h>
 #include <stdlib.h>

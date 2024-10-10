@@ -15,18 +15,17 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-
-import org.videolan.vlc 0.1
-
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import QtQuick
 
 
-Widgets.IconControlButton {
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Player
+
+Widgets.IconToolButton {
     id: fullScreenBtn
     enabled: Player.hasVideoOutput
-    iconText: Player.fullscreen ? VLCIcons.defullscreen :VLCIcons.fullscreen
+    text: Player.fullscreen ? VLCIcons.defullscreen :VLCIcons.fullscreen
     onClicked: Player.fullscreen = !Player.fullscreen
-    text: I18n.qtr("fullscreen")
+    description: qsTr("fullscreen")
 }

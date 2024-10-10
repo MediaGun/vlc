@@ -138,6 +138,12 @@ static void JsonPrintKeyValueNumber(FILE *stream, const char *key, int64_t value
     fprintf(stream, ": \"%"PRId64"\"", value);
 }
 
+static void JsonPrintKeyValueNumberFromDouble(FILE *stream, const char *key, double value)
+{
+    JsonPrintString(stream, key);
+    vlc_fprintf_c(stream, ": \"%le\"", value);
+}
+
 static void JsonPrintKeyValueLabel(FILE *stream, const char *key, const char *value)
 {
     JsonPrintString(stream, key);
@@ -158,7 +164,7 @@ static void JsonEndObjectSection(FILE *stream)
     fputc('}', stream);
 }
 
-static void TraceJson(void *opaque, vlc_tick_t ts, va_list entries)
+static void TraceJson(void *opaque, vlc_tick_t ts, const struct vlc_tracer_trace *trace)
 {
     vlc_tracer_sys_t *sys = opaque;
     FILE* stream = sys->stream;
@@ -170,27 +176,26 @@ static void TraceJson(void *opaque, vlc_tick_t ts, va_list entries)
 
     JsonStartObjectSection(stream, "Body");
 
-    struct vlc_tracer_entry entry = va_arg(entries, struct vlc_tracer_entry);
-    while (entry.key != NULL)
+    const struct vlc_tracer_entry *entry = trace->entries;
+    while (entry->key != NULL)
     {
-        switch (entry.type)
+        switch (entry->type)
         {
             case VLC_TRACER_INT:
-                JsonPrintKeyValueNumber(stream, entry.key, entry.value.integer);
+                JsonPrintKeyValueNumber(stream, entry->key, entry->value.integer);
                 break;
-            case VLC_TRACER_TICK:
-                JsonPrintKeyValueNumber(stream, entry.key,
-                                        TIME_FROM_TICK(entry.value.tick));
+            case VLC_TRACER_DOUBLE:
+                JsonPrintKeyValueNumberFromDouble(stream, entry->key, entry->value.double_);
                 break;
             case VLC_TRACER_STRING:
-                JsonPrintKeyValueLabel(stream, entry.key, entry.value.string);
+                JsonPrintKeyValueLabel(stream, entry->key, entry->value.string);
                 break;
             default:
                 vlc_assert_unreachable();
                 break;
         }
-        entry = va_arg(entries, struct vlc_tracer_entry);
-        if (entry.key != NULL)
+        entry++;
+        if (entry->key != NULL)
         {
             fputc(',', stream);
         }
@@ -204,7 +209,7 @@ static void TraceJson(void *opaque, vlc_tick_t ts, va_list entries)
 static void Close(void *opaque)
 {
     vlc_tracer_sys_t *sys = opaque;
-
+    fclose(sys->stream);
     free(sys);
 }
 

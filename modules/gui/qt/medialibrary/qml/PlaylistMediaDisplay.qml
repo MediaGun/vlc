@@ -1,6 +1,8 @@
 /*****************************************************************************
  * Copyright (C) 2021 VLC authors and VideoLAN
  *
+ * Authors: Benjamin Arnaud <bunjee@omega.gg>
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -16,28 +18,33 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
-import QtQml.Models 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQml.Models
 
-import org.videolan.medialib 0.1
-import org.videolan.vlc 0.1
+import VLC.MainInterface
+import VLC.MediaLibrary
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///main/" as MainInterface
-import "qrc:///util/" as Util
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Util
+import VLC.Style
 
 FocusScope {
     id: root
 
     // Properties
 
-    readonly property bool isViewMultiView: false
+    //behave like a Page
+    property var pagePrefix: []
+
+    readonly property bool hasGridListMode: false
+    readonly property bool isSearchable: true
 
     property int leftPadding: 0
     property int rightPadding: 0
+
+    property alias playlistView: view
 
     readonly property int currentIndex: view.currentIndex
     property string name: ""
@@ -55,6 +62,9 @@ FocusScope {
 
     // NOTE: This is used to determine which media(s) shall be displayed.
     property alias parentId: model.parentId
+    property alias searchPattern: model.searchPattern
+    property alias sortOrder: model.sortOrder
+    property alias sortCriteria: model.sortCriteria
 
     property alias model: model
 
@@ -71,23 +81,29 @@ FocusScope {
     function setCurrentItemFocus(reason) { view.setCurrentItemFocus(reason); }
 
     function resetFocus() {
-        if (model.count === 0) return
+        const count = model.count
 
-        let initialIndex = root.initialIndex
+        if (count === 0 || initialIndex === -1) return
 
-        if (initialIndex >= model.count)
-            initialIndex = 0
+        var index
 
-        modelSelect.select(model.index(initialIndex, 0), ItemSelectionModel.ClearAndSelect);
+        if (initialIndex < count)
+            index = initialIndex
+        else
+            index = 0
 
-        view.positionViewAtIndex(initialIndex, ItemView.Contain);
+        view.selectionModel.select(model.index(index, 0), ItemSelectionModel.ClearAndSelect);
+
+        view.positionViewAtIndex(index, ItemView.Contain)
+
+        view.setCurrentItem(index)
     }
 
     // Events
 
     function onDelete()
     {
-        const indexes = modelSelect.selectedIndexes;
+        const indexes = view.selectionModel.selectedIndexes;
 
         if (indexes.length === 0)
             return;
@@ -107,10 +123,44 @@ FocusScope {
             //       from 'onModelReset' only ?
             dragItem.Drag.cancel();
 
-            if (count === 0 || modelSelect.hasSelection)
+            if (count === 0 || view.selectionModel.hasSelection)
                 return;
 
             resetFocus();
+        }
+
+        onTransactionPendingChanged: {
+            if (transactionPending) {
+                MainCtx.setCursor(root, Qt.BusyCursor)
+                visibilityTimer.start()
+            } else {
+                visibilityTimer.stop()
+                progressIndicator.visible = false
+                MainCtx.unsetCursor(root)
+            }
+        }
+    }
+
+    Widgets.ProgressIndicator {
+        id: progressIndicator
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.margins: VLCStyle.margin_small
+
+        visible: false
+
+        z: 99
+
+        text: qsTr("Processing...")
+
+        Timer {
+            id: visibilityTimer
+
+            interval: VLCStyle.duration_humanMoment
+
+            onTriggered: {
+                progressIndicator.visible = true
+            }
         }
     }
 
@@ -119,23 +169,21 @@ FocusScope {
 
         mlModel: model
 
-        indexes: modelSelect.selectedIndexes
+        indexes: indexesFlat ? view.selectionModel.selectedIndexesFlat
+                             : view.selectionModel.selectedIndexes
+        indexesFlat: !!view.selectionModel.selectedIndexesFlat
 
         coverRole: "thumbnail"
 
         defaultCover: root._placeHolder
     }
 
-    Util.SelectableDelegateModel {
-        id: modelSelect
-
-        model: root.model
-    }
 
     PlaylistMediaContextMenu {
         id: contextMenu
 
         model: root.model
+        ctx: MainCtx
     }
 
     PlaylistMedia
@@ -146,30 +194,19 @@ FocusScope {
 
         anchors.fill: parent
 
-        clip: true
-
         focus: (model.count !== 0)
 
         model: root.model
 
-        selectionDelegateModel: modelSelect
-
         dragItem: root.dragItem
 
-        header: Widgets.SubtitleLabel {
-            id: label
+        isMusic: root.isMusic
 
-            leftPadding: view.contentLeftMargin
-            rightPadding: view.contentRightMargin
-            topPadding: VLCStyle.margin_normal
-            bottomPadding: VLCStyle.margin_xsmall
+        header: Widgets.ViewHeader {
+            view: root.playlistView
 
             text: root.name
-            color: view.colorContext.fg.primary
         }
-
-
-        headerTopPadding: VLCStyle.margin_normal
 
         Navigation.parentItem: root
 
@@ -177,17 +214,21 @@ FocusScope {
             if (view.currentIndex <= 0) {
                 root.Navigation.defaultNavigationCancel()
             } else {
-                view.currentIndex = 0;
-                view.positionViewAtIndex(0, ItemView.Contain);
+                positionViewAtIndex(0, ItemView.Contain)
+
+                setCurrentItem(0)
             }
         }
 
         // Events
 
-        onContextMenuButtonClicked: contextMenu.popup(modelSelect.selectedIndexes,
-                                                      globalMousePos)
+        onContextMenuButtonClicked: (_,_,globalMousePos) => {
+            contextMenu.popup(selectionModel.selectedRows(), globalMousePos)
+        }
 
-        onRightClick: contextMenu.popup(modelSelect.selectedIndexes, globalMousePos)
+        onRightClick: (_,_,globalMousePos) => {
+            contextMenu.popup(selectionModel.selectedRows(), globalMousePos)
+        }
 
         // Keys
 
@@ -197,11 +238,11 @@ FocusScope {
     Widgets.EmptyLabelButton {
         anchors.fill: parent
 
-        visible: model.isReady && (model.count <= 0)
+        visible: !model.loading && (model.count <= 0)
 
         focus: visible
 
-        text: I18n.qtr("No media found")
+        text: qsTr("No media found")
 
         cover: root._placeHolder
 

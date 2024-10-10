@@ -15,63 +15,99 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
-import QtQml.Models 2.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
+import QtQml.Models
 
-import org.videolan.vlc 0.1
-import org.videolan.compat 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
 
 FocusScope {
     id: controlLayout
 
     // Properties
 
-    property int contentWidth: 0
+    // These delayed bindings are necessary
+    // because the size of the items
+    // may not be ready immediately.
+    // The wise thing to do would be to not
+    // delay if the sizes are ready.
 
-    property int alignment: 0
+    Binding on Layout.minimumWidth {
+        delayed: true
+        when: controlLayout._componentCompleted
+        value: {
+            const count = repeater.count
 
-    property var altFocusAction: Navigation.defaultNavigationUp
+            if (count === 0)
+                return 0
+
+            let size = 0
+
+            for (let i = 0; i < count; ++i) {
+                const item = repeater.itemAt(i)
+
+                if (item.Layout.minimumWidth < 0)
+                    size += item.implicitWidth
+                else
+                    size += item.Layout.minimumWidth
+            }
+
+            return size + ((count - 1 + ((controlLayout.alignment & (Qt.AlignLeft | Qt.AlignRight)) ? 1 : 0)) * playerControlLayout.spacing)
+        }
+    }
+
+    Binding on Layout.maximumWidth {
+        delayed: true
+        when: controlLayout._componentCompleted
+        value: {
+            let maximumWidth = 0
+            const count = repeater.count
+
+            for (let i = 0; i < count; ++i) {
+                const item = repeater.itemAt(i)
+                maximumWidth += item.implicitWidth
+            }
+
+            maximumWidth += ((count - 1 + ((alignment & (Qt.AlignLeft | Qt.AlignRight)) ? 1 : 0)) * playerControlLayout.spacing)
+
+            return maximumWidth
+        }
+    }
+
+    property alias alignment: repeater.alignment
+
+
+    ///@type {function}
+    required property var altFocusAction
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
         colorSet: ColorContext.Window
     }
 
+    property bool _componentCompleted: false
+
     // Aliases
 
-    property alias count: repeater.count
-
     property alias model: repeater.model
+
+    property alias spacing: rowLayout.spacing
 
     // Signals
 
     signal requestLockUnlockAutoHide(bool lock)
+    signal menuOpened(var menu)
+    ///incomming signal to request all menu and popup to close
+    signal forceUnlock()
 
     // Settings
 
-    implicitWidth: {
-        if (count === 0)
-            return 0
-
-        let size = 0
-
-        for (let i = 0; i < count; ++i) {
-            size += repeater.itemAt(i).preferredWidth
-        }
-
-        if (alignment)
-            // NOTE: We provision the spacing induced by the alignment item.
-            return size + count * rowLayout.spacing
-        else
-            return size + (count - 1) * rowLayout.spacing
-    }
-
+    implicitWidth: Layout.maximumWidth
     implicitHeight: rowLayout.implicitHeight
 
     Navigation.navigable: {
@@ -90,6 +126,8 @@ FocusScope {
     Component.onCompleted: {
         visibleChanged.connect(_handleFocus)
         activeFocusChanged.connect(_handleFocus)
+
+        _componentCompleted = true
     }
 
     // Functions
@@ -99,29 +137,7 @@ FocusScope {
             return
 
         if (activeFocus && (!visible || model.count === 0))
-            altFocusAction()
-    }
-
-    function _updateContentWidth() {
-        let size = 0
-
-        for (let i = 0; i < count; i++) {
-
-            const item = repeater.itemAt(i)
-
-            if (item === null || item.isActive === false)
-                continue
-
-            const width = item.width
-
-            if (width)
-                size += width + spacing
-        }
-
-        if (size)
-            contentWidth = size - spacing
-        else
-            contentWidth = size
+            controlLayout.altFocusAction()
     }
 
     // Children
@@ -131,246 +147,29 @@ FocusScope {
 
         anchors.fill: parent
 
-        spacing: playerControlLayout.spacing
-
         Item {
-            Layout.fillWidth: (controlLayout.alignment === Qt.AlignRight)
+            Layout.fillWidth: visible
+            visible: (controlLayout.alignment & Qt.AlignRight)
         }
 
-        Repeater {
+        ControlRepeater {
             id: repeater
 
-            // NOTE: We apply the 'navigation chain' after adding the item.
-            onItemAdded: {
-                item.applyNavigation()
+            Navigation.parentItem: controlLayout
 
-                controlLayout._updateContentWidth()
-            }
+            availableWidth: rowLayout.width
+            availableHeight: rowLayout.height
 
-            onItemRemoved: {
-                // NOTE: We update the 'navigation chain' after removing the item.
-                item.removeNavigation()
-
-                item.recoverFocus(index)
-
-                controlLayout._updateContentWidth()
-            }
-
-            delegate: Loader {
-                id: loader
-
-                // Properties
-
-                // NOTE: This is required for contentWidth because the visible property is delayed.
-                property bool isActive: (x + minimumWidth <= rowLayout.width)
-
-                property int minimumWidth: {
-                    if (expandable)
-                        return item.minimumWidth
-                    else if (item)
-                        return item.implicitWidth
-                    else
-                        return 0
-                }
-
-                property int preferredWidth: (item && item.preferredWidth) ? item.preferredWidth
-                                                                           : minimumWidth
-
-                readonly property bool expandable: (item && item.minimumWidth !== undefined)
-
-                // Settings
-
-                source: PlayerControlbarControls.control(model.id).source
-
-                focus: (index === 0)
-
-                Layout.fillWidth: expandable
-
-                Layout.minimumWidth: minimumWidth
-
-                Layout.preferredWidth: preferredWidth
-
-                Layout.maximumWidth: preferredWidth
-
-                Layout.alignment: (Qt.AlignVCenter | controlLayout.alignment)
-
-                BindingCompat {
-                    delayed: true // this is important
-                    target: loader
-                    property: "visible"
-                    value: isActive
-                }
-
-                // Events
-
-                Component.onCompleted: repeater.countChanged.connect(controlLayout._handleFocus)
-
-                onIsActiveChanged: controlLayout._updateContentWidth()
-
-                onWidthChanged: controlLayout._updateContentWidth()
-
-                onActiveFocusChanged: {
-                    if (activeFocus && (!!item && !item.focus)) {
-                        recoverFocus()
-                    }
-                }
-
-                onLoaded: {
-                    // control should not request focus if they are not enabled:
-                    item.focus = Qt.binding(function() { return item.enabled && item.visible })
-
-                    // navigation parent of control is always controlLayout
-                    // so it can be set here unlike leftItem and rightItem:
-                    item.Navigation.parentItem = controlLayout
-
-                    if (item instanceof Control || item instanceof T.Control)
-                        item.activeFocusOnTab = true
-
-                    // FIXME: Do we really need to enforce a defaultSize ?
-                    if (item.size !== undefined)
-                        item.size = Qt.binding(function() { return defaultSize; })
-
-                    item.width = Qt.binding(function() { return loader.width } )
-
-                    if (item.maximumHeight !== undefined)
-                        item.maximumHeight = Qt.binding(function() { return rowLayout.height })
-
-                    item.visible = Qt.binding(function() { return loader.visible })
-
-                    if (item.requestLockUnlockAutoHide) {
-                        item.requestLockUnlockAutoHide.connect(function(lock) {
-                            controlLayout.requestLockUnlockAutoHide(lock)
-                        })
-                    }
-                }
-
-                // Connections
-
-                Connections {
-                    target: item
-
-                    enabled: loader.status === Loader.Ready
-
-                    onEnabledChanged: {
-                        if (activeFocus && !item.enabled) // Loader has focus but item is not enabled
-                            recoverFocus()
-                    }
-
-                    onVisibleChanged: {
-                        if (activeFocus && !item.visible)
-                            recoverFocus()
-                    }
-                }
-
-                // Functions
-
-                function applyNavigation() {
-                    if (item == null) return
-
-                    const itemLeft  = repeater.itemAt(index - 1)
-                    const itemRight = repeater.itemAt(index + 1)
-
-                    if (itemLeft) {
-                        const componentLeft = itemLeft.item
-
-                        if (componentLeft)
-                        {
-                            item.Navigation.leftItem = componentLeft
-
-                            componentLeft.Navigation.rightItem = item
-                        }
-                    }
-
-                    if (itemRight) {
-                        const componentRight = itemRight.item
-
-                        if (componentRight)
-                        {
-                            item.Navigation.rightItem = componentRight
-
-                            componentRight.Navigation.leftItem = item
-                        }
-                    }
-                }
-
-                function removeNavigation() {
-                    if (item == null) return
-
-                    const itemLeft = repeater.itemAt(index - 1)
-
-                    // NOTE: The current item was removed from the repeater so we test against the
-                    //       same index.
-                    const itemRight = repeater.itemAt(index)
-
-                    if (itemLeft) {
-                        if (itemRight) {
-                            itemLeft.item.Navigation.rightItem = itemRight.item
-                            itemRight.item.Navigation.leftItem = itemLeft.item
-                        }
-                        else
-                            itemLeft.item.Navigation.rightItem = null
-                    }
-                    else if (itemRight) {
-                        itemRight.item.Navigation.leftItem = null
-                    }
-                }
-
-                function recoverFocus(_index) {
-                    if (item == null) return
-
-                    if (!controlLayout.visible)
-                        return
-
-                    if (_index === undefined)
-                        _index = index
-
-                    for (let i = 1; i <= Math.max(_index, repeater.count - (_index + 1)); ++i) {
-                         if (i <= _index) {
-                             const leftItem = repeater.itemAt(_index - i)
-
-                             if (_focusIfFocusable(leftItem))
-                                 return
-                         }
-
-                         if (_index + i <= repeater.count - 1) {
-                             const rightItem = repeater.itemAt(_index + i)
-
-                             if (_focusIfFocusable(rightItem))
-                                 return
-                         }
-                    }
-
-                    // focus to other alignment if focusable control
-                    // in the same alignment is not found:
-                    if (!!controlLayout.Navigation.rightItem) {
-                        controlLayout.Navigation.defaultNavigationRight()
-                    } else if (!!controlLayout.Navigation.leftItem) {
-                        controlLayout.Navigation.defaultNavigationLeft()
-                    } else {
-                        controlLayout.altFocusAction()
-                    }
-                }
-
-                // Private
-
-                function _focusIfFocusable(_loader) {
-                    if (!!_loader && !!_loader.item && _loader.item.focus) {
-                        if (item.focusReason !== undefined)
-                            _loader.item.forceActiveFocus(item.focusReason)
-                        else {
-                            console.warn("focusReason is not available in %1!".arg(item))
-                            _loader.item.forceActiveFocus()
-                        }
-                        return true
-                    } else {
-                        return false
-                    }
-                }
+            Component.onCompleted: {
+                requestLockUnlockAutoHide.connect(controlLayout.requestLockUnlockAutoHide)
+                menuOpened.connect(controlLayout.menuOpened)
+                controlLayout.forceUnlock.connect(repeater.forceUnlock)
             }
         }
 
         Item {
-            Layout.fillWidth: (controlLayout.alignment === Qt.AlignLeft)
+            Layout.fillWidth: visible
+            visible: (controlLayout.alignment & Qt.AlignLeft)
         }
     }
 }

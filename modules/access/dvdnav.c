@@ -54,6 +54,7 @@
 #include <vlc_mouse.h>
 #include <vlc_dialog.h>
 #include <vlc_iso_lang.h>
+#include <vlc_subpicture.h> // vlc_spu_highlight_t
 
 #include <dvdnav/dvdnav.h>
 /* Expose without patching headers */
@@ -64,6 +65,8 @@ dvdnav_status_t dvdnav_jump_to_sector_by_time(dvdnav_t *, uint64_t, int32_t);
 #include "../demux/timestamps_filter.h"
 
 #include "disc_helper.h"
+
+#define PS_SPU_ID_OFFSET  0xbd20
 
 /*****************************************************************************
  * Module descriptor
@@ -140,7 +143,7 @@ typedef struct
     es_out_id_t *spu_es;
 
     /* palette for menus */
-    uint32_t clut[16];
+    uint32_t clut[VIDEO_PALETTE_CLUT_COUNT];
     bool b_spu_change;
     struct
     {
@@ -171,7 +174,7 @@ typedef struct
 
 static int Control( demux_t *, int, va_list );
 static int Demux( demux_t * );
-static int DemuxBlock( demux_t *, const uint8_t *, int );
+static int DemuxBlock( demux_t *, const uint8_t *, int32_t );
 static void DemuxForceStill( demux_t * );
 
 static void DemuxTitles( demux_t * );
@@ -873,7 +876,7 @@ static int Demux( demux_t *p_demux )
     uint8_t buffer[DVD_VIDEO_LB_LEN];
     uint8_t *packet = buffer;
     int i_event;
-    int i_len;
+    int32_t i_len;
     dvdnav_status_t status;
 
     if( p_sys->b_readahead )
@@ -958,19 +961,22 @@ static int Demux( demux_t *p_demux )
 
     case DVDNAV_SPU_CLUT_CHANGE:
     {
-        int i;
-
         msg_Dbg( p_demux, "DVDNAV_SPU_CLUT_CHANGE" );
-        /* Update color lookup table (16 *uint32_t in packet) */
-        memcpy( p_sys->clut, packet, 16 * sizeof( uint32_t ) );
-
-        /* HACK to get the SPU tracks registered in the right order */
-        for( i = 0; i < 0x1f; i++ )
+        if ( unlikely( (size_t)i_len < sizeof( p_sys->clut ) ) )
+            msg_Err(  p_demux, "invalid CLUT size %d", i_len );
+        else
         {
-            if( dvdnav_spu_stream_to_lang( p_sys->dvdnav, i ) != 0xffff )
-                ESNew( p_demux, 0xbd20 + i );
+            /* Update color lookup table (16 *uint32_t in packet) */
+            memcpy( p_sys->clut, packet, sizeof( p_sys->clut ) );
+
+            /* HACK to get the SPU tracks registered in the right order */
+            for( int i = 0; i < 0x1f; i++ )
+            {
+                if( dvdnav_spu_stream_to_lang( p_sys->dvdnav, i ) != 0xffff )
+                    ESNew( p_demux, PS_SPU_ID_OFFSET + i );
+            }
+            /* END HACK */
         }
-        /* END HACK */
         break;
     }
 
@@ -995,7 +1001,7 @@ static int Demux( demux_t *p_demux )
         for( i = 0; i < 0x1f; i++ )
         {
             if( dvdnav_spu_stream_to_lang( p_sys->dvdnav, i ) != 0xffff )
-                ESNew( p_demux, 0xbd20 + i );
+                ESNew( p_demux, PS_SPU_ID_OFFSET + i );
         }
         /* END HACK */
         break;
@@ -1414,20 +1420,20 @@ static void ESSubtitleUpdate( demux_t *p_demux )
     /* dvdnav_get_active_spu_stream sets (in)visibility flag as 0xF0 */
     if( i_spu >= 0 && i_spu <= 0x1f )
     {
-        ps_track_t *tk = &p_sys->tk[ps_id_to_tk(0xbd20 + i_spu)];
+        ps_track_t *tk = &p_sys->tk[ps_id_to_tk(PS_SPU_ID_OFFSET + i_spu)];
 
-        ESNew( p_demux, 0xbd20 + i_spu );
+        ESNew( p_demux, PS_SPU_ID_OFFSET + i_spu );
 
         /* be sure to unselect it (reset) */
         if( tk->es )
         {
             es_out_Control( p_sys->p_tf_out, ES_OUT_SET_ES_STATE, tk->es,
-                            (bool)false );
+                            false );
 
             /* now select it */
             es_out_Control( p_sys->p_tf_out, ES_OUT_SET_ES, tk->es );
 
-            if( tk->fmt.i_cat == SPU_ES )
+            assert( tk->fmt.i_cat == SPU_ES );
             {
                 vlc_mutex_lock( &p_sys->event_lock );
                 p_sys->spu_es = tk->es;
@@ -1440,11 +1446,11 @@ static void ESSubtitleUpdate( demux_t *p_demux )
     {
         for( i_spu = 0; i_spu <= 0x1F; i_spu++ )
         {
-            ps_track_t *tk = &p_sys->tk[ps_id_to_tk(0xbd20 + i_spu)];
+            ps_track_t *tk = &p_sys->tk[ps_id_to_tk(PS_SPU_ID_OFFSET + i_spu)];
             if( tk->es )
             {
                 es_out_Control( p_sys->p_tf_out, ES_OUT_SET_ES_STATE, tk->es,
-                                (bool)false );
+                                false );
             }
         }
     }
@@ -1453,7 +1459,7 @@ static void ESSubtitleUpdate( demux_t *p_demux )
 /*****************************************************************************
  * DemuxBlock: demux a given block
  *****************************************************************************/
-static int DemuxBlock( demux_t *p_demux, const uint8_t *p, int len )
+static int DemuxBlock( demux_t *p_demux, const uint8_t *p, int32_t len )
 {
     demux_sys_t *p_sys = p_demux->p_sys;
 
@@ -1510,10 +1516,7 @@ static int DemuxBlock( demux_t *p_demux, const uint8_t *p, int len )
             {
                 ps_track_t *tk = &p_sys->tk[ps_id_to_tk(i_id)];
 
-                if( !tk->b_configured )
-                {
-                    ESNew( p_demux, i_id );
-                }
+                ESNew( p_demux, i_id );
 
                 if( tk->es &&
                     !ps_pkt_parse_pes( VLC_OBJECT(p_demux), p_pkt, tk->i_skip ) )
@@ -1579,7 +1582,7 @@ static void ESNew( demux_t *p_demux, int i_id )
     demux_sys_t *p_sys = p_demux->p_sys;
     ps_track_t  *tk = &p_sys->tk[ps_id_to_tk(i_id)];
     bool  b_select = false;
-    int i_lang = 0xffff;
+    uint16_t i_lang = 0xffff;
 
     if( tk->b_configured ) return;
 
@@ -1631,9 +1634,10 @@ static void ESNew( demux_t *p_demux, int i_id )
         i_lang = dvdnav_spu_stream_to_lang( p_sys->dvdnav, i_id&0x1f );
 
         /* Palette */
-        tk->fmt.subs.spu.palette[0] = SPU_PALETTE_DEFINED;
-        memcpy( &tk->fmt.subs.spu.palette[1], p_sys->clut,
-                16 * sizeof( uint32_t ) );
+        tk->fmt.subs.spu.b_palette = true;
+        static_assert(sizeof(tk->fmt.subs.spu.palette) == sizeof(p_sys->clut),
+                      "CLUT palette size mismatch");
+        memcpy( tk->fmt.subs.spu.palette, p_sys->clut, sizeof( p_sys->clut ) );
 
         /* We select only when we are not in the menu */
         if( dvdnav_current_title_info( p_sys->dvdnav, &i_title, &i_part ) == DVDNAV_STATUS_OK &&
@@ -1649,8 +1653,7 @@ static void ESNew( demux_t *p_demux, int i_id )
         tk->fmt.psz_language = malloc( 3 );
         if( tk->fmt.psz_language )
         {
-            tk->fmt.psz_language[0] = (i_lang >> 8)&0xff;
-            tk->fmt.psz_language[1] = (i_lang     )&0xff;
+            SetWBE(tk->fmt.psz_language, i_lang);
             tk->fmt.psz_language[2] = 0;
         }
     }

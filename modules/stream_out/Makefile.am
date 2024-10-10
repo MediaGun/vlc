@@ -16,6 +16,7 @@ libstream_out_autodel_plugin_la_SOURCES = stream_out/autodel.c
 libstream_out_record_plugin_la_SOURCES = stream_out/record.c
 libstream_out_smem_plugin_la_SOURCES = stream_out/smem.c
 libstream_out_setid_plugin_la_SOURCES = stream_out/setid.c
+libstream_out_trace_plugin_la_SOURCES = stream_out/trace.c
 libstream_out_transcode_plugin_la_SOURCES = \
 	stream_out/transcode/transcode.c stream_out/transcode/transcode.h \
 	stream_out/transcode/encoder/encoder.c \
@@ -34,6 +35,15 @@ libstream_out_udp_plugin_la_SOURCES = \
 	stream_out/udp.c
 libstream_out_udp_plugin_la_LIBADD = $(SOCKET_LIBS)
 
+libstream_out_hls_plugin_la_SOURCES = \
+	stream_out/hls/hls.h stream_out/hls/hls.c \
+	stream_out/hls/variant_maps.h stream_out/hls/variant_maps.c \
+	stream_out/hls/storage.h stream_out/hls/storage.c \
+	stream_out/hls/segments.h stream_out/hls/segments.c \
+	stream_out/hls/codecs.h stream_out/hls/codecs.c \
+	stream_out/hls/subtitles_segmenter.c
+libstream_out_hls_plugin_la_LIBADD = libvlc_hxxxhelper.la
+
 sout_LTLIBRARIES = \
 	libstream_out_dummy_plugin.la \
 	libstream_out_cycle_plugin.la \
@@ -50,7 +60,9 @@ sout_LTLIBRARIES = \
 	libstream_out_record_plugin.la \
 	libstream_out_smem_plugin.la \
 	libstream_out_setid_plugin.la \
+	libstream_out_trace_plugin.la \
 	libstream_out_transcode_plugin.la \
+	libstream_out_hls_plugin.la \
 	libstream_out_udp_plugin.la
 
 if HAVE_DECKLINK
@@ -128,10 +140,10 @@ libstream_out_chromecast_plugin_la_SOURCES = stream_out/chromecast/cast.cpp stre
                                              stream_out/renderer_common.hpp \
                                              stream_out/renderer_common.cpp \
                                              stream_out/chromecast/chromecast_common.h stream_out/chromecast/chromecast_ctrl.cpp \
-                                             misc/webservices/json.h misc/webservices/json.c stream_out/chromecast/chromecast_communication.cpp
+                                             stream_out/chromecast/chromecast_communication.cpp
 nodist_libstream_out_chromecast_plugin_la_SOURCES = stream_out/chromecast/@PROTOBUF_VERSION@/cast_channel.pb.cc
 libstream_out_chromecast_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -Istream_out/chromecast/@PROTOBUF_VERSION@ $(CHROMECAST_CFLAGS)
-libstream_out_chromecast_plugin_la_LIBADD = $(CHROMECAST_LIBS) $(SOCKET_LIBS)
+libstream_out_chromecast_plugin_la_LIBADD = $(CHROMECAST_LIBS) $(SOCKET_LIBS) libvlc_json.la 
 CLEANFILES += $(nodist_libstream_out_chromecast_plugin_la_SOURCES)
 
 if ENABLE_SOUT

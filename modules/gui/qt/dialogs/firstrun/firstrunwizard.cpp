@@ -20,6 +20,7 @@
 #include "util/color_scheme_model.hpp"
 #include "maininterface/mainctx.hpp"
 #include "dialogs/toolbar/controlbar_profile_model.hpp"
+#include "medialibrary/medialib.hpp"
 
 #include <QPushButton>
 #include <QButtonGroup>
@@ -28,6 +29,7 @@
 #include <vlc_common.h>
 #include <vlc_configuration.h>
 #include <vlc_url.h>
+#include <vlc_cxx_helpers.hpp>
 
 FirstRunWizard::FirstRunWizard( qt_intf_t *_p_intf, QWidget *parent)
                : QWizard( parent )
@@ -137,18 +139,28 @@ void FirstRunWizard::finish()
 
     /* Layout Page settings */
     config_PutInt( "qt-menubar", ui.layoutGroup->checkedId() );
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
     config_PutInt( "qt-titlebar", ui.layoutGroup->checkedId() );
-#endif
 
     config_PutInt( "qt-pin-controls", ui.layoutGroup->checkedId() );
 
-    ControlbarProfileModel* controlbarModel = p_intf->p_mi->controlbarProfileModel();
-    assert(controlbarModel);
-    if( ui.layoutGroup->checkedId() )
-        controlbarModel->setSelectedProfileFromId(ControlbarProfileModel::CLASSIC_STYLE);
-    else
-        controlbarModel->setSelectedProfileFromId(ControlbarProfileModel::DEFAULT_STYLE);
+    {
+        ControlbarProfileModel* controlbarModel = p_intf->p_mi->controlbarProfileModel();
+        assert(controlbarModel);
+
+        ControlbarProfileModel::Style style;
+        if( ui.layoutGroup->checkedId() )
+            style = ControlbarProfileModel::Style::CLASSIC_STYLE;
+        else
+            style = ControlbarProfileModel::Style::DEFAULT_STYLE;
+
+        std::unique_ptr<ControlbarProfile> profile( controlbarModel->generateProfileFromStyle( style ) );
+        assert( profile );
+        const std::optional<int> index = controlbarModel->findModel( profile.get() );
+        if( index )
+            controlbarModel->setSelectedProfile( *index );
+        else
+            controlbarModel->insertProfile( std::move( profile ), true );
+    }
 
     /* Commit changes to the scanned folders for the Media Library */
     if( vlc_ml_instance_get( p_intf ) && mlFoldersEditor )
@@ -311,11 +323,8 @@ void FirstRunWizard::reject()
 
     /* Layout Page settings */
     config_PutInt( "qt-menubar", 0 );
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
     config_PutInt( "qt-titlebar", 0 );
-#endif
     p_intf->p_mi->setPinVideoControls( 0 );
-    p_intf->p_mi->controlbarProfileModel()->setSelectedProfileFromId(ControlbarProfileModel::DEFAULT_STYLE);
 
     /* Folders Page settings */
     if ( mlFoldersEditor )

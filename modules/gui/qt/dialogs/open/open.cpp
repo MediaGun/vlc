@@ -29,48 +29,20 @@
 #include "util/qt_dirs.hpp"
 #include "playlist/playlist_controller.hpp"
 
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QMenu>
 
 #include <vlc_url.h>
+
+#include <cstddef>
 
 #ifndef NDEBUG
 # define DEBUG_QT 1
 #endif
 
-OpenDialog* OpenDialog::getInstance(  qt_intf_t *p_intf,
-        bool b_rawInstance, int _action_flag, bool b_selectMode )
-{
-    const auto instance = Singleton<OpenDialog>::getInstance(nullptr,
-                                                             p_intf,
-                                                             b_selectMode,
-                                                             _action_flag);
-
-    if( !b_rawInstance )
-    {
-        /* Request the instance but change small details:
-           - Button menu */
-        if( b_selectMode )
-            _action_flag = SELECT; /* This should be useless, but we never know
-                                      if the call is correct */
-        instance->setWindowModality( Qt::WindowModal );
-        instance->i_action_flag = _action_flag;
-        instance->setMenuAction();
-    }
-    return instance;
-}
-
-OpenDialog::OpenDialog( QWindow *parent,
-                        qt_intf_t *_p_intf,
-                        bool b_selectMode,
-                        int _action_flag )
+OpenDialog::OpenDialog(qt_intf_t *_p_intf, QWindow* parent )
     :  QVLCDialog( parent, _p_intf )
 {
-    i_action_flag = _action_flag;
-
-    if( b_selectMode ) /* Select mode */
-        i_action_flag = SELECT;
-
     /* Basic Creation of the Window */
     ui.setupUi( this );
     setWindowTitle( qtr( "Open Media" ) );
@@ -186,6 +158,14 @@ OpenDialog::OpenDialog( QWindow *parent,
     resize( getSettings()->value( "OpenDialog/size", QSize( 500, 400 ) ).toSize() );
 }
 
+void OpenDialog::setActionFlag(OpenDialog::ActionFlag flag)
+{
+    if (i_action_flag == flag)
+        return;
+    i_action_flag = flag;
+    setMenuAction();
+}
+
 /* Finish the dialog and decide if you open another one after */
 void OpenDialog::setMenuAction()
 {
@@ -243,8 +223,9 @@ QString OpenDialog::getOptions()
     return ui.advancedLineInput->text();
 }
 
-void OpenDialog::showTab( int i_tab )
+void OpenDialog::showTab( OpenDialog::OpenTab i_tab, OpenDialog::ActionFlag i_action )
 {
+    setActionFlag(i_action);
     if( i_tab == OPEN_CAPTURE_TAB ) captureOpenPanel->initialize();
     ui.Tab->setCurrentIndex( i_tab );
     show();
@@ -280,10 +261,10 @@ void OpenDialog::browseInputSlave()
 {
     QWidget* windowWidget = window();
     QWindow* parentWindow = windowWidget ? windowWidget->windowHandle() : nullptr;
-    OpenDialog *od = new OpenDialog( parentWindow, p_intf, true, SELECT );
-    od->exec();
-    ui.slaveText->setText( od->getMRL( false ) );
-    delete od;
+    OpenDialog od( p_intf, parentWindow );
+    od.setActionFlag(SELECT);
+    od.exec();
+    ui.slaveText->setText( od.getMRL( false ) );
 }
 
 /* Function called on signal currentChanged triggered */
@@ -406,7 +387,7 @@ void OpenDialog::stream( bool b_transcode_only )
     toggleVisible();
 
     /* Dbg and send :D */
-    msg_Dbg( p_intf, "MRL(s) passed to the Sout: %i", soutMRLS.length() );
+    msg_Dbg( p_intf, "MRL(s) passed to the Sout: %zu", static_cast<size_t>( soutMRLS.length() ) );
     for(int i = 0; i < soutMRLS.length(); i++)
     {
         msg_Dbg( p_intf, "MRL(s) passed to the Sout: %s", qtu( soutMRLS[i] ) );
@@ -471,10 +452,10 @@ QStringList OpenDialog::SeparateEntries( const QString& entries )
     QString entry;
 
     int index = 0;
-    while( index < entries.count() )
+    while( index < entries.length() )
     {
-        int delim_pos = entries.indexOf( QRegExp( "\\s+|\"" ), index );
-        if( delim_pos < 0 ) delim_pos = entries.count() - 1;
+        int delim_pos = entries.indexOf( QRegularExpression( QStringLiteral( "\\s+|\"" ) ), index );
+        if( delim_pos < 0 ) delim_pos = entries.length() - 1;
         entry += entries.mid( index, delim_pos - index + 1 );
         index = delim_pos + 1;
 
@@ -483,22 +464,22 @@ QStringList OpenDialog::SeparateEntries( const QString& entries )
         if( !b_quotes_mode && entry.endsWith( "\"" ) )
         {
             /* Enters quotes mode */
-            entry.truncate( entry.count() - 1 );
+            entry.truncate( entry.length() - 1 );
             b_quotes_mode = true;
         }
         else if( b_quotes_mode && entry.endsWith( "\"" ) )
         {
             /* Finished the quotes mode */
-            entry.truncate( entry.count() - 1 );
+            entry.truncate( entry.length() - 1 );
             b_quotes_mode = false;
         }
         else if( !b_quotes_mode && !entry.endsWith( "\"" ) )
         {
             /* we found a non-quoted standalone string */
-            if( index < entries.count() ||
+            if( index < entries.length() ||
                 entry.endsWith( " " ) || entry.endsWith( "\t" ) ||
                 entry.endsWith( "\r" ) || entry.endsWith( "\n" ) )
-                entry.truncate( entry.count() - 1 );
+                entry.truncate( entry.length() - 1 );
             if( !entry.isEmpty() ) entries_array.append( entry );
             entry.clear();
         }

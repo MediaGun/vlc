@@ -18,11 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
 
-import "qrc:///style/"
+import VLC.Style
 
 IconToolButton {
     // Style
-    size: VLCStyle.icon_track
+    font.pixelSize: VLCStyle.icon_track
 }

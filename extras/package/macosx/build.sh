@@ -32,14 +32,20 @@ OPTIONS:
    -c            Recompile contribs from sources
    -p            Build packages for all artifacts
    -i <n|u|z>    Create an installable package
+                     s: sdk
                      n: nightly
                      u: unsigned stripped release archive
                      z: zip
-   -k <sdk>      Use the specified sdk (default: $SDKROOT)
+   -k <sdk>      Use the specified SDK (default: $SDKROOT)
    -a <arch>     Use the specified arch (default: $HOST_ARCH)
    -C            Use the specified VLC build dir
    -b <url>      Enable breakpad support and send crash reports to this URL
    -d            Disable debug mode (on by default)
+   -g <g|l|a>    Select the license of contribs
+                     g: GPLv3 (default)
+                     l: LGPLv3 + ad-clauses
+                     a: LGPLv2 + ad-clauses
+   -x            Add extra checks when compiling
 EOF
 
 }
@@ -54,7 +60,7 @@ spopd()
     popd > /dev/null
 }
 
-while getopts "qhvrcdpi:k:a:j:C:b:" OPTION
+while getopts "qhvrcdpi:k:a:j:C:b:g:x" OPTION
 do
      case $OPTION in
          h)
@@ -94,6 +100,12 @@ do
          ;;
          b)
              BREAKPAD=$OPTARG
+         ;;
+         g)
+             LICENSE=$OPTARG
+         ;;
+         x)
+             EXTRA_CHECKS="yes"
          ;;
          *)
              usage
@@ -140,6 +152,10 @@ info "Building in \"$builddir\""
 #
 # vlc/extras/tools
 #
+echo "build.sh==================="
+echo $PATH
+env
+echo "build.sh==================="
 
 info "Building building tools"
 spushd "${vlcroot}/extras/tools"
@@ -161,12 +177,26 @@ vlcSetContribEnvironment "$MINIMAL_OSX_VERSION"
 info "Building contribs"
 spushd "${vlcroot}/contrib"
 
+case $LICENSE in
+    l)
+        # LGPL v3 + ad-clauses
+        CONTRIBFLAGS="$CONTRIBFLAGS --disable-gpl --enable-ad-clauses"
+    ;;
+    a)
+        # LGPL v2.1 + ad-clauses
+        CONTRIBFLAGS="$CONTRIBFLAGS --disable-gpl --disable-gnuv3 --enable-ad-clauses"
+    ;;
+    g|*)
+        # GPL v3
+    ;;
+esac
+
 if [ "$REBUILD" = "yes" ]; then
     rm -rf contrib-$HOST_TRIPLET
     rm -rf $HOST_TRIPLET
 fi
 mkdir -p contrib-$HOST_TRIPLET && cd contrib-$HOST_TRIPLET
-../bootstrap --build=$BUILD_TRIPLET --host=$HOST_TRIPLET > $out
+../bootstrap --build=$BUILD_TRIPLET --host=$HOST_TRIPLET $CONTRIBFLAGS > $out
 
 make list
 if [ "$CONTRIBFROMSOURCE" != "yes" ]; then
@@ -224,6 +254,12 @@ fi
 if [ "$NODEBUG" = "yes" ]; then
      CONFIGFLAGS="$CONFIGFLAGS --disable-debug"
 fi
+if [ -n "$EXTRA_CHECKS" ]; then
+    CONFIGFLAGS="$CONFIGFLAGS --enable-extra-checks"
+fi
+
+export CFLAGS
+export CXXFLAGS
 
 if [ "${vlcroot}/configure" -nt Makefile ]; then
 
@@ -248,10 +284,10 @@ fi
 info "Running make -j$JOBS"
 make -j$JOBS
 
-info "Preparing VLC.app"
-make VLC.app
-
 if [ "$PACKAGETYPE" = "u" ]; then
+    info "Preparing VLC.app"
+    make VLC.app
+
     info "Copying app with debug symbols into VLC-debug.app and stripping"
     rm -rf VLC-debug.app
     cp -Rp VLC.app VLC-debug.app
@@ -277,7 +313,9 @@ if [ "$PACKAGETYPE" = "u" ]; then
 
     shasum -a 512 vlc-*-release.zip
     shasum -a 512 vlc-macos-sdk-*.tar.gz
-
+elif [ "$PACKAGETYPE" = "s" ]; then
+    info "Building VLC SDK package"
+    make package-macosx-sdk
 elif [ "$PACKAGETYPE" = "z" ]; then
     info "Packaging VLC zip archive"
     make package-macosx-zip
@@ -285,6 +323,9 @@ elif [ "$PACKAGETYPE" = "n" -o "$PACKAGE" = "yes" ]; then
     info "Building VLC dmg package"
     make package-macosx
     make package-macosx-sdk
+else
+    info "Preparing VLC.app"
+    make VLC.app
 fi
 
 if [ ! -z "$VLCBUILDDIR" ]; then

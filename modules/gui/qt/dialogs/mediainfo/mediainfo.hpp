@@ -26,16 +26,17 @@
 
 #include "widgets/native/qvlcframe.hpp"
 #include "info_panels.hpp"
-#include "util/singleton.hpp"
+#include "util/shared_input_item.hpp"
 
 class QTabWidget;
 
-class MediaInfoDialog : public QVLCFrame, public Singleton<MediaInfoDialog>
+class MediaInfoDialog : public QVLCFrame
 {
     Q_OBJECT
 public:
     MediaInfoDialog( qt_intf_t *,
-                     input_item_t * input = NULL );
+                     SharedInputItem input = {} );
+    virtual ~MediaInfoDialog();
 
     enum panel
     {
@@ -52,8 +53,6 @@ public:
 #endif
 
 private:
-    virtual ~MediaInfoDialog();
-
     bool isMainInputInfo;
 
     QTabWidget *infoTabW;
@@ -67,7 +66,7 @@ private:
     QLineEdit   *uriLine;
 
 private slots:
-    void updateAllTabs( input_item_t * );
+    void updateAllTabs( const SharedInputItem & );
     void clearAllTabs();
 
     void close() override;
@@ -75,8 +74,6 @@ private slots:
     void saveMeta();
     void updateButtons( int i_tab );
     void updateURI( const QString& );
-
-    friend class    Singleton<MediaInfoDialog>;
 };
 
 #endif

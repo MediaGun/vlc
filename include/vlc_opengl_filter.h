@@ -26,6 +26,7 @@
 
 #include <vlc_tick.h>
 #include <vlc_ancillary.h>
+#include <vlc_es.h>
 
 struct vlc_gl_filter;
 struct vlc_gl_picture;
@@ -45,6 +46,7 @@ struct vlc_gl_input_meta {
     vlc_tick_t pts;
     unsigned plane;
     const vlc_video_dovi_metadata_t *dovi_rpu;
+    video_orientation_t orientation;
 };
 
 typedef int

@@ -22,16 +22,9 @@
 #include <QFile>
 #include <maininterface/mainctx.hpp>
 #include <vlc_modules.h>
+#include <vlc_picture.h>
 
 namespace {
-
-QColor blendColors(QColor c1, QColor c2, float blend = 0.5)
-{
-    return QColor::fromRgbF(c2.redF()   + (c1.redF()   - c2.redF())   * blend,
-                  c2.greenF() + (c1.greenF() - c2.greenF()) * blend,
-                  c2.blueF()  + (c1.blueF()  - c2.blueF())  * blend,
-                  c2.alphaF() + (c1.alphaF() - c2.alphaF()) * blend);
-}
 
 QColor setColorAlpha(const QColor& c1, float alpha)
 {
@@ -185,7 +178,7 @@ bool ExternalPaletteImpl::init()
         preferedProvider = "qt-themeprovider-gtk";
 #endif
 
-    m_provider = static_cast<vlc_qt_theme_provider_t*>(vlc_object_create(m_ctx->getIntf(), sizeof(vlc_qt_theme_provider_t)));
+    m_provider = vlc_object_create<vlc_qt_theme_provider_t>(m_ctx->getIntf());
     if (!m_provider)
         return false;
 
@@ -337,15 +330,6 @@ bool SystemPalette::hasCSDImage() const
     return m_palettePriv->hasCSDImages();
 }
 
-QColor SystemPalette::blendColors(const QColor& c1, const QColor& c2, float blend)
-{
-    return ::blendColors(c1, c2, blend);
-}
-QColor SystemPalette::setColorAlpha(const QColor& c1, float alpha)
-{
-    return ::setColorAlpha(c1, alpha);
-}
-
 void SystemPalette::setSource(ColorSchemeModel::ColorScheme source)
 {
     if (m_source == source)
@@ -493,6 +477,7 @@ void SystemPalette::makeLightPalette()
         setColor(CS, C::Decoration, C::Shadow, C::Normal, setColorAlpha(Qt::black, 0.22));
 
         setColor(CS, C::Decoration, C::Accent, C::Normal, orange800);
+        setColor(CS, C::Fg, C::Link, C::Normal, orange800 /* accent */);
     }
 
     //window banner & miniplayer
@@ -690,6 +675,7 @@ void SystemPalette::makeDarkPalette()
         setColor(CS, C::Decoration, C::Separator, C::Normal, darkGrey800);
 
         setColor(CS, C::Decoration, C::Accent, C::Normal, orange500);
+        setColor(CS, C::Fg, C::Link, C::Normal, orange500);
     }
 
     //window banner & miniplayer

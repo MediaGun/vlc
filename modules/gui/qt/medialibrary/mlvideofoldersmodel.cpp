@@ -42,12 +42,6 @@
 static const int MLVIDEOFOLDERSMODEL_COVER_WIDTH  = 260 * 3; // 16 / 10 ratio
 static const int MLVIDEOFOLDERSMODEL_COVER_HEIGHT = 162 * 3;
 
-static const QHash<QByteArray, vlc_ml_sorting_criteria_t> criterias =
-{
-    { "title",    VLC_ML_SORTING_ALPHA    },
-    { "duration", VLC_ML_SORTING_DURATION }
-};
-
 // Ctor / dtor
 
 /* explicit */ MLVideoFoldersModel::MLVideoFoldersModel(QObject * parent) : MLBaseModel(parent) {}
@@ -59,9 +53,10 @@ QHash<int, QByteArray> MLVideoFoldersModel::roleNames() const /* override */
     return {
         { FOLDER_ID, "id" },
         { FOLDER_TITLE, "title" },
+        { FOLDER_TITLE_FIRST_SYMBOL, "title_first_symbol" },
         { FOLDER_THUMBNAIL, "thumbnail" },
         { FOLDER_DURATION, "duration" },
-        { FOLDER_COUNT, "count"},
+        { FOLDER_COUNT, "count" },
     };
 }
 
@@ -84,11 +79,13 @@ QVariant MLVideoFoldersModel::itemRoleData(MLItem * item, const int role) const 
             return QVariant::fromValue(folder->getId());
         case FOLDER_TITLE:
             return QVariant::fromValue(folder->getTitle());
+        case FOLDER_TITLE_FIRST_SYMBOL:
+            return QVariant::fromValue( getFirstSymbol(folder->getTitle()) );
         case FOLDER_THUMBNAIL:
         {
-            return ml()->customCover()->get(folder->getId()
-                                            , QSize(MLVIDEOFOLDERSMODEL_COVER_WIDTH, MLVIDEOFOLDERSMODEL_COVER_HEIGHT)
-                                            , QStringLiteral(":/placeholder/noart_videoCover.svg"));
+            return MLCustomCover::url(folder->getId()
+                                    , QSize(MLVIDEOFOLDERSMODEL_COVER_WIDTH, MLVIDEOFOLDERSMODEL_COVER_HEIGHT)
+                                    , QStringLiteral(":/placeholder/noart_videoCover.svg"));
         }
         case FOLDER_DURATION:
             return QVariant::fromValue(folder->getDuration());
@@ -99,34 +96,18 @@ QVariant MLVideoFoldersModel::itemRoleData(MLItem * item, const int role) const 
     }
 }
 
-vlc_ml_sorting_criteria_t MLVideoFoldersModel::roleToCriteria(int role) const /* override */
-{
-    switch (role)
-    {
-        case FOLDER_TITLE:
-            return VLC_ML_SORTING_ALPHA;
-        case FOLDER_DURATION:
-            return VLC_ML_SORTING_DURATION;
-        default:
-            return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 vlc_ml_sorting_criteria_t MLVideoFoldersModel::nameToCriteria(QByteArray name) const /* override */
 {
-    return criterias.value(name, VLC_ML_SORTING_DEFAULT);
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        { "title",    VLC_ML_SORTING_ALPHA    },
+        { "duration", VLC_ML_SORTING_DURATION },
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
-QByteArray MLVideoFoldersModel::criteriaToName(vlc_ml_sorting_criteria_t criteria) const
-/* override */
+std::unique_ptr<MLListCacheLoader>
+MLVideoFoldersModel::createMLLoader() const /* override */
 {
-    return criterias.key(criteria, "");
-}
-
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLVideoFoldersModel::createLoader() const /* override */
-{
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLVideoFoldersModel::Loader>(*this));
 }
 
 // Protected MLBaseModel reimplementation
@@ -162,24 +143,16 @@ void MLVideoFoldersModel::onVlcMlEvent(const MLEvent & event) /* override */
 }
 
 // Loader
-
-MLVideoFoldersModel::Loader::Loader(const MLVideoFoldersModel & model)
-    : MLBaseModel::BaseLoader(model) {}
-
-size_t MLVideoFoldersModel::Loader::count(vlc_medialibrary_t * ml) const /* override */
+size_t MLVideoFoldersModel::Loader::count(vlc_medialibrary_t * ml, const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams().toCQueryParams();
-
-    return vlc_ml_count_folders_by_type(ml, &params, VLC_ML_MEDIA_TYPE_VIDEO);
+    return vlc_ml_count_folders_by_type(ml, queryParams, VLC_ML_MEDIA_TYPE_VIDEO);
 }
 
 std::vector<std::unique_ptr<MLItem>>
 MLVideoFoldersModel::Loader::load(vlc_medialibrary_t * ml,
-                                  size_t index, size_t count) const /* override */
+                                  const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams(index, count).toCQueryParams();
-
-    ml_unique_ptr<vlc_ml_folder_list_t> list(vlc_ml_list_folders_by_type(ml, &params,
+    ml_unique_ptr<vlc_ml_folder_list_t> list(vlc_ml_list_folders_by_type(ml, queryParams,
                                                                          VLC_ML_MEDIA_TYPE_VIDEO));
 
     if (list == nullptr)

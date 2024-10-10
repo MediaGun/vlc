@@ -2,7 +2,7 @@ FXC2_HASH := 654c29d62a02714ea0bacfb118c3e05127f846e0
 FXC2_VERSION := git-$(FXC2_HASH)
 FXC2_GITURL := $(GITHUB)/mozilla/fxc2.git
 
-ifeq ($(call need_pkg,"fxc2"),)
+ifeq ($(shell fxc --version >/dev/null 2>&1 || echo FAIL),)
 PKGS_FOUND += fxc2
 endif
 
@@ -15,9 +15,12 @@ $(TARBALLS)/fxc2-$(FXC2_VERSION).tar.xz:
 
 fxc2: fxc2-$(FXC2_VERSION).tar.xz .sum-fxc2
 	$(UNPACK)
+	cp $(SRC)/fxc2/fxc $(UNPACK_DIR)
 	$(APPLY) $(SRC)/fxc2/0001-make-Vn-argument-as-optional-and-provide-default-var.patch
-	$(APPLY) $(SRC)/fxc2/0002-accept-windows-style-flags-and-splitted-argument-val.patch
 	$(APPLY) $(SRC)/fxc2/0004-Revert-Fix-narrowing-conversion-from-int-to-BYTE.patch
+	$(APPLY) $(SRC)/fxc2/0001-handle-O-option-to-write-to-a-binary-file-rather-tha.patch
+	$(APPLY) $(SRC)/fxc2/0002-fix-redefinition-warning.patch
+	$(APPLY) $(SRC)/fxc2/0003-improve-error-messages-after-compilation.patch
 	$(MOVE)
 
 ifeq ($(shell uname -m),aarch64)
@@ -42,5 +45,8 @@ endif
 
 .fxc2: fxc2
 	cd $< && $(FXC2_CXX) -static fxc2.cpp -o fxc2.exe
-	cd $< && mkdir -p $(PREFIX)/bin && cp fxc2.exe $(PREFIX)/bin && cp $(FXC2_DLL) $(PREFIX)/bin/d3dcompiler_47.dll
+	install -d "$(PREFIX)/bin" && \
+        install $</fxc2.exe "$(PREFIX)/bin" && \
+        install $</fxc "$(PREFIX)/bin" && \
+        install $</$(FXC2_DLL) "$(PREFIX)/bin/d3dcompiler_47.dll"
 	touch $@

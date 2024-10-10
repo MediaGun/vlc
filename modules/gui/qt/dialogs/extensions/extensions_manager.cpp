@@ -41,10 +41,9 @@
 
 ExtensionsManager::ExtensionsManager( qt_intf_t *_p_intf, QObject *parent )
         : QObject( parent ), p_intf( _p_intf ), p_extensions_manager( NULL )
-        , p_edp( NULL )
 {
     menuMapper = new QSignalMapper( this );
-    connect( menuMapper, QSIGNALMAPPER_MAPPEDINT_SIGNAL, this, &ExtensionsManager::triggerMenu );
+    connect( menuMapper, &QSignalMapper::mappedInt, this, &ExtensionsManager::triggerMenu );
     connect( THEMIM, &PlayerController::playingStateChanged, this, &ExtensionsManager::playingChanged );
     connect( THEMIM, &PlayerController::inputChanged, this, &ExtensionsManager::inputChanged, Qt::DirectConnection );
     connect( THEMIM, &PlayerController::metaChanged, this, &ExtensionsManager::metaChanged );
@@ -55,12 +54,7 @@ ExtensionsManager::ExtensionsManager( qt_intf_t *_p_intf, QObject *parent )
 ExtensionsManager::~ExtensionsManager()
 {
     msg_Dbg( p_intf, "Killing extension dialog provider" );
-    ExtensionsDialogProvider::killInstance();
-    if( p_extensions_manager )
-    {
-        module_unneed( p_extensions_manager, p_extensions_manager->p_module );
-        vlc_object_delete(p_extensions_manager);
-    }
+    unloadExtensions();
 }
 
 bool ExtensionsManager::loadExtensions()
@@ -91,19 +85,8 @@ bool ExtensionsManager::loadExtensions()
         }
 
         /* Initialize dialog provider */
-        p_edp = ExtensionsDialogProvider::getInstance( p_intf,
-                                                       p_extensions_manager );
-        if( !p_edp )
-        {
-            msg_Err( p_intf, "Unable to create dialogs provider for extensions" );
-            module_unneed( p_extensions_manager,
-                           p_extensions_manager->p_module );
-            vlc_object_delete(p_extensions_manager);
-            p_extensions_manager = NULL;
-            b_failed = true;
-            emit extensionsUpdated();
-            return false;
-        }
+        assert(!p_edp);
+        p_edp = std::make_unique<ExtensionsDialogProvider>(p_intf);
         b_unloading = false;
     }
     b_failed = false;
@@ -116,7 +99,12 @@ void ExtensionsManager::unloadExtensions()
     if( !p_extensions_manager )
         return;
     b_unloading = true;
-    ExtensionsDialogProvider::killInstance();
+    extension_t* p_ext = nullptr;
+    ARRAY_FOREACH( p_ext, p_extensions_manager->extensions )
+    {
+        extension_Deactivate(p_extensions_manager, p_ext);
+    }
+    p_edp.reset();
     module_unneed( p_extensions_manager, p_extensions_manager->p_module );
     vlc_object_delete(p_extensions_manager);
     p_extensions_manager = NULL;

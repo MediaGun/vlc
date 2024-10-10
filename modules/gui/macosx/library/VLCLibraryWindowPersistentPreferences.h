@@ -28,15 +28,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface VLCLibraryWindowPersistentPreferences : NSObject
 
-+ (VLCLibraryWindowPersistentPreferences *)sharedInstance;
+@property (class, readonly) VLCLibraryWindowPersistentPreferences *sharedInstance;
 
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment homeLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment videoLibraryViewMode;
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment showsLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment albumLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment genreLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment songsLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment artistLibraryViewMode;
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment playlistLibraryViewMode;
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment musicOnlyPlaylistLibraryViewMode;
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment videoOnlyPlaylistLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment browseLibraryViewMode;
 @property (readwrite, nonatomic) VLCLibraryViewModeSegment streamLibraryViewMode;
+@property (readwrite, nonatomic) VLCLibraryViewModeSegment groupsLibraryViewMode;
 
 @end
 

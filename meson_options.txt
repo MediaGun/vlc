@@ -2,7 +2,7 @@
 
 option('vlc',
     type : 'boolean',
-    value : 'true',
+    value : true,
     description : 'Build the VLC executable program.')
 
 option('nls',
@@ -50,10 +50,30 @@ option('ssp',
     value : 'auto',
     description : 'Stack smashing protection')
 
+option('extra_checks',
+    type : 'boolean',
+    value : false,
+    description : 'Turn some warnings into compilation error')
+
 option('winstore_app',
     type : 'boolean',
-    value : 'false',
+    value : false,
     description : 'Build targeted for Windows Store apps')
+
+option('rust',
+    type : 'feature',
+    value : 'disabled',
+    description : 'Experimental pure Rust VLC modules')
+
+option('extra_rust_flags',
+    type : 'array',
+    value : [],
+    description : 'Extra RUSTFLAGS to be passed to the compiler when compiling Rust VLC modules')
+
+option('vendored_rust_deps',
+    type : 'string',
+    value : 'no',
+    description : 'Should use vendored sources: `no`, `yes` or PATH_TO_VENDORED_SOURCES')
 
 # TODO: Missing pdb option, this should probably be solved in meson itself
 
@@ -100,6 +120,10 @@ option('css_engine',
     description : 'CSS selector engine for WebVTT')
 
 # Dependency options
+option('chromecast',
+    type : 'feature',
+    value : 'auto',
+    description : 'Enable chromecast support')
 
 option('qt',
     type : 'feature',
@@ -176,20 +200,10 @@ option('ogg',
     value : 'auto',
     description : 'Enable/disable libogg support')
 
-option('dca',
-    type : 'feature',
-    value : 'auto',
-    description : 'Enable/disable libdca support')
-
 option('mpg123',
     type : 'feature',
     value : 'auto',
     description : 'Enable/disable libmpg123 support')
-
-option('mpeg2',
-    type : 'feature',
-    value : 'auto',
-    description : 'Enable/disable libmpeg2 support')
 
 option('schroedinger',
     type : 'feature',
@@ -245,6 +259,11 @@ option('vorbis',
     type : 'feature',
     value : 'auto',
     description : 'Enable/disable vorbis support')
+
+option('vsxu',
+    type : 'feature',
+    value : 'auto',
+    description : 'Enable/disable VSXU visualization support')
 
 option('x265',
     type : 'feature',
@@ -355,11 +374,6 @@ option('medialibrary',
     type : 'feature',
     value : 'auto',
     description : 'Enable/disable medialibrary support')
-
-option('a52',
-    type : 'feature',
-    value : 'auto',
-    description : 'Enable/disable a52 support')
 
 option('faad',
     type : 'feature',
@@ -606,6 +620,21 @@ option('libgcrypt',
     value: 'auto',
     description: 'libgcrypt support')
 
+option('fontconfig',
+    type: 'feature',
+    value: 'auto',
+    description: 'fontconfig support')
+
+option('fribidi',
+    type: 'feature',
+    value: 'auto',
+    description: 'Fribidi support')
+
+option('harfbuzz',
+    type: 'feature',
+    value: 'auto',
+    description: 'Harfbuzz support')
+
 # TODO: Missing live555
 # TODO: Missing v4l2
 # TODO: Missing nvdec
@@ -622,9 +651,6 @@ option('libgcrypt',
 # TODO: Missing tremor
 # TODO: Missing x26410b
 # TODO: Missing vdpau
-# TODO: Missing fribidi
-# TODO: Missing harfbuzz
-# TODO: Missing fontconfig
 # TODO: Missing directx
 # TODO: Missing kva
 # TODO: Missing mmal

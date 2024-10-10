@@ -36,6 +36,10 @@
 
 #include <x265.h>
 
+#ifndef X265_MAX_FRAME_THREADS
+# define X265_MAX_FRAME_THREADS 16
+#endif
+
 /*****************************************************************************
  * Module descriptor
  *****************************************************************************/
@@ -55,7 +59,6 @@ typedef struct
     x265_param      param;
 
     unsigned        frame_count;
-    vlc_tick_t      initial_date;
 #ifndef NDEBUG
     vlc_tick_t      start;
 #endif
@@ -67,16 +70,19 @@ static block_t *Encode(encoder_t *p_enc, picture_t *p_pict)
     x265_picture pic;
 
     x265_picture_init(&p_sys->param, &pic);
+#ifdef MAX_SCALABLE_LAYERS
+    /* Handle API changes for scalable layers output in x265 4.0 */
+    x265_picture *pics[MAX_SCALABLE_LAYERS] = {NULL};
+    pics[0] = &pic;
+#endif
 
     if (likely(p_pict)) {
         pic.pts = p_pict->date;
-        if (unlikely(p_sys->initial_date == VLC_TICK_INVALID)) {
-            p_sys->initial_date = p_pict->date;
 #ifndef NDEBUG
+        if (unlikely(p_sys->start == VLC_TICK_INVALID)) {
             p_sys->start = vlc_tick_now();
-#endif
         }
-
+#endif
         for (int i = 0; i < p_pict->i_planes; i++) {
             pic.planes[i] = p_pict->p[i].p_pixels;
             pic.stride[i] = p_pict->p[i].i_pitch;
@@ -85,8 +91,13 @@ static block_t *Encode(encoder_t *p_enc, picture_t *p_pict)
 
     x265_nal *nal;
     uint32_t i_nal = 0;
+#ifdef MAX_SCALABLE_LAYERS
+    x265_encoder_encode(p_sys->h, &nal, &i_nal,
+                        likely(p_pict) ? &pic : NULL, pics);
+#else
     x265_encoder_encode(p_sys->h, &nal, &i_nal,
             likely(p_pict) ? &pic : NULL, &pic);
+#endif
 
     if (!i_nal)
         return NULL;
@@ -107,8 +118,8 @@ static block_t *Encode(encoder_t *p_enc, picture_t *p_pict)
                 p_enc->fmt_in.video.i_frame_rate_base,
                 p_enc->fmt_in.video.i_frame_rate );
 
-    p_block->i_pts = p_sys->initial_date + pic.poc * p_block->i_length;
-    p_block->i_dts = p_sys->initial_date + p_sys->frame_count++ * p_block->i_length;
+    p_block->i_pts = pic.pts;
+    p_block->i_dts = pic.dts;
 
     switch (pic.sliceType)
     {
@@ -147,12 +158,14 @@ static int  Open (vlc_object_t *p_this)
     if (!p_sys)
         return VLC_ENOMEM;
 
-    p_enc->fmt_in.i_codec = VLC_CODEC_I420;
+    p_enc->fmt_in.i_codec = p_enc->fmt_in.video.i_chroma = VLC_CODEC_I420;
 
     x265_param *param = &p_sys->param;
     x265_param_default(param);
 
     param->frameNumThreads = vlc_GetCPUCount();
+    if(param->frameNumThreads > X265_MAX_FRAME_THREADS)
+        param->frameNumThreads = X265_MAX_FRAME_THREADS;
     param->bEnableWavefront = 0; // buggy in x265, use frame threading for now
     param->maxCUSize = 16; /* use smaller macroblock */
 
@@ -224,7 +237,9 @@ static int  Open (vlc_object_t *p_this)
     }
 
     p_sys->frame_count = 0;
-    p_sys->initial_date = VLC_TICK_INVALID;
+#ifndef NDEBUG
+    p_sys->start = VLC_TICK_INVALID;
+#endif
 
     static const struct vlc_encoder_operations ops =
     {

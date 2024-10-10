@@ -98,6 +98,8 @@ vlc_gl_interop_DeleteTextures(const struct vlc_gl_interop *interop,
 {
     struct vlc_gl_interop_private *priv =
         container_of(interop, struct vlc_gl_interop_private, interop);
+    if (interop->ops->deallocate_textures != NULL)
+        interop->ops->deallocate_textures(interop, textures);
     priv->gl.DeleteTextures(interop->tex_count, textures);
     memset(textures, 0, interop->tex_count * sizeof(GLuint));
 }
@@ -150,6 +152,15 @@ static int GetTexFormatSize(struct vlc_gl_interop *interop, GLenum target,
     return size > 0 ? size * mul : size;
 }
 
+static int
+LoadInterop(void *func, bool forced, va_list args)
+{
+    (void)forced;
+    vlc_gl_interop_probe start = func;
+    struct vlc_gl_interop *interop = va_arg(args, struct vlc_gl_interop *);
+    return start(interop);
+}
+
 struct vlc_gl_interop *
 vlc_gl_interop_New(struct vlc_gl_t *gl, vlc_video_context *context,
                    const video_format_t *fmt)
@@ -159,6 +170,7 @@ vlc_gl_interop_New(struct vlc_gl_t *gl, vlc_video_context *context,
         return NULL;
 
     struct vlc_gl_interop *interop = &priv->interop;
+    struct vlc_logger *logger = vlc_object_logger(interop);
 
     interop->get_tex_format_size = GetTexFormatSize;
     interop->ops = NULL;
@@ -186,12 +198,16 @@ vlc_gl_interop_New(struct vlc_gl_t *gl, vlc_video_context *context,
         /* Opaque chroma: load a module to handle it */
         assert(context);
         interop->vctx = vlc_video_context_Hold(context);
-        interop->module = module_need_var(interop, "glinterop", "glinterop");
+        char *interop_name = var_InheritString(interop, "glinterop");
+        interop->module = vlc_module_load(logger, "glinterop", interop_name,
+                                          true, LoadInterop, interop);
+        free(interop_name);
     }
     else
     {
         interop->vctx = NULL;
-        interop->module = module_need(interop, "opengl sw interop", NULL, false);
+        interop->module = vlc_module_load(logger, "opengl sw interop", NULL,
+                                          false, LoadInterop, interop);
     }
 
     if (interop->module == NULL)
@@ -215,7 +231,7 @@ vlc_gl_interop_NewForSubpictures(struct vlc_gl_t *gl)
     interop->ops = NULL;
     interop->gl = gl;
 
-    video_format_Init(&interop->fmt_in, VLC_CODEC_RGB32);
+    video_format_Init(&interop->fmt_in, VLC_CODEC_RGBA);
     interop->fmt_out = interop->fmt_in;
 
 #define LOAD_SYMBOL(type, name) \

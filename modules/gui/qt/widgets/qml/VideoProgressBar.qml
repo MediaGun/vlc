@@ -15,9 +15,8 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import org.videolan.vlc 0.1
-import "qrc:///style/"
+import QtQuick
+import VLC.Style
 
 //we want the progress bar to match the radius of the of the video thumbnail
 //so we generarte two rectangles with the right radius and we clip the part we

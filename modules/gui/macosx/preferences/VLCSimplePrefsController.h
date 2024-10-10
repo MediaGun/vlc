@@ -69,6 +69,7 @@
 @property (readwrite, weak) IBOutlet NSButton *mediaLibraryAddFolderButton;
 @property (readwrite, weak) IBOutlet NSButton *mediaLibraryRemoveFolderButton;
 @property (readwrite, weak) IBOutlet NSButton *mediaLibraryBanFolderButton;
+@property (readwrite, weak) IBOutlet NSButton *mediaLibraryReloadFolderButton;
 
 // hotkeys pane
 @property (readwrite, strong) IBOutlet NSView *hotkeysView;
@@ -102,7 +103,6 @@
 @property (readwrite, weak) IBOutlet NSTextField *input_skipLoopLabel;
 @property (readwrite, weak) IBOutlet NSPopUpButton *input_skipLoopPopup;
 @property (readwrite, weak) IBOutlet NSButton *input_urlhandlerButton;
-@property (readwrite, weak) IBOutlet NSButton *input_skipFramesCheckbox;
 @property (readwrite, weak) IBOutlet NSButton *input_fastSeekCheckbox;
 
 // intf pane - general box

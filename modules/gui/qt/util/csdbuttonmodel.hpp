@@ -25,6 +25,8 @@
 #include <QRect>
 #include <memory>
 
+Q_MOC_INCLUDE("maininterface/mainctx.hpp")
+
 class CSDButton : public QObject
 {
     Q_OBJECT

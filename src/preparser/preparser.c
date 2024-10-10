@@ -172,6 +172,27 @@ OnParserSubtreeAdded(input_item_t *item, input_item_node_t *subtree,
 }
 
 static void
+OnParserAttachmentsAdded(input_item_t *item,
+                         input_attachment_t *const *array,
+                         size_t count, void *task_)
+{
+    VLC_UNUSED(item);
+    struct task *task = task_;
+
+    if (task->cbs && task->cbs->on_attachments_added)
+        task->cbs->on_attachments_added(task->item, array, count, task->userdata);
+}
+
+static void
+SetItemPreparsed(struct task *task)
+{
+    int status = atomic_load_explicit(&task->preparse_status,
+                                      memory_order_relaxed);
+    if (status == ITEM_PREPARSE_DONE)
+        input_item_SetPreparsed(task->item);
+}
+
+static void
 OnArtFetchEnded(input_item_t *item, bool fetched, void *userdata)
 {
     VLC_UNUSED(item);
@@ -180,7 +201,7 @@ OnArtFetchEnded(input_item_t *item, bool fetched, void *userdata)
     struct task *task = userdata;
 
     if (!atomic_load(&task->interrupted))
-        input_item_SetPreparsed(task->item);
+        SetItemPreparsed(task);
 
     NotifyPreparseEnded(task, fetched);
     TaskDelete(task);
@@ -196,10 +217,17 @@ Parse(struct task *task, vlc_tick_t deadline)
     static const input_item_parser_cbs_t cbs = {
         .on_ended = OnParserEnded,
         .on_subtree_added = OnParserSubtreeAdded,
+        .on_attachments_added = OnParserAttachmentsAdded,
     };
 
     vlc_object_t *obj = task->preparser->owner;
-    task->parser = input_item_Parse(task->item, obj, &cbs, task);
+    const struct input_item_parser_cfg cfg = {
+        .cbs = &cbs,
+        .cbs_data = task,
+        .subitems = task->options & META_REQUEST_OPTION_PARSE_SUBITEMS,
+        .interact = task->options & META_REQUEST_OPTION_DO_INTERACT,
+    };
+    task->parser = input_item_Parse(obj, task->item, &cfg);
     if (!task->parser)
     {
         atomic_store_explicit(&task->preparse_status, ITEM_PREPARSE_FAILED,
@@ -268,7 +296,7 @@ RunnableRun(void *userdata)
         return; /* Remove the task and notify from the fetcher callback */
 
     if (!atomic_load(&task->interrupted))
-        input_item_SetPreparsed(task->item);
+        SetItemPreparsed(task);
 
 end:
     NotifyPreparseEnded(task, false);
@@ -332,8 +360,6 @@ int vlc_preparser_Push( vlc_preparser_t *preparser,
     vlc_mutex_lock( &item->lock );
     enum input_item_type_e i_type = item->i_type;
     int b_net = item->b_net;
-    if( i_options & META_REQUEST_OPTION_DO_INTERACT )
-        item->b_preparse_interact = true;
     vlc_mutex_unlock( &item->lock );
 
     if (!(i_options & META_REQUEST_OPTION_SCOPE_FORCED))

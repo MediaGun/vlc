@@ -96,7 +96,7 @@ vlc_ancillary_Create(void *data, vlc_ancillary_id id)
 /**
  * Release an ancillary
  *
- * If the refcount reachs 0, the free_cb provided by
+ * If the refcount reaches 0, the free_cb provided by
  * vlc_ancillary_CreateWithFreeCb() is called.
  *
  * @param ancillary ancillary to release
@@ -217,4 +217,17 @@ typedef struct vlc_icc_profile_t
     uint8_t data[]; /* binary profile data, see ICC.1:2022 (or later) */
 } vlc_icc_profile_t;
 
+/**
+ * VPx alpha data
+ */
+
+#define VLC_ANCILLARY_ID_VPX_ALPHA VLC_FOURCC('v','p','x','A')
+
+typedef struct vlc_vpx_alpha_t
+{
+    size_t  size;
+    uint8_t *data;
+} vlc_vpx_alpha_t;
+
+/** @} */
 #endif /* VLC_ANCILLARY_H */

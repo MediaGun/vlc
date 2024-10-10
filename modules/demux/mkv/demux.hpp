@@ -27,8 +27,8 @@
 #include "mkv.hpp"
 
 #include "chapter_command.hpp"
-#include "virtual_segment.hpp"
-#include "dvd_types.hpp"
+#include "chapter_command_dvd.hpp"
+#include "chapter_command_script.hpp"
 #include "events.hpp"
 
 #include <memory>
@@ -40,7 +40,7 @@ namespace mkv {
 class virtual_segment_c;
 class chapter_item_c;
 
-struct demux_sys_t
+struct demux_sys_t : public chapter_codec_vm
 {
 public:
     demux_sys_t( demux_t & demux, bool trust_cues )
@@ -55,8 +55,6 @@ public:
         ,i_current_title(0)
         ,i_current_seekpoint(0)
         ,i_updates(0)
-        ,p_current_vsegment(NULL)
-        ,dvd_interpretor( *this )
         ,i_duration(-1)
         ,trust_cues(trust_cues)
         ,ev(&demux)
@@ -64,7 +62,7 @@ public:
         vlc_mutex_init( &lock_demuxer );
     }
 
-    ~demux_sys_t();
+    virtual ~demux_sys_t();
 
     /* current data */
     demux_t                 & demuxer;
@@ -88,35 +86,67 @@ public:
                     void(*)(input_attachment_t*)>> stored_attachments;
     std::vector<matroska_segment_c*> opened_segments;
     std::vector<virtual_segment_c*>  used_vsegments;
-    virtual_segment_c                *p_current_vsegment;
-
-    dvd_command_interpretor_c        dvd_interpretor;
 
     /* duration of the stream */
     vlc_tick_t              i_duration;
 
     const bool              trust_cues;
 
-    matroska_segment_c *FindSegment( const EbmlBinary & uid ) const;
-    virtual_chapter_c *BrowseCodecPrivate( unsigned int codec_id,
-                                        bool (*match)(const chapter_codec_cmds_c &data, const void *p_cookie, size_t i_cookie_size ),
-                                        const void *p_cookie,
-                                        size_t i_cookie_size,
-                                        virtual_segment_c * & p_vsegment_found );
-    virtual_chapter_c *FindChapter( int64_t i_find_uid, virtual_segment_c * & p_vsegment_found );
+    bool SegmentIsOpened( const EbmlBinary & uid ) const;
+
+    // chapter_codec_vm
+    virtual_chapter_c *BrowseCodecPrivate( chapter_codec_id codec_id,
+                                           chapter_cmd_match match,
+                                           virtual_segment_c * & p_vsegment_found ) override;
+    void JumpTo( virtual_segment_c & vsegment, virtual_chapter_c & vchapter ) override;
+    virtual_segment_c *GetCurrentVSegment() override
+    {
+        return p_current_vsegment;
+    }
+    virtual_chapter_c *FindVChapter( chapter_uid i_find_uid, virtual_segment_c * & p_vsegment_found ) override;
+    void SetHighlight( vlc_spu_highlight_t & ) override;
 
     void PreloadFamily( const matroska_segment_c & of_segment );
     bool PreloadLinked();
     bool FreeUnused();
-    bool PreparePlayback( virtual_segment_c & new_vsegment, vlc_tick_t i_mk_date );
+    bool PreparePlayback( virtual_segment_c & new_vsegment );
     bool AnalyseAllSegmentsFound( demux_t *p_demux, matroska_stream_c * );
-    void JumpTo( virtual_segment_c & vsegment, virtual_chapter_c & vchapter );
+
+    dvd_command_interpretor_c * GetDVDInterpretor()
+    {
+        if (!dvd_interpretor)
+        {
+            try {
+                dvd_interpretor = std::make_unique<dvd_command_interpretor_c>( vlc_object_logger( &demuxer ), *this );
+            } catch ( const std::bad_alloc & ) {
+            }
+        }
+        return dvd_interpretor.get();
+    }
+
+    matroska_script_interpretor_c * GetMatroskaScriptInterpreter()
+    {
+        if (!ms_interpreter)
+        {
+            try {
+                ms_interpreter = std::make_unique<matroska_script_interpretor_c> ( vlc_object_logger( &demuxer ), *this );
+            } catch ( const std::bad_alloc & ) {
+            }
+        }
+
+        return ms_interpreter.get();
+    }
 
     uint8_t        palette[4][4];
     vlc_mutex_t    lock_demuxer;
 
     /* event */
     event_thread_t ev;
+
+private:
+    virtual_segment_c                *p_current_vsegment = nullptr;
+    std::unique_ptr<dvd_command_interpretor_c> dvd_interpretor; // protected by lock_demuxer
+    std::unique_ptr<matroska_script_interpretor_c> ms_interpreter;
 };
 
 } // namespace

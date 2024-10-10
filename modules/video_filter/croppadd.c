@@ -154,7 +154,8 @@ static int OpenFilter( filter_t *p_filter )
         return VLC_EGENERIC;
     }
 
-    if( p_filter->fmt_in.video.i_chroma != p_filter->fmt_out.video.i_chroma )
+    if( !video_format_IsSameChroma( &p_filter->fmt_in.video,
+                                    &p_filter->fmt_out.video ) )
     {
         msg_Err( p_filter, "Input and output chromas don't match" );
         /* In fact we don't really care about this since we're allowed
@@ -164,10 +165,10 @@ static int OpenFilter( filter_t *p_filter )
 
     const vlc_chroma_description_t *p_chroma =
         vlc_fourcc_GetChromaDescription( p_filter->fmt_in.video.i_chroma );
-    if( p_chroma == NULL || p_chroma->plane_count == 0 )
+    assert( p_chroma != NULL );
+    if( p_chroma->plane_count == 0 )
     {
-        msg_Err( p_filter, "Unknown input chroma %4.4s", p_filter->fmt_in.video.i_chroma?
-                     (const char*)&p_filter->fmt_in.video.i_chroma : "xxxx" );
+        msg_Err( p_filter, "Unsupported input chroma %4.4s", (char*)&p_chroma->fcc );
         return VLC_EGENERIC;
     }
 

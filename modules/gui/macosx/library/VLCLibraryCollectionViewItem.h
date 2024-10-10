@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class VLCImageView;
 @class VLCLinearProgressIndicator;
+@class VLCLibraryRepresentedItem;
 @protocol VLCMediaLibraryItemProtocol;
 
 extern NSString *VLCLibraryCellIdentifier;
@@ -33,26 +34,28 @@ extern NSString *VLCLibraryCellIdentifier;
 @interface VLCLibraryCollectionViewItem : NSCollectionViewItem
 
 // NOTE: These will need to be changed after changes to XIB
-+ (const NSSize)defaultSize;
-+ (const NSSize)defaultVideoItemSize;
-+ (const CGFloat)defaultWidth;
-+ (const CGFloat)bottomTextViewsHeight;
-+ (const CGFloat)videoHeightAspectRatioMultiplier;
+@property (class, readonly) const NSSize defaultSize;
+@property (class, readonly) const NSSize defaultVideoItemSize;
+@property (class, readonly) const CGFloat defaultWidth;
+@property (class, readonly) const CGFloat bottomTextViewsHeight;
+@property (class, readonly) const CGFloat videoHeightAspectRatioMultiplier;
 
-@property (readwrite, assign) IBOutlet NSTextField *mediaTitleTextField;
-@property (readwrite, assign) IBOutlet NSTextField *annotationTextField;
-@property (readwrite, assign) IBOutlet NSTextField *unplayedIndicatorTextField;
-@property (readwrite, assign) IBOutlet NSTextField *secondaryInfoTextField;
-@property (readwrite, assign) IBOutlet VLCImageView *mediaImageView;
-@property (readwrite, assign) IBOutlet NSButton *playInstantlyButton;
-@property (readwrite, assign) IBOutlet NSButton *addToPlaylistButton;
-@property (readwrite, assign) IBOutlet VLCLinearProgressIndicator *progressIndicator;
-@property (readwrite, assign) IBOutlet NSBox *highlightBox;
-@property (readwrite, assign) IBOutlet NSLayoutConstraint *imageViewAspectRatioConstraint;
-@property (readwrite, assign) IBOutlet NSLayoutConstraint *trailingSecondaryTextToLeadingUnplayedIndicatorConstraint;
-@property (readwrite, assign) IBOutlet NSLayoutConstraint *trailingSecondaryTextToTrailingSuperviewConstraint;
+@property (readwrite, assign) BOOL deselectWhenClickedIfSelected;
 
-@property (readwrite, retain, nonatomic) id<VLCMediaLibraryItemProtocol> representedItem;
+@property (readwrite, weak) IBOutlet NSTextField *mediaTitleTextField;
+@property (readwrite, weak) IBOutlet NSTextField *annotationTextField;
+@property (readwrite, weak) IBOutlet NSTextField *unplayedIndicatorTextField;
+@property (readwrite, weak) IBOutlet NSTextField *secondaryInfoTextField;
+@property (readwrite, weak) IBOutlet VLCImageView *mediaImageView;
+@property (readwrite, weak) IBOutlet NSButton *playInstantlyButton;
+@property (readwrite, weak) IBOutlet NSButton *addToPlaylistButton;
+@property (readwrite, weak) IBOutlet VLCLinearProgressIndicator *progressIndicator;
+@property (readwrite, weak) IBOutlet NSBox *highlightBox;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *imageViewAspectRatioConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *trailingSecondaryTextToLeadingUnplayedIndicatorConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *trailingSecondaryTextToTrailingSuperviewConstraint;
+
+@property (readwrite, retain, nonatomic) VLCLibraryRepresentedItem *representedItem;
 
 @end
 

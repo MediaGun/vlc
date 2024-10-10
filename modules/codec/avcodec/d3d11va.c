@@ -28,12 +28,14 @@
 /**
   * See https://msdn.microsoft.com/en-us/library/windows/desktop/hh162912%28v=vs.85%29.aspx
   **/
+
+#include <winapifamily.h>
+#undef WINAPI_FAMILY
+#define WINAPI_FAMILY WINAPI_FAMILY_DESKTOP_APP
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
-
-# undef WINAPI_FAMILY
-# define WINAPI_FAMILY WINAPI_FAMILY_DESKTOP_APP
 
 #include <assert.h>
 
@@ -108,7 +110,9 @@ static void SetupAVCodecContext(void *opaque, AVCodecContext *avctx)
     sys->hw.cfg = &sys->cfg;
     sys->hw.surface = sys->hw_surface;
     sys->hw.context_mutex = sys->d3d_dev->context_mutex;
+#ifndef FF_DXVA_WORKAROUND_GONE
     sys->hw.workaround = sys->selected_decoder->workaround;
+#endif
     avctx->hwaccel_context = &sys->hw;
 }
 
@@ -140,7 +144,7 @@ static picture_context_t *d3d11va_pic_context_copy(picture_context_t *ctx)
     return &pic_ctx->ctx.s;
 }
 
-static struct d3d11va_pic_context *CreatePicContext(
+static struct d3d11va_pic_context *CreatePicContext(ID3D11Resource *p_resource,
                                                   UINT slice,
                                                   ID3D11ShaderResourceView *renderSrc[DXGI_MAX_SHADER_VIEW],
                                                   vlc_video_context *vctx)
@@ -153,9 +157,6 @@ static struct d3d11va_pic_context *CreatePicContext(
         vlc_video_context_Hold(vctx),
     };
 
-    ID3D11Resource *p_resource;
-    ID3D11ShaderResourceView_GetResource(renderSrc[0], &p_resource);
-
     pic_ctx->ctx.picsys.slice_index = slice;
     pic_ctx->ctx.picsys.sharedHandle = INVALID_HANDLE_VALUE;
     for (int i=0;i<DXGI_MAX_SHADER_VIEW; i++)
@@ -164,7 +165,6 @@ static struct d3d11va_pic_context *CreatePicContext(
         pic_ctx->ctx.picsys.renderSrc[i] = renderSrc[i];
     }
     AcquireD3D11PictureSys(&pic_ctx->ctx.picsys);
-    ID3D11Resource_Release(p_resource);
     return pic_ctx;
 }
 
@@ -180,9 +180,13 @@ static picture_context_t* NewSurfacePicContext(vlc_va_t *va, vlc_va_surface_t *v
     for (size_t i=0; i<DXGI_MAX_SHADER_VIEW; i++)
         resourceView[i] = sys->renderSrc[viewDesc.Texture2D.ArraySlice*DXGI_MAX_SHADER_VIEW + i];
 
-    struct d3d11va_pic_context *pic_ctx = CreatePicContext(
+    ID3D11Resource *p_resource;
+    ID3D11VideoDecoderOutputView_GetResource(surface, &p_resource);
+
+    struct d3d11va_pic_context *pic_ctx = CreatePicContext(p_resource,
                                                   viewDesc.Texture2D.ArraySlice,
                                                   resourceView, sys->vctx);
+    ID3D11Resource_Release(p_resource);
     if (unlikely(pic_ctx==NULL))
         return NULL;
     pic_ctx->va_surface = va_surface;
@@ -290,7 +294,7 @@ static int Open(vlc_va_t *va, AVCodecContext *ctx, enum AVPixelFormat hwfmt, con
                 sys->d3d_dev->adapterDesc.VendorId, DxgiVendorStr(sys->d3d_dev->adapterDesc.VendorId),
                 sys->d3d_dev->adapterDesc.DeviceId, sys->d3d_dev->adapterDesc.Revision);
 
-    sys->vctx = D3D11CreateVideoContext(dec_device, sys->render_fmt->formatTexture);
+    sys->vctx = D3D11CreateVideoContext(dec_device, sys->render_fmt->formatTexture, sys->render_fmt->alphaTexture);
     if (sys->vctx == NULL)
     {
         msg_Dbg(va, "no video context");
@@ -393,19 +397,23 @@ static int DxSetupOutput(vlc_va_t *va, const directx_va_mode_t *mode, const vide
     const d3d_format_t *processorInput[4];
     int idx = 0;
     const d3d_format_t *decoder_format;
-    UINT supportFlags = D3D11_FORMAT_SUPPORT_DECODER_OUTPUT | D3D11_FORMAT_SUPPORT_SHADER_LOAD;
+    UINT supportFlags = D3D11_FORMAT_SUPPORT_DECODER_OUTPUT;
+    // enough sub-sampling+bit depth, with any alpha
     decoder_format = FindD3D11Format( va, sys->d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT,
-                                      mode->bit_depth, mode->log2_chroma_h+1, mode->log2_chroma_w+1,
+                                      mode->bit_depth, mode->log2_chroma_h+1, mode->log2_chroma_w+1, -1,
                                       DXGI_CHROMA_GPU, supportFlags );
     if (decoder_format == NULL)
+        // other chroma sub-sampling
         decoder_format = FindD3D11Format( va, sys->d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT,
-                                        mode->bit_depth, 0, 0, DXGI_CHROMA_GPU, supportFlags );
+                                        mode->bit_depth, 0, 0, 0, DXGI_CHROMA_GPU, supportFlags );
     if (decoder_format == NULL && mode->bit_depth > 10)
+        // 10 bits instead of 8/12/14/16
         decoder_format = FindD3D11Format( va, sys->d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT,
-                                        10, 0, 0, DXGI_CHROMA_GPU, supportFlags );
+                                        10, 0, 0, 0, DXGI_CHROMA_GPU, supportFlags );
     if (decoder_format == NULL)
+        // any bit depth
         decoder_format = FindD3D11Format( va, sys->d3d_dev, 0, DXGI_RGB_FORMAT|DXGI_YUV_FORMAT,
-                                        0, 0, 0, DXGI_CHROMA_GPU, supportFlags );
+                                        0, 0, 0, 0, DXGI_CHROMA_GPU, supportFlags );
     if (decoder_format != NULL)
     {
         msg_Dbg(va, "favor decoder format %s", decoder_format->name);
@@ -413,8 +421,8 @@ static int DxSetupOutput(vlc_va_t *va, const directx_va_mode_t *mode, const vide
     }
 
     if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_NV12)
-        processorInput[idx++] = D3D11_RenderFormat(DXGI_FORMAT_NV12 ,true);
-    processorInput[idx++] = D3D11_RenderFormat(DXGI_FORMAT_420_OPAQUE ,true);
+        processorInput[idx++] = D3D11_RenderFormat(DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN ,true);
+    processorInput[idx++] = D3D11_RenderFormat(DXGI_FORMAT_420_OPAQUE, DXGI_FORMAT_UNKNOWN ,true);
     processorInput[idx++] = NULL;
 
     /* */
@@ -477,13 +485,6 @@ static int DxSetupOutput(vlc_va_t *va, const directx_va_mode_t *mode, const vide
 
     msg_Dbg(va, "Output format from picture source not supported.");
     return VLC_EGENERIC;
-}
-
-static bool CanUseDecoderPadding(const vlc_va_sys_t *sys)
-{
-    /* Qualcomm hardware has issues with textures and pixels that should not be
-    * part of the decoded area */
-    return sys->d3d_dev->adapterDesc.VendorId != GPU_MANUFACTURER_QUALCOMM;
 }
 
 /**

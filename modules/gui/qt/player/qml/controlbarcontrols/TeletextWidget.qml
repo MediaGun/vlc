@@ -16,34 +16,34 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Player
+import VLC.Style
 
 T.Pane {
     id: root
 
-    implicitWidth: Math.max(background ? background.implicitWidth : 0,
-                            contentWidth + leftPadding + rightPadding)
-
-    implicitHeight: Math.max(background ? background.implicitHeight : 0,
-                             contentHeight + topPadding + bottomPadding)
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
 
     contentWidth: column.implicitWidth
     contentHeight: column.implicitHeight
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
-    function _teletextButtonColor(item, base)
+    function _teletextButtonColor(item : Item, base : color) : color
     {
         if (!item.enabled)
-            return VLCStyle.setColorAlpha(base, 0.2)
+            return base.alpha(0.2)
         else if (item.hovered && !item.down)
             return Qt.lighter(base)
         else
@@ -70,7 +70,7 @@ T.Pane {
             Widgets.SubtitleLabel {
                 id: itemText
 
-                text: I18n.qtr("Teletext")
+                text: qsTr("Teletext")
 
                 color: theme.fg.primary
             }
@@ -99,17 +99,15 @@ T.Pane {
 
             spacing: VLCStyle.margin_small
 
-            Widgets.IconControlButton{
+            Widgets.IconToolButton {
                 id: teleTransparencyBtn
 
                 enabled: teleActivateBtn.checked
 
                 checked: Player.teletextTransparency
 
-                iconText: VLCIcons.transparency
-                text: I18n.qtr("Teletext transparency")
-
-                T.ToolTip.visible: (hovered || visualFocus)
+                text: VLCIcons.transparency
+                description: qsTr("Teletext transparency")
 
                 Navigation.parentItem: root
                 Navigation.leftItem: teleActivateBtn
@@ -159,7 +157,7 @@ T.Pane {
 
                 Connections {
                     target: Player
-                    onTeletextPageChanged: {
+                    function onTeletextPageChanged() {
                         telePageNumber.inhibitPageUpdate = true
                         telePageNumber.value = Player.teletextPage
                         telePageNumber.inhibitPageUpdate = false
@@ -171,21 +169,15 @@ T.Pane {
         Row {
             spacing: VLCStyle.margin_small
 
-            Widgets.IconControlButton{
+            Widgets.IconToolButton {
                 id: indexKeyBtn
 
                 anchors.verticalCenter: parent.verticalCenter
 
-                width: redKeyBtn.width
-
-                size: VLCStyle.dp(32, VLCStyle.scale)
-
                 enabled: teleActivateBtn.checked
 
-                iconText: VLCIcons.home
-                text: I18n.qtr("Index key")
-
-                T.ToolTip.visible: (hovered || visualFocus)
+                text: VLCIcons.home
+                description: qsTr("Index key")
 
                 Navigation.parentItem: root
                 Navigation.leftItem: telePageNumber
@@ -202,9 +194,9 @@ T.Pane {
 
                 enabled: teleActivateBtn.checked
 
-                text: I18n.qtr("Red key")
+                description: qsTr("Red key")
 
-                color: root._teletextButtonColor(this, "red")
+                color: root._teletextButtonColor(this, Qt.color("red"))
 
                 Navigation.parentItem: root
                 Navigation.leftItem: indexKeyBtn
@@ -221,9 +213,9 @@ T.Pane {
 
                 enabled: teleActivateBtn.checked
 
-                text: I18n.qtr("Green key")
+                description: qsTr("Green key")
 
-                color: root._teletextButtonColor(this, "green")
+                color: root._teletextButtonColor(this, Qt.color("green"))
 
                 Navigation.parentItem: root
                 Navigation.leftItem: redKeyBtn
@@ -240,9 +232,9 @@ T.Pane {
 
                 enabled: teleActivateBtn.checked
 
-                text: I18n.qtr("Yellow key")
+                description: qsTr("Yellow key")
 
-                color: root._teletextButtonColor(this, "yellow")
+                color: root._teletextButtonColor(this, Qt.color("yellow"))
 
                 Navigation.parentItem: root
                 Navigation.leftItem: greenKeyBtn
@@ -259,9 +251,9 @@ T.Pane {
 
                 enabled: teleActivateBtn.checked
 
-                text: I18n.qtr("Blue key")
+                description: qsTr("Blue key")
 
-                color: root._teletextButtonColor(this, "blue")
+                color: root._teletextButtonColor(this, Qt.color("blue"))
 
                 Navigation.parentItem: root
                 Navigation.leftItem: yellowKeyBtn

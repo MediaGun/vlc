@@ -16,14 +16,18 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Playlist
+import VLC.Player
+import VLC.Util
 
 AbstractButton {
     id: root
@@ -32,16 +36,11 @@ AbstractButton {
 
     property bool paintOnly: false
 
-    readonly property real minimumWidth: coverRect.implicitWidth +
-                                         + (leftPadding + rightPadding)
+    Layout.minimumWidth: height
 
-    property int maximumHeight: _preferredHeight
+    implicitHeight: 0
 
-    readonly property int preferredWidth: minimumWidth + contentItem.spacing * 2
-                                          +
-                                          Math.max(titleLabel.implicitWidth,
-                                                   artistLabel.implicitWidth,
-                                                   progressIndicator.implicitWidth)
+    property bool _keyPressed: false
 
     readonly property ColorContext colorContext: ColorContext {
         id: theme
@@ -52,13 +51,9 @@ AbstractButton {
         hovered: root.hovered
     }
 
-    property int _preferredHeight: VLCStyle.dp(60, VLCStyle.scale)
-
-    property bool _keyPressed: false
-
     // Settings
 
-    text: I18n.qtr("Open player")
+    text: qsTr("Open player")
 
     padding: VLCStyle.focus_border
 
@@ -66,7 +61,7 @@ AbstractButton {
 
     // Keys
 
-    Keys.onPressed: {
+    Keys.onPressed: (event) => {
         if (KeyHelper.matchOk(event)) {
             event.accepted = true
 
@@ -76,7 +71,7 @@ AbstractButton {
         }
     }
 
-    Keys.onReleased: {
+    Keys.onReleased: (event) => {
         if (_keyPressed === false)
             return
 
@@ -84,72 +79,115 @@ AbstractButton {
 
         if (KeyHelper.matchOk(event)) {
             event.accepted = true
-
-            g_mainDisplay.showPlayer()
+            clicked()
         }
     }
 
     // Events
 
-    onClicked: g_mainDisplay.showPlayer()
-
-    background: Widgets.AnimatedBackground {
-        active: visualFocus
-        animate: theme.initialized
-        activeBorderColor: theme.visualFocus
+    onClicked: {
+        if (History.match(History.viewPath, ["player"])) {
+            MainCtx.requestShowMainView()
+        } else {
+            MainCtx.requestShowPlayerView()
+        }
     }
 
     // Children
 
+    Widgets.DragItem {
+        id: dragItem
+
+        onRequestData: (_, resolve, reject) => {
+            resolve([{
+                "title": Player.title,
+                "cover": (!!Player.artwork && Player.artwork.toString() !== "") ? Player.artwork
+                                                                                : VLCStyle.noArtAlbumCover,
+                "url": Player.url
+            }])
+        }
+
+        onRequestInputItems: (indexes, data, resolve, reject) => {
+            resolve([MainPlaylistController.currentItem])
+        }
+
+        indexes: [0]
+    }
+
+    // TODO: Qt bug 6.2: QTBUG-103604
+    Item {
+        anchors.fill: parent
+
+        TapHandler {
+            gesturePolicy: TapHandler.ReleaseWithinBounds // TODO: Qt 6.2 bug: Use TapHandler.DragThreshold
+
+            grabPermissions: TapHandler.CanTakeOverFromHandlersOfDifferentType | TapHandler.ApprovesTakeOverByAnything
+
+            onTapped: root.clicked()
+        }
+
+        DragHandler {
+            target: null
+
+            grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
+
+            onActiveChanged: {
+                if (active) {
+                    dragItem.Drag.active = true
+                } else {
+                    dragItem.Drag.drop()
+                }
+            }
+        }
+    }
+
+    background: Widgets.AnimatedBackground {
+        enabled: theme.initialized
+        border.color: visualFocus ? theme.visualFocus : "transparent"
+    }
+
     contentItem: RowLayout {
-        spacing: infoColumn.visible ? VLCStyle.margin_xsmall : 0
+        spacing: VLCStyle.margin_xsmall
 
-        Rectangle {
-            id: coverRect
+        Image {
+            id: coverImage
 
-            implicitWidth: implicitHeight
+            Layout.fillHeight: true
+            Layout.preferredWidth: height
 
-            implicitHeight: Math.min(root._preferredHeight, root.maximumHeight)
-
-            color: theme.bg.primary
-
-            Widgets.DoubleShadow {
-                anchors.fill: parent
-
-                primaryBlurRadius: VLCStyle.dp(3, VLCStyle.scale)
-                primaryVerticalOffset: VLCStyle.dp(1, VLCStyle.scale)
-
-                secondaryBlurRadius: VLCStyle.dp(14, VLCStyle.scale)
-                secondaryVerticalOffset: VLCStyle.dp(6, VLCStyle.scale)
+            source: {
+                if (!paintOnly && Player.artwork && Player.artwork.toString())
+                    return VLCAccessImage.uri(Player.artwork)
+                else
+                    return VLCStyle.noArtAlbumCover
             }
 
-            Widgets.ScaledImage {
-                id: cover
+            sourceSize.height: root.height * Screen.devicePixelRatio
 
-                anchors.fill: parent
+            fillMode: Image.PreserveAspectFit
 
-                source: {
-                    if (!paintOnly
-                        && Player.artwork
-                        && Player.artwork.toString())
-                        Player.artwork
-                    else
-                        VLCStyle.noArtAlbumCover
-                }
+            asynchronous: true
 
-                fillMode: Image.PreserveAspectFit
+            Accessible.role: Accessible.Graphic
+            Accessible.name: qsTr("Cover")
 
-                asynchronous: true
+            ToolTip.visible: infoColumn.width < infoColumn.implicitWidth
+                             && (root.hovered || root.visualFocus)
+            ToolTip.delay: VLCStyle.delayToolTipAppear
+            ToolTip.text: qsTr("%1\n%2\n%3").arg(titleLabel.text)
+                                                .arg(artistLabel.text)
+                                                .arg(progressIndicator.text)
 
-                Accessible.role: Accessible.Graphic
-                Accessible.name: I18n.qtr("Cover")
+            onStatusChanged: {
+                if (source !== VLCStyle.noArtAlbumCover && status === Image.Error)
+                    source = VLCStyle.noArtAlbumCover
+            }
 
-                ToolTip.visible: infoColumn.width < infoColumn.implicitWidth
-                                 && (root.hovered || root.visualFocus)
-                ToolTip.delay: VLCStyle.delayToolTipAppear
-                ToolTip.text: I18n.qtr("%1\n%2\n%3").arg(titleLabel.text)
-                                                    .arg(artistLabel.text)
-                                                    .arg(progressIndicator.text)
+            Widgets.DefaultShadow {
+                anchors.centerIn: coverImage
+
+                sourceItem: coverImage
+
             }
         }
 
@@ -157,8 +195,10 @@ AbstractButton {
             id: infoColumn
 
             Layout.fillWidth: true
-            Layout.preferredHeight: coverRect.height
+            Layout.fillHeight: true
             Layout.minimumWidth: 0.1 // FIXME: Qt layout bug
+
+            spacing: 0
 
             Widgets.MenuLabel {
                 id: titleLabel
@@ -166,11 +206,15 @@ AbstractButton {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
+                visible: text.length > 0
+
                 text: {
                     if (paintOnly)
-                        I18n.qtr("Title")
+                        return qsTr("Title")
+                    else if (Player.title.length > 0)
+                        return Player.title
                     else
-                        Player.title
+                        return Player.name
                 }
                 color: theme.fg.primary
             }
@@ -181,12 +225,17 @@ AbstractButton {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
+                Binding on visible {
+                    value: (infoColumn.height > infoColumn.implicitHeight) && (artistLabel.text.length > 0)
+                }
+
                 text: {
                     if (paintOnly)
-                        I18n.qtr("Artist")
+                        qsTr("Artist")
                     else
                         Player.artist
                 }
+
                 color: theme.fg.secondary
             }
 
@@ -196,7 +245,7 @@ AbstractButton {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                visible: (infoColumn.height >= root._preferredHeight)
+                visible: text.length > 0
 
                 text: {
                     if (paintOnly)

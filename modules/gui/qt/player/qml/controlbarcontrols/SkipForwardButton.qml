@@ -15,20 +15,19 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-
-import org.videolan.vlc 0.1
-
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import QtQuick
 
 
-Widgets.IconControlButton {
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Player
+
+Widgets.IconToolButton {
     id: stepfwdBtn
 
     enabled: Player.seekable
 
-    iconText: VLCIcons.skip_for
+    text: VLCIcons.skip_for
     onClicked: Player.jumpFwd()
-    text: I18n.qtr("Step forward")
+    description: qsTr("Step forward")
 }

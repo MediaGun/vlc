@@ -15,20 +15,17 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick.Controls 2.12
-import QtQuick 2.12
-import QtQml.Models 2.12
-import QtQuick.Layouts 1.12
+import QtQuick.Controls
+import QtQuick
+import QtQml.Models
+import QtQuick.Layouts
 
-import org.videolan.medialib 0.1
-import org.videolan.controls 0.1
-import org.videolan.vlc 0.1
+import VLC.MainInterface
+import VLC.MediaLibrary
 
-import "qrc:///util/" as Util
-import "qrc:///util/Helpers.js" as Helpers
-import "qrc:///widgets/" as Widgets
-import "qrc:///main/" as MainInterface
-import "qrc:///style/"
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.Style
 
 FocusScope {
     id: root
@@ -39,15 +36,25 @@ FocusScope {
     property int rightPadding: 0
 
     property var sortModel: [
-        { text: I18n.qtr("Alphabetic"),  criteria: "title" }
+        { text: qsTr("Alphabetic"),  criteria: "title" },
+        { text: qsTr("Release Year"),  criteria: "release_year" }
     ]
 
     property int initialIndex: 0
     property int initialAlbumIndex: 0
 
-    // Aliases
+    //behave like a page
+    property var pagePrefix: []
+
+    readonly property bool hasGridListMode: true
+    readonly property bool isSearchable: true
 
     property alias model: artistModel
+    property alias selectionModel: selectionModel
+
+    property alias searchPattern: albumSubView.searchPattern
+    property alias sortOrder: albumSubView.sortOrder
+    property alias sortCriteria: albumSubView.sortCriteria
 
     property alias currentIndex: artistList.currentIndex
     property alias currentAlbumIndex: albumSubView.currentIndex
@@ -69,19 +76,13 @@ FocusScope {
             return
         }
 
-        if (artistModel.count === 0) {
-            return
-        }
-        let initialIndex = root.initialIndex
-        if (initialIndex >= artistModel.count)
-            initialIndex = 0
-        if (initialIndex !== artistList.currentIndex) {
-            selectionModel.select(artistModel.index(initialIndex, 0), ItemSelectionModel.ClearAndSelect)
-            if (artistList) {
-                artistList.currentIndex = initialIndex
-                artistList.positionViewAtIndex(initialIndex, ItemView.Contain)
-            }
-        }
+        if (model.count === 0 || initialIndex === -1) return
+
+        selectionModel.select(model.index(initialIndex, 0), ItemSelectionModel.ClearAndSelect)
+
+        artistList.positionViewAtIndex(initialIndex, ItemView.Contain)
+
+        artistList.setCurrentItem(initialIndex)
     }
 
     function setCurrentItemFocus(reason) {
@@ -101,12 +102,10 @@ FocusScope {
         ml: MediaLib
 
         onCountChanged: {
-            if (artistModel.count > 0 && !selectionModel.hasSelection) {
-                let initialIndex = root.initialIndex
-                if (initialIndex >= artistModel.count)
-                    initialIndex = 0
-                artistList.currentIndex = initialIndex
-            }
+            if (count === 0 || selectionModel.hasSelection)
+                return
+
+            root.resetFocus()
         }
 
         onDataChanged: {
@@ -115,47 +114,50 @@ FocusScope {
         }
     }
 
-    Util.SelectableDelegateModel {
+    ListSelectionModel {
         id: selectionModel
         model: artistModel
     }
 
-    Widgets.AcrylicBackground {
-      id: artistListBackground
-
-      visible: artistModel.count > 0
-      width: artistList.width
-      height: artistList.height
-
-      tintColor: artistList.colorContext.bg.secondary
-
-      focus: false
-    }
-
-    Row {
+    RowLayout {
         anchors.fill: parent
+        anchors.leftMargin: root.leftPadding
+        anchors.rightMargin: root.rightPadding
 
         visible: artistModel.count > 0
 
-        Widgets.KeyNavigableListView {
+        spacing: 0
+
+        Widgets.ListViewExt {
             id: artistList
 
-            spacing: 4
             model: artistModel
+            selectionModel: root.selectionModel
             currentIndex: -1
             z: 1
-            height: parent.height
-            width: VLCStyle.isScreenSmall
-                   ? 0
-                   : Math.round(Helpers.clamp(root.width / resizeHandle.widthFactor,
-                                              VLCStyle.colWidth(1) + VLCStyle.column_spacing,
-                                              root.width * .5))
+            Layout.fillHeight: true
+            Layout.preferredWidth: VLCStyle.isScreenSmall
+                                   ? 0
+                                   : Math.round(Helpers.clamp(root.width / resizeHandle.widthFactor,
+                                                              VLCStyle.colWidth(1) + VLCStyle.column_spacing,
+                                                              root.width * .5))
 
             visible: !VLCStyle.isScreenSmall && (artistModel.count > 0)
             focus: !VLCStyle.isScreenSmall && (artistModel.count > 0)
 
-            backgroundColor: artistListBackground.usingAcrylic ? "transparent"
-                                                               : artistListBackground.alternativeColor
+            fadingEdge.backgroundColor: artistListBackground.usingAcrylic ? "transparent"
+                                                                          : artistListBackground.alternativeColor
+
+            Widgets.AcrylicBackground {
+                id: artistListBackground
+
+                z: -1
+
+                anchors.fill: parent
+                anchors.bottomMargin: -artistList.displayMarginEnd
+
+                tintColor: artistList.colorContext.bg.secondary
+            }
 
             // To get blur effect while scrolling in mainview
             displayMarginEnd: g_mainDisplay.displayMargin
@@ -167,77 +169,100 @@ FocusScope {
             }
 
             Navigation.cancelAction: function() {
-                if (artistList.currentIndex <= 0)
+                if (artistList.currentIndex <= 0) {
                     root.Navigation.defaultNavigationCancel()
-                else
-                    artistList.currentIndex = 0;
+
+                    return
+                }
+
+                artistList.positionViewAtIndex(0, ItemView.Contain)
+
+                artistList.setCurrentItem(0)
             }
 
-            header: Widgets.SubtitleLabel {
-                text: I18n.qtr("Artists")
-                font.pixelSize: VLCStyle.fontSize_large
-                color: artistList.colorContext.fg.primary
-                leftPadding: root.leftPadding + VLCStyle.margin_normal
-                bottomPadding: VLCStyle.margin_small
+            header: Widgets.ViewHeader {
+                view: artistList
+
+                leftPadding: VLCStyle.margin_normal
                 topPadding: VLCStyle.margin_xlarge
+                bottomPadding: VLCStyle.margin_small
+
+                text: qsTr("Artists")
             }
 
-            delegate: MusicArtistDelegate {
-                width: artistList.width
-
-                leftPadding: root.leftPadding
-
-                isCurrent: ListView.isCurrentItem
+            Widgets.MLDragItem {
+                id: musicArtistDragItem
 
                 mlModel: artistModel
 
-                onItemClicked: {
-                    selectionModel.updateSelection(mouse.modifiers, artistList.currentIndex,
-                                                   index);
-
-                    artistList.currentIndex = index;
-
-                    artistList.forceActiveFocus(Qt.MouseFocusReason);
-                }
-
-                onItemDoubleClicked: {
-                    if (mouse.buttons === Qt.LeftButton)
-                        MediaLib.addAndPlay(model.id);
-                    else
-                        albumSubView.forceActiveFocus();
-                }
+                indexes: indexesFlat ? selectionModel.selectedIndexesFlat
+                                     : selectionModel.selectedIndexes
+                indexesFlat: !!selectionModel.selectedIndexesFlat
             }
 
-            Rectangle {
-                // id: musicArtistLeftBorder
+            delegate: MusicArtistDelegate {
+                width: artistList.contentWidth
 
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.right: parent.right
+                isCurrent: ListView.isCurrentItem
 
-                width: VLCStyle.border
-                color: artistList.colorContext.separator
+                dragTarget: musicArtistDragItem
+
+                selected: selectionModel.selectedIndexesFlat.includes(index)
             }
-
 
             Widgets.HorizontalResizeHandle {
                 id: resizeHandle
+
+                property bool _inhibitMainCtxUpdate: false
 
                 anchors {
                     top: parent.top
                     bottom: parent.bottom
                     right: parent.right
                 }
+
                 sourceWidth: root.width
                 targetWidth: artistList.width
+
+                onWidthFactorChanged: {
+                    if (!_inhibitMainCtxUpdate)
+                        MainCtx.artistAlbumsWidthFactor = widthFactor
+                }
+
+                Component.onCompleted:  _updateFromMainCtx()
+
+                function _updateFromMainCtx() {
+                    if (widthFactor == MainCtx.artistAlbumsWidthFactor)
+                        return
+
+                    _inhibitMainCtxUpdate = true
+                    widthFactor = MainCtx.artistAlbumsWidthFactor
+                    _inhibitMainCtxUpdate = false
+                }
+
+                Connections {
+                    target: MainCtx
+
+                    function onArtistAlbumsWidthFactorChanged() {
+                        resizeHandle._updateFromMainCtx()
+                    }
+                }
             }
+        }
+
+        Rectangle {
+            Layout.fillHeight: true
+
+            implicitWidth: VLCStyle.border
+            color: artistList.colorContext.separator
+            visible: artistList.visible
         }
 
         MusicArtist {
             id: albumSubView
 
-            height: parent.height
-            width: root.width - root.leftPadding - artistList.width
+            Layout.fillHeight: true
+            Layout.fillWidth: true
 
             rightPadding: root.rightPadding
 
@@ -250,9 +275,12 @@ FocusScope {
 
     Widgets.EmptyLabelButton {
         anchors.fill: parent
-        visible: artistModel.isReady && (artistModel.count <= 0)
+        anchors.leftMargin: root.leftPadding
+        anchors.rightMargin: root.rightPadding
+
+        visible: !artistModel.loading && (artistModel.count <= 0)
         focus: visible
-        text: I18n.qtr("No artists found\nPlease try adding sources, by going to the Browse tab")
+        text: qsTr("No artists found\nPlease try adding sources, by going to the Browse tab")
         Navigation.parentItem: root
     }
 }

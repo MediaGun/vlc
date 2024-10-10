@@ -62,6 +62,13 @@ typedef enum vlc_meta_type_t
 
 #define VLC_META_TYPE_COUNT 27
 
+typedef enum
+{
+    VLC_META_PRIORITY_BASIC,
+    VLC_META_PRIORITY_PLAYLIST,
+    VLC_META_PRIORITY_INBAND
+} vlc_meta_priority_t;
+
 #define ITEM_PREPARSED       1
 #define ITEM_ART_FETCHED     2
 #define ITEM_ART_NOTFOUND    4
@@ -73,10 +80,19 @@ struct vlc_meta_t;
 
 VLC_API vlc_meta_t * vlc_meta_New( void ) VLC_USED;
 VLC_API void vlc_meta_Delete( vlc_meta_t *m );
-VLC_API void vlc_meta_Set( vlc_meta_t *p_meta, vlc_meta_type_t meta_type, const char *psz_val );
+VLC_API void vlc_meta_SetWithPriority( vlc_meta_t *p_meta, vlc_meta_type_t meta_type, const char *psz_val, vlc_meta_priority_t priority );
 VLC_API const char * vlc_meta_Get( const vlc_meta_t *p_meta, vlc_meta_type_t meta_type );
 
-VLC_API void vlc_meta_AddExtra( vlc_meta_t *m, const char *psz_name, const char *psz_value );
+/**
+ * set the meta extra
+ *
+ * \param m vlc_meta_t
+ * \param psz_name meta extra name (nonnullable)
+ * \param psz_value meta extra value (nullable)
+ *  Removed from meta extra if set to NULL
+ * \param priority metadata priority (in terms of vlc_meta_priority_t)
+ */
+VLC_API void vlc_meta_SetExtraWithPriority( vlc_meta_t *m, const char *psz_name, const char *psz_value, vlc_meta_priority_t priority );
 VLC_API const char * vlc_meta_GetExtra( const vlc_meta_t *m, const char *psz_name );
 VLC_API unsigned vlc_meta_GetExtraCount( const vlc_meta_t *m );
 
@@ -106,6 +122,10 @@ typedef struct meta_export_t
 } meta_export_t;
 
 VLC_API int input_item_WriteMeta(vlc_object_t *, input_item_t *);
+
+#define vlc_meta_Set( meta, meta_type, b )             vlc_meta_SetWithPriority( meta, meta_type, b, VLC_META_PRIORITY_BASIC )
+#define vlc_meta_SetWithPlaylistPriority( meta, meta_type, b ) vlc_meta_SetWithPriority( meta, meta_type, b, VLC_META_PRIORITY_PLAYLIST )
+#define vlc_meta_SetExtra( meta, psz_name, psz_value ) vlc_meta_SetExtraWithPriority( meta, psz_name, psz_value, VLC_META_PRIORITY_BASIC )
 
 /* Setters for meta.
  * Warning: Make sure to use the input_item meta setters (defined in vlc_input_item.h)

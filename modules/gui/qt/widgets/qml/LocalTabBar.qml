@@ -15,9 +15,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import "qrc:///style/"
+import VLC.Style
 
 NavigableRow {
     id: row
@@ -32,7 +32,7 @@ NavigableRow {
 
     delegate: BannerTabButton {
         text: model.displayText
-        selected: model.name === row.currentView.name
+        selected: model.name === row.currentView
         showCurrentIndicator: false
         height: VLCStyle.localToolbar_height
         onClicked: row.clicked(index)

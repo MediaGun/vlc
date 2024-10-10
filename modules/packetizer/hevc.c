@@ -112,6 +112,10 @@ static void PacketizeFlush( decoder_t * );
 static void PacketizeReset(void *p_private, bool b_broken);
 static block_t *PacketizeParse(void *p_private, bool *pb_ts_used, block_t *);
 static block_t *ParseNALBlock(decoder_t *, bool *pb_ts_used, block_t *);
+static inline block_t *ParseNALBlockW( void *opaque, bool *pb_ts_used, block_t *p_frag )
+{
+    return ParseNALBlock( (decoder_t *) opaque, pb_ts_used, p_frag );
+}
 static int PacketizeValidate(void *p_private, block_t *);
 static block_t * PacketizeDrain(void *);
 static bool ParseSEICallback( const hxxx_sei_data_t *, void * );
@@ -120,7 +124,6 @@ static block_t *GetXPSCopy(decoder_sys_t *);
 
 #define BLOCK_FLAG_DROP (1 << BLOCK_FLAG_PRIVATE_SHIFT)
 
-static const uint8_t p_hevc_startcode[3] = {0x00, 0x00, 0x01};
 /****************************************************************************
  * Helpers
  ****************************************************************************/
@@ -134,29 +137,36 @@ static inline void InitQueue( block_t **pp_head, block_t ***ppp_tail )
 static block_t * OutputQueues(decoder_sys_t *p_sys, bool b_valid)
 {
     block_t *p_output = NULL;
+    block_t *p_xps = NULL;
     block_t **pp_output_last = &p_output;
     uint32_t i_flags = 0; /* Because block_ChainGather does not merge flags or times */
+
+    if(p_sys->b_recovery_point && p_sys->sets != SENT)
+        p_xps = GetXPSCopy(p_sys);
 
     if(p_sys->pre.p_chain)
     {
         i_flags |= p_sys->pre.p_chain->i_flags;
-        if(p_sys->b_recovery_point && p_sys->sets != SENT)
+
+        if(p_sys->pre.p_chain->i_buffer >= 5 &&
+            hevc_getNALType(&p_sys->pre.p_chain->p_buffer[4]) == HEVC_NAL_AUD)
         {
-            if(p_sys->pre.p_chain->i_buffer >= 5 &&
-               hevc_getNALType(&p_sys->pre.p_chain->p_buffer[4]) == HEVC_NAL_AUD)
-            {
-                block_t *p_au = p_sys->pre.p_chain;
-                p_sys->pre.p_chain = p_sys->pre.p_chain->p_next;
-                p_au->p_next = NULL;
-                block_ChainLastAppend(&pp_output_last, p_au);
-            }
-            block_t *p_xps = GetXPSCopy(p_sys);
-            if(p_xps)
-                block_ChainLastAppend(&pp_output_last, p_xps);
+            block_t *p_au = p_sys->pre.p_chain;
+            p_sys->pre.p_chain = p_sys->pre.p_chain->p_next;
+            p_au->p_next = NULL;
+            block_ChainLastAppend(&pp_output_last, p_au);
         }
+
+        if(p_xps)
+            block_ChainLastAppend(&pp_output_last, p_xps);
+
         if(p_sys->pre.p_chain)
             block_ChainLastAppend(&pp_output_last, p_sys->pre.p_chain);
         INITQ(pre);
+    }
+    else if(p_xps)
+    {
+        block_ChainLastAppend(&pp_output_last, p_xps);
     }
 
     if(p_sys->frame.p_chain)
@@ -213,8 +223,8 @@ static int Open(vlc_object_t *p_this)
     INITQ(post);
 
     packetizer_Init(&p_sys->packetizer,
-                    p_hevc_startcode, sizeof(p_hevc_startcode), startcode_FindAnnexB,
-                    p_hevc_startcode, 1, 5,
+                    annexb_startcode3, 3, startcode_FindAnnexB,
+                    annexb_startcode3, 1, 5,
                     PacketizeReset, PacketizeParse, PacketizeValidate, PacketizeDrain,
                     p_dec);
 
@@ -321,8 +331,9 @@ static block_t *PacketizeHVC1(decoder_t *p_dec, block_t **pp_block)
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
 
-    return PacketizeXXC1( p_dec, p_sys->i_nal_length_size,
-                          pp_block, ParseNALBlock );
+    return PacketizeXXC1( p_dec, p_dec->obj.logger,
+                          p_sys->i_nal_length_size, pp_block,
+                          ParseNALBlockW, PacketizeDrain );
 }
 
 static block_t *PacketizeAnnexB(decoder_t *p_dec, block_t **pp_block)
@@ -616,16 +627,19 @@ static void ActivateSets(decoder_t *p_dec,
                                          &p_dec->fmt_out.video.color_range);
         }
 
-        unsigned sizes[4];
+        unsigned sizes[6];
         if( hevc_get_picture_size( p_sps, &sizes[0], &sizes[1],
-                                          &sizes[2], &sizes[3] ) )
+                                          &sizes[2], &sizes[3],
+                                          &sizes[4], &sizes[5] ) )
         {
-            p_dec->fmt_out.video.i_width = sizes[0];
-            p_dec->fmt_out.video.i_height = sizes[1];
+            p_dec->fmt_out.video.i_x_offset = sizes[0];
+            p_dec->fmt_out.video.i_y_offset = sizes[1];
+            p_dec->fmt_out.video.i_width = sizes[2];
+            p_dec->fmt_out.video.i_height = sizes[3];
             if(p_dec->fmt_in->video.i_visible_width == 0)
             {
-                p_dec->fmt_out.video.i_visible_width = sizes[2];
-                p_dec->fmt_out.video.i_visible_height = sizes[3];
+                p_dec->fmt_out.video.i_visible_width = sizes[4];
+                p_dec->fmt_out.video.i_visible_height = sizes[5];
             }
         }
 

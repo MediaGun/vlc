@@ -31,7 +31,6 @@
 #include <vlc_filter.h>
 #include <vlc_picture.h>
 #include <vlc_plugin.h>
-#include <vlc_modules.h>
 #include <vlc_mouse.h>
 #include "filter_picture.h"
 #include "vt_utils.h"
@@ -530,15 +529,11 @@ cvpx_video_context_Destroy(void *priv)
 
     if (ctx->src_converter)
     {
-        filter_Close( ctx->src_converter );
-        module_unneed(ctx->src_converter, ctx->src_converter->p_module);
-        vlc_object_delete(ctx->src_converter);
+        vlc_filter_Delete( ctx->src_converter );
     }
     if (ctx->dst_converter)
     {
-        filter_Close( ctx->dst_converter );
-        module_unneed(ctx->dst_converter, ctx->dst_converter->p_module);
-        vlc_object_delete(ctx->dst_converter);
+        vlc_filter_Delete( ctx->dst_converter );
     }
 
     if (ctx->cvpx_pool)
@@ -566,7 +561,7 @@ CVPX_to_CVPX_converter_Create(filter_t *filter, bool to_rgba)
         converter->fmt_in.i_codec = VLC_CODEC_CVPX_BGRA;
     }
 
-    converter->p_module = module_need(converter, "video converter", NULL, false);
+    converter->p_module = vlc_filter_LoadModule(converter, "video converter", NULL, false);
     if (!converter->p_module)
     {
         vlc_object_delete(converter);

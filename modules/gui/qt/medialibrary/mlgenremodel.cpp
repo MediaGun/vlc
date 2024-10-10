@@ -39,10 +39,6 @@ static const int MLGENREMODEL_COVER_BLUR = 4;
 
 //-------------------------------------------------------------------------------------------------
 
-QHash<QByteArray, vlc_ml_sorting_criteria_t> MLGenreModel::M_names_to_criteria = {
-    {"title", VLC_ML_SORTING_ALPHA}
-};
-
 MLGenreModel::MLGenreModel(QObject *parent)
     : MLBaseModel(parent)
 {
@@ -121,57 +117,42 @@ void MLGenreModel::onVlcMlEvent(const MLEvent &event)
     MLBaseModel::onVlcMlEvent(event);
 }
 
-vlc_ml_sorting_criteria_t MLGenreModel::roleToCriteria(int role) const
-{
-    switch (role)
-    {
-    case GENRE_NAME:
-        return VLC_ML_SORTING_ALPHA;
-    default :
-        return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 vlc_ml_sorting_criteria_t MLGenreModel::nameToCriteria(QByteArray name) const
 {
-    return M_names_to_criteria.value(name, VLC_ML_SORTING_DEFAULT);
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        {"name", VLC_ML_SORTING_ALPHA},
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
 QString MLGenreModel::getCover(MLGenre * genre) const
 {
-    return ml()->customCover()->get(genre->getId()
-                                    , QSize(MLGENREMODEL_COVER_WIDTH, MLGENREMODEL_COVER_HEIGHT)
-                                    , m_coverDefault
-                                    , MLGENREMODEL_COVER_COUNTX
-                                    , MLGENREMODEL_COVER_COUNTY
-                                    , MLGENREMODEL_COVER_BLUR
-                                    , true);
+    return MLCustomCover::url(genre->getId()
+                            , QSize(MLGENREMODEL_COVER_WIDTH, MLGENREMODEL_COVER_HEIGHT)
+                            , m_coverDefault
+                            , MLGENREMODEL_COVER_COUNTX
+                            , MLGENREMODEL_COVER_COUNTY
+                            , MLGENREMODEL_COVER_BLUR
+                            , true);
 }
 
 //-------------------------------------------------------------------------------------------------
 
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLGenreModel::createLoader() const
+std::unique_ptr<MLListCacheLoader>
+MLGenreModel::createMLLoader() const
 {
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLGenreModel::Loader>(*this));
 }
 
-size_t MLGenreModel::Loader::count(vlc_medialibrary_t* ml) const
+size_t MLGenreModel::Loader::count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const
 {
-    MLQueryParams params = getParams();
-    auto queryParams = params.toCQueryParams();
-
-    return vlc_ml_count_genres( ml, &queryParams );
+    return vlc_ml_count_genres( ml, queryParams );
 }
 
 std::vector<std::unique_ptr<MLItem>>
-MLGenreModel::Loader::load(vlc_medialibrary_t* ml, size_t index, size_t count) const
+MLGenreModel::Loader::load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const
 {
-    MLQueryParams params = getParams(index, count);
-    auto queryParams = params.toCQueryParams();
-
     ml_unique_ptr<vlc_ml_genre_list_t> genre_list(
-        vlc_ml_list_genres(ml, &queryParams)
+        vlc_ml_list_genres(ml, queryParams)
     );
     if ( genre_list == nullptr )
         return {};

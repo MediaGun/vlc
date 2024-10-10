@@ -27,10 +27,10 @@ vlc_modules += {
     'name' : 'fingerprinter',
     'sources' : files(
         'fingerprinter.c',
-        'webservices/json.c',
         'webservices/acoustid.c',
     ),
-    'dependencies' : [m_lib]
+    'dependencies' : [m_lib],
+    'link_with' : vlc_json_lib,
 }
 
 # libxml2 module
@@ -44,7 +44,7 @@ if libxml2_dep.found()
 endif
 
 # medialibrary module
-medialibrary_dep = dependency('medialibrary', required: get_option('medialibrary'), method: 'pkg-config')
+medialibrary_dep = dependency('medialibrary', version: '>= 0.13', required: get_option('medialibrary'), method: 'pkg-config')
 if medialibrary_dep.found()
     vlc_modules += {
         'name' : 'medialibrary',

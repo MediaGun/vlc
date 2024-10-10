@@ -131,6 +131,7 @@ typedef struct decoder_sys_t
             struct android_picture_ctx apic_ctxs[MAX_PIC];
             void *p_surface, *p_jsurface;
             unsigned i_angle;
+            unsigned i_input_offset_x, i_input_offset_y;
             unsigned i_input_width, i_input_height;
             unsigned i_input_visible_width, i_input_visible_height;
             unsigned int i_stride, i_slice_height;
@@ -269,14 +270,16 @@ static void HXXXInitSize(decoder_t *p_dec, bool *p_size_changed)
     {
         decoder_sys_t *p_sys = p_dec->p_sys;
         struct hxxx_helper *hh = &p_sys->video.hh;
-        unsigned i_w, i_h, i_vw, i_vh;
-        if(hxxx_helper_get_current_picture_size(hh, &i_w, &i_h, &i_vw, &i_vh)
+        unsigned i_ox, i_oy, i_w, i_h, i_vw, i_vh;
+        if(hxxx_helper_get_current_picture_size(hh, &i_ox, &i_oy, &i_w, &i_h, &i_vw, &i_vh)
            == VLC_SUCCESS)
         {
             *p_size_changed = (i_w != p_sys->video.i_input_width
                             || i_h != p_sys->video.i_input_height
                             || i_vw != p_sys->video.i_input_visible_width
                             || i_vh != p_sys->video.i_input_visible_height);
+            p_sys->video.i_input_offset_x = i_ox;
+            p_sys->video.i_input_offset_y = i_oy;
             p_sys->video.i_input_width = i_w;
             p_sys->video.i_input_height = i_h;
             p_sys->video.i_input_visible_width = i_vw;
@@ -464,6 +467,57 @@ static int StartMediaCodec(decoder_t *p_dec)
 
         args.video.p_surface = p_sys->video.p_surface;
         args.video.p_jsurface = p_sys->video.p_jsurface;
+
+        switch (p_dec->fmt_out.video.color_range)
+        {
+            case COLOR_RANGE_FULL:
+                args.video.color_range = MC_COLOR_RANGE_FULL;
+                break;
+            case COLOR_RANGE_LIMITED:
+                args.video.color_range = MC_COLOR_RANGE_LIMITED;
+                break;
+            default:
+                args.video.color_range = MC_COLOR_RANGE_UNSPECIFIED;
+                break;
+        }
+
+        switch (p_dec->fmt_out.video.primaries)
+        {
+            case COLOR_PRIMARIES_BT601_525:
+                args.video.color_standard = MC_COLOR_STANDARD_BT601_NTSC;
+                break;
+            case COLOR_PRIMARIES_BT601_625:
+                args.video.color_standard = MC_COLOR_STANDARD_BT601_PAL;
+                break;
+            case COLOR_PRIMARIES_BT709:
+                args.video.color_standard = MC_COLOR_STANDARD_BT709;
+                break;
+            case COLOR_PRIMARIES_BT2020:
+                args.video.color_standard = MC_COLOR_STANDARD_BT2020;
+                break;
+            default:
+                args.video.color_standard = MC_COLOR_STANDARD_UNSPECIFIED;
+                break;
+        }
+
+        switch (p_dec->fmt_out.video.transfer)
+        {
+            case TRANSFER_FUNC_LINEAR:
+                args.video.color_transfer = MC_COLOR_TRANSFER_LINEAR;
+                break;
+            case TRANSFER_FUNC_SMPTE_ST2084:
+                args.video.color_transfer = MC_COLOR_TRANSFER_ST2084;
+                break;
+            case TRANSFER_FUNC_HLG:
+                args.video.color_transfer = MC_COLOR_TRANSFER_HLG;
+                break;
+            case TRANSFER_FUNC_BT709:
+                args.video.color_transfer = MC_COLOR_TRANSFER_SDR_VIDEO;
+                break;
+            default:
+                args.video.color_transfer = MC_COLOR_TRANSFER_UNSPECIFIED;
+                break;
+        }
 
         args.video.b_tunneled_playback = args.video.p_surface ?
                 var_InheritBool(p_dec, CFG_PREFIX "tunneled-playback") : false;
@@ -805,8 +859,14 @@ static int OpenDecoder(vlc_object_t *p_this, pf_MediaCodecApi_init pf_init)
             break;
         case VLC_CODEC_WMV3: mime = "video/x-ms-wmv"; break;
         case VLC_CODEC_VC1:  mime = "video/wvc1"; break;
-        case VLC_CODEC_VP8:  mime = "video/x-vnd.on2.vp8"; break;
-        case VLC_CODEC_VP9:  mime = "video/x-vnd.on2.vp9"; break;
+        case VLC_CODEC_VP8:
+            if (p_dec->fmt_in->i_level != 0 && p_dec->fmt_in->i_level != -1) // contains alpha extradata
+                return VLC_ENOTSUP;
+            mime = "video/x-vnd.on2.vp8"; break;
+        case VLC_CODEC_VP9:
+            if (p_dec->fmt_in->i_level != 0 && p_dec->fmt_in->i_level != -1) // contains alpha extradata
+                return VLC_ENOTSUP;
+            mime = "video/x-vnd.on2.vp9"; break;
         }
     }
     else
@@ -1154,7 +1214,7 @@ static int Video_ProcessOutput(decoder_t *p_dec, mc_api_out *p_out,
                               NULL, NULL, &chroma_div);
             CopyOmxPicture(p_sys->video.i_pixel_format, p_pic,
                            p_sys->video.i_slice_height, p_sys->video.i_stride,
-                           (uint8_t *)p_out->buf.p_ptr, chroma_div, NULL);
+                           (uint8_t *)p_out->buf.p_ptr, chroma_div);
 
             if (p_sys->api.release_out(&p_sys->api, p_out->buf.i_index, false))
             {
@@ -1169,16 +1229,20 @@ static int Video_ProcessOutput(decoder_t *p_dec, mc_api_out *p_out,
         assert(p_out->type == MC_OUT_TYPE_CONF);
         p_sys->video.i_pixel_format = p_out->conf.video.pixel_format;
 
-        const char *name = "unknown";
+        const char *name;
         if (!p_sys->api.b_direct_rendering
-         && !GetVlcChromaFormat(p_sys->video.i_pixel_format,
-                                &p_dec->fmt_out.i_codec, &name))
+         && (p_dec->fmt_out.i_codec =
+             GetVlcChromaFormat(p_sys->video.i_pixel_format)) == 0)
         {
             msg_Err(p_dec, "color-format not recognized");
             return -1;
         }
 
-        msg_Err(p_dec, "output: %d %s, %dx%d stride %d %d, crop %d %d %d %d",
+        name = vlc_fourcc_GetDescription( VIDEO_ES,p_dec->fmt_out.i_codec );
+        if (name == NULL)
+            name = "unknown";
+
+        msg_Dbg(p_dec, "output: %d %s, %dx%d stride %d %d, crop %d %d %d %d",
                 p_sys->video.i_pixel_format, name,
                 p_out->conf.video.width, p_out->conf.video.height,
                 p_out->conf.video.stride, p_out->conf.video.slice_height,

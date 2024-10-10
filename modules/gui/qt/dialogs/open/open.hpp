@@ -36,40 +36,41 @@
 /* Auto-generated from .ui files */
 #include "ui_open.h"
 
-enum {
-    OPEN_FILE_TAB,
-    OPEN_DISC_TAB,
-    OPEN_NETWORK_TAB,
-    OPEN_CAPTURE_TAB,
-    OPEN_TAB_MAX
-};
-
-enum {
-    OPEN_AND_PLAY,
-    OPEN_AND_ENQUEUE,
-    OPEN_AND_STREAM,
-    OPEN_AND_SAVE,
-    SELECT              /* Special mode to select a MRL (for VLM or similar */
-};
-
-
 class QString;
 
-class OpenDialog : public QVLCDialog, public Singleton<OpenDialog>
+class OpenDialog : public QVLCDialog
 {
-    friend Singleton<OpenDialog>;
-
     Q_OBJECT
-public:
-    static OpenDialog * getInstance(qt_intf_t *p_intf,
-                                bool b_rawInstance = false, int _action_flag = 0,
-                                bool b_selectMode = false );
 
-    void showTab( int = OPEN_FILE_TAB );
+public:
+    enum OpenTab {
+        OPEN_FILE_TAB,
+        OPEN_DISC_TAB,
+        OPEN_NETWORK_TAB,
+        OPEN_CAPTURE_TAB,
+        OPEN_TAB_MAX
+    };
+
+    enum ActionFlag {
+        OPEN_AND_PLAY,
+        OPEN_AND_ENQUEUE,
+        OPEN_AND_STREAM,
+        OPEN_AND_SAVE,
+        SELECT              /* Special mode to select a MRL (for VLM or similar */
+    };
+
+
+public:
+    OpenDialog(qt_intf_t * , QWindow *parent = nullptr);
+    virtual ~OpenDialog();
+
+    void showTab( OpenDialog::OpenTab tab, OpenDialog::ActionFlag action );
     QString getMRL( bool b = true );
 
     QStringList getMRLs();
     QString getOptions();
+
+    void setActionFlag(ActionFlag action_flag);
 
 public slots:
     void selectSlots();
@@ -79,10 +80,6 @@ public slots:
     void transcode();
 
 private:
-    OpenDialog( QWindow *parent, qt_intf_t *, bool b_selectMode,
-                int _action_flag = 0 );
-    virtual ~OpenDialog();
-
     QString optionsMRL;
     QString storedMethod;
     QStringList itemsMRL;
@@ -93,7 +90,7 @@ private:
     DiscOpenPanel *discOpenPanel;
     CaptureOpenPanel *captureOpenPanel;
 
-    int i_action_flag;
+    ActionFlag i_action_flag = OPEN_AND_PLAY;
     QStringList SeparateEntries( const QString& );
 
     QPushButton *cancelButton, *selectButton;

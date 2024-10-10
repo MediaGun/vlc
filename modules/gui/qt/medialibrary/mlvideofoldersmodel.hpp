@@ -36,6 +36,7 @@ public:
     {
         FOLDER_ID = Qt::UserRole + 1,
         FOLDER_TITLE,
+        FOLDER_TITLE_FIRST_SYMBOL,
         FOLDER_THUMBNAIL,
         FOLDER_DURATION,
         FOLDER_COUNT
@@ -50,26 +51,21 @@ public: // MLBaseModel reimplementation
 protected:
     QVariant itemRoleData(MLItem *item, int role = Qt::DisplayRole) const override;
 
-    vlc_ml_sorting_criteria_t roleToCriteria(int role) const override;
-
     vlc_ml_sorting_criteria_t nameToCriteria(QByteArray name) const override;
 
-    QByteArray criteriaToName(vlc_ml_sorting_criteria_t criteria) const override;
-
-    std::unique_ptr<MLBaseModel::BaseLoader> createLoader() const override;
+    std::unique_ptr<MLListCacheLoader> createMLLoader() const override;
 
 protected: // MLBaseModel reimplementation
     void onVlcMlEvent(const MLEvent & event) override;
 
 private:
-    struct Loader : public BaseLoader
+    struct Loader : public MLListCacheLoader::MLOp
     {
-        Loader(const MLVideoFoldersModel & model);
-
-        size_t count(vlc_medialibrary_t * ml) const override;
+        using MLListCacheLoader::MLOp::MLOp;
+        size_t count(vlc_medialibrary_t * ml, const vlc_ml_query_params_t* queryParams) const override;
 
         std::vector<std::unique_ptr<MLItem>> load(vlc_medialibrary_t * ml,
-                                                  size_t index, size_t count) const override;
+                                                  const vlc_ml_query_params_t* queryParams) const override;
 
         std::unique_ptr<MLItem> loadItemById(vlc_medialibrary_t* ml, MLItemId itemId) const override;
     };

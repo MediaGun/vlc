@@ -56,13 +56,22 @@ void filter_AddProxyCallbacks( vlc_object_t *obj, filter_t *filter,
     {
         char *name = *pname;
         int var_type = var_Type(filter, name);
-        if (var_Type(obj, name) || config_GetType(name) == 0)
+        if (config_GetType(name) == 0)
         {
             free(name);
             continue;
         }
-        var_Create(obj, name,
-                   var_type | VLC_VAR_DOINHERIT | VLC_VAR_ISCOMMAND);
+
+        /* Create a mapping variable of the filter value if it does not exist.
+         * These variables shouldn't be removed on proxy removal as they allow
+         * keeping track of the filter state between filter chain resets. */
+        const bool not_mapped = (var_Type(obj, name) == 0);
+        if (not_mapped)
+        {
+            var_Create(obj, name,
+                       var_type | VLC_VAR_DOINHERIT | VLC_VAR_ISCOMMAND);
+        }
+
         if ((var_type & VLC_VAR_ISCOMMAND))
             var_AddCallback(obj, name, TriggerFilterCallback, filter);
         else
@@ -94,7 +103,6 @@ void filter_DelProxyCallbacks( vlc_object_t *obj, filter_t *filter,
             var_DelCallback(obj, name, TriggerFilterCallback, filter);
         else if (filter_var_type)
             var_DelCallback(obj, name, restart_cb, obj);
-        var_Destroy(obj, name);
         free(name);
     }
     free(names);
@@ -106,7 +114,7 @@ vlc_blender_t *filter_NewBlend( vlc_object_t *p_this,
                            const video_format_t *p_dst_chroma )
 {
     vlc_blender_t *p_blend = vlc_custom_create( p_this, sizeof(*p_blend), "blend" );
-    if( !p_blend )
+    if( unlikely( p_blend == NULL ) )
         return NULL;
 
     es_format_Init( &p_blend->fmt_in, VIDEO_ES, 0 );
@@ -115,9 +123,6 @@ vlc_blender_t *filter_NewBlend( vlc_object_t *p_this,
 
     p_blend->fmt_out.i_codec        =
     p_blend->fmt_out.video.i_chroma = p_dst_chroma->i_chroma;
-    p_blend->fmt_out.video.i_rmask  = p_dst_chroma->i_rmask;
-    p_blend->fmt_out.video.i_gmask  = p_dst_chroma->i_gmask;
-    p_blend->fmt_out.video.i_bmask  = p_dst_chroma->i_bmask;
 
     /* The blend module will be loaded when needed with the real
     * input format */
@@ -132,11 +137,10 @@ int filter_ConfigureBlend( vlc_blender_t *p_blend,
 {
     /* */
     if( p_blend->p_module &&
-        p_blend->fmt_in.video.i_chroma != p_src->i_chroma )
+        !video_format_IsSameChroma( &p_blend->fmt_in.video, p_src ) )
     {
         /* The chroma is not the same, we need to reload the blend module */
-        filter_Close( p_blend );
-        module_unneed( p_blend, p_blend->p_module );
+        vlc_filter_UnloadModule( p_blend );
         p_blend->p_module = NULL;
     }
 
@@ -153,7 +157,7 @@ int filter_ConfigureBlend( vlc_blender_t *p_blend,
 
     /* */
     if( !p_blend->p_module )
-        p_blend->p_module = module_need( p_blend, "video blending", NULL, false );
+        p_blend->p_module = vlc_filter_LoadModule( p_blend, "video blending", NULL, false );
     if( !p_blend->p_module )
         return VLC_EGENERIC;
     assert( p_blend->ops != NULL );
@@ -173,13 +177,7 @@ int filter_Blend( vlc_blender_t *p_blend,
 
 void filter_DeleteBlend( vlc_blender_t *p_blend )
 {
-    if( p_blend->p_module )
-    {
-        filter_Close( p_blend );
-        module_unneed( p_blend, p_blend->p_module );
-    }
-
-    vlc_object_delete(p_blend);
+    vlc_filter_Delete( p_blend );
 }
 
 /* */

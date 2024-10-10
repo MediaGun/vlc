@@ -18,25 +18,27 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
+import QtQuick.Controls
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Style
+import VLC.Player
+import VLC.Widgets
 
-ControlButtonPopup {
+PopupIconToolButton {
     id: root
 
     // Settings
 
     enabled: Player.isTeletextAvailable
 
-    iconText: VLCIcons.tvtelx
+    text: VLCIcons.tvtelx
 
-    text: I18n.qtr("Teletext")
+    description: qsTr("Teletext")
 
-    popupContent: TeletextWidget {
+    popup.contentItem: TeletextWidget {
         colorContext.palette: root.colorContext.palette
 
         Navigation.parentItem: root

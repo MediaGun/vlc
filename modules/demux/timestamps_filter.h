@@ -23,6 +23,7 @@
 #include <vlc_common.h>
 #include <vlc_arrays.h>
 #include <vlc_es_out.h>
+#include <vlc_frame.h>
 
 #include "moving_avg.h"
 
@@ -108,7 +109,7 @@ static bool timestamps_filter_push(const char *s, struct timestamps_filter_s *tf
                 tf->sync.contiguous = tf->contiguous_last + prev->diff;
                 tf->sequence_offset = tf->sync.contiguous - tf->sync.stream;
 #ifdef DEBUG_TIMESTAMPS_FILTER
-                printf("%4.4s found offset of %ld\n", s, (prev->dts - i_dts));
+                printf("%4.4s found offset of %" PRId64 "\n", s, (prev->dts - i_dts));
 #endif
                 b_desync = true;
             }
@@ -189,11 +190,11 @@ static int timestamps_filter_es_out_Control(es_out_t *out, input_source_t *in, i
                     if(max)
                     {
 #ifdef DEBUG_TIMESTAMPS_FILTER
-                    printf("PCR  no previous value, using %ld\n", max);
+                        printf("PCR  no previous value, using %" PRId64 "\n", max);
 #endif
-                    p_sys->pcrtf.sync.stream = pcr;
-                    p_sys->pcrtf.sync.contiguous = max;
-                    p_sys->pcrtf.sequence_offset = max - pcr;
+                        p_sys->pcrtf.sync.stream = pcr;
+                        p_sys->pcrtf.sync.contiguous = max;
+                        p_sys->pcrtf.sequence_offset = max - pcr;
                     }
                 }
             }
@@ -351,15 +352,14 @@ static void timestamps_filter_es_out_Del(es_out_t *out, es_out_id_t *id)
 
 static const struct es_out_callbacks timestamps_filter_es_out_cbs =
 {
-    timestamps_filter_es_out_Add,
-    timestamps_filter_es_out_Send,
-    timestamps_filter_es_out_Del,
-    timestamps_filter_es_out_Control,
-    timestamps_filter_es_out_Delete,
-    NULL,
+    .add = timestamps_filter_es_out_Add,
+    .send = timestamps_filter_es_out_Send,
+    .del = timestamps_filter_es_out_Del,
+    .control = timestamps_filter_es_out_Control,
+    .destroy = timestamps_filter_es_out_Delete,
 };
 
-static es_out_t * timestamps_filter_es_out_New(es_out_t *orig)
+static inline es_out_t * timestamps_filter_es_out_New(es_out_t *orig)
 {
     struct tf_es_out_s *tf = malloc(sizeof(*tf));
     if(!tf)

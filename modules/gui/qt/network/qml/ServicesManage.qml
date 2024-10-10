@@ -15,21 +15,34 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Network
 
-Widgets.KeyNavigableListView {
+Widgets.ListViewExt {
     id: servicesView
 
     // required by g_root to indicate view with 'grid' or 'list' mode
-    readonly property bool isViewMultiView: false
+    readonly property bool hasGridListMode: false
+    readonly property bool isSearchable: true
 
-    model: discoveryFilterModel
+    property var pagePrefix: []
+
+    model: ServicesDiscoveryModel {
+        id: discoveryModel
+
+        ctx: MainCtx
+
+        searchPattern: MainCtx.search.pattern
+        sortOrder: MainCtx.sort.order
+        sortCriteria: MainCtx.sort.criteria
+    }
+
     topMargin: VLCStyle.margin_large
     leftMargin: VLCStyle.margin_large
     rightMargin: VLCStyle.margin_large
@@ -88,7 +101,7 @@ Widgets.KeyNavigableListView {
                         Widgets.CaptionLabel {
                             color: servicesView.colorContext.fg.primary
                             textFormat: Text.StyledText
-                            text: model.author ? I18n.qtr("by <b>%1</b>").arg(model.author) : I18n.qtr("by <b>Unknown</b>")
+                            text: model.author ? qsTr("by <b>%1</b>").arg(model.author) : qsTr("by <b>Unknown</b>")
                             topPadding: VLCStyle.margin_xxxsmall
                             width: parent.width
                         }
@@ -103,28 +116,28 @@ Widgets.KeyNavigableListView {
                         text: {
                             switch(model.state) {
                             case ServicesDiscoveryModel.INSTALLED:
-                                return I18n.qtr("Remove")
+                                return qsTr("Remove")
                             case ServicesDiscoveryModel.NOTINSTALLED:
-                                return I18n.qtr("Install")
+                                return qsTr("Install")
                             case ServicesDiscoveryModel.INSTALLING:
-                                return I18n.qtr("Installing")
+                                return qsTr("Installing")
                             case ServicesDiscoveryModel.UNINSTALLING:
-                                return I18n.qtr("Uninstalling")
+                                return qsTr("Uninstalling")
                             }
                         }
 
                         onClicked: {
                             if (model.state === ServicesDiscoveryModel.NOTINSTALLED)
-                                discoveryModel.installService(discoveryFilterModel.mapIndexToSource(index))
+                                discoveryModel.installService(index)
                             else if (model.state === ServicesDiscoveryModel.INSTALLED)
-                                discoveryModel.installService(discoveryFilterModel.mapIndexToSource(index))
+                                discoveryModel.removeService(index)
                         }
                     }
                 }
 
                 Widgets.CaptionLabel {
                     elide: Text.ElideRight
-                    text:  model.description || model.summary || I18n.qtr("No information available")
+                    text:  model.description || model.summary || qsTr("No information available")
                     color: servicesView.colorContext.fg.secondary
                     topPadding: VLCStyle.margin_xsmall
                     wrapMode: Text.WordWrap
@@ -133,7 +146,7 @@ Widgets.KeyNavigableListView {
                 }
 
                 Widgets.CaptionLabel {
-                    text: I18n.qtr("Score: %1/5  Downloads: %2").arg(model.score).arg(model.downloads)
+                    text: qsTr("Score: %1/5  Downloads: %2").arg(model.score).arg(model.downloads)
                     topPadding: VLCStyle.margin_xsmall
                     color: servicesView.colorContext.fg.secondary
                     Layout.fillWidth: true
@@ -143,22 +156,9 @@ Widgets.KeyNavigableListView {
     }
 
     Widgets.BusyIndicatorExt {
-        runningDelayed: discoveryModel.parsingPending
+        runningDelayed: discoveryModel.loading
         anchors.centerIn: parent
         color: servicesView.colorContext.fg.primary
         z: 1
-    }
-
-    ServicesDiscoveryModel {
-        id: discoveryModel
-
-        ctx: MainCtx
-    }
-
-    SortFilterProxyModel {
-        id: discoveryFilterModel
-
-        sourceModel: discoveryModel
-        searchRole: "name"
     }
 }

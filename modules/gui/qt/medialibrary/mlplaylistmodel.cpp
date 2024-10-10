@@ -23,23 +23,15 @@
 #include "mlplaylistmodel.hpp"
 
 // Util includes
-#include "util/qmlinputitem.hpp"
+#include "util/shared_input_item.hpp"
 #include "util/vlctick.hpp"
 
 // MediaLibrary includes
 #include "mlhelper.hpp"
 #include "mlplaylistmedia.hpp"
 
-//-------------------------------------------------------------------------------------------------
-// Static variables
-
-static const QHash<QByteArray, vlc_ml_sorting_criteria_t> criterias =
-{
-    {"id",             VLC_ML_SORTING_DEFAULT},
-    {"title",          VLC_ML_SORTING_ALPHA},
-    {"duration",       VLC_ML_SORTING_DURATION},
-    {"playcount",      VLC_ML_SORTING_PLAYCOUNT},
-};
+#include "playlist/playlist_controller.hpp"
+#include "playlist/media.hpp"
 
 //=================================================================================================
 // MLPlaylistModel
@@ -63,49 +55,43 @@ static const QHash<QByteArray, vlc_ml_sorting_criteria_t> criterias =
     if (unlikely(m_transactionPending))
         return;
 
-    //build the list of MRL to insert in the playlist
-    std::vector<QString> mrlList;
-    for (const QVariant & variant : items)
-    {
-        if (variant.canConvert<QmlInputItem>() == false)
-            continue;
+    QVector<vlc::playlist::Media> medias = vlc::playlist::toMediaList(items);
 
-        const QmlInputItem & item = variant.value<QmlInputItem>();
+    setTransactionPending(true);
 
-        const char * psz_uri = item.item ? item.item->psz_uri : nullptr;
-
-        if (psz_uri == nullptr)
-            continue;
-
-        mrlList.emplace_back(psz_uri);
-    }
-
-    m_transactionPending = true;
-
-    m_mediaLib->runOnMLThread(this,
+    struct Ctx {
+        std::vector<std::unique_ptr<MLItem>> medias;
+    };
+    m_mediaLib->runOnMLThread<Ctx>(this,
     //ML thread
-    [mrlList, id, at](vlc_medialibrary_t* ml) {
-        int insertPos = at;
-        for (const QString& uri : mrlList)
+    [medias, id, at](vlc_medialibrary_t* ml, Ctx& ctx) {
+        std::vector<int64_t> mediaIdList;
+        for (const auto& media : medias)
         {
-            vlc_ml_media_t * media = vlc_ml_get_media_by_mrl(ml, qtu(uri));
+            assert(media.raw());
 
-            if (media == nullptr)
+            const char * const uri = media.raw()->psz_uri;
+
+            vlc_ml_media_t * ml_media = vlc_ml_get_media_by_mrl(ml, uri);
+
+            if (ml_media == nullptr)
             {
-                media = vlc_ml_new_external_media(ml, qtu(uri));
-                if (media == nullptr)
+                ml_media = vlc_ml_new_external_media(ml, uri);
+                if (ml_media == nullptr)
                     continue;
             }
-
-            vlc_ml_playlist_insert(ml, id, media->i_id, insertPos);
-            vlc_ml_media_release(media);
-
-            insertPos++;
+            mediaIdList.push_back(ml_media->i_id);
+            ctx.medias.emplace_back(std::make_unique<MLPlaylistMedia>(ml_media));
+            vlc_ml_media_release(ml_media);
         }
+        if (mediaIdList.size() == 0)
+            return;
 
+        vlc_ml_playlist_insert(ml, id, mediaIdList.data(), mediaIdList.size(), at);
     },
     //UI thread
-    [this]() {
+    [this, at](quint64, Ctx& ctx) {
+        insertItemListInCache(std::move(ctx.medias), at);
         m_need_reset = true;
         endTransaction();
     });
@@ -128,13 +114,9 @@ void MLPlaylistModel::moveImpl(int64_t playlistId, HighLowRanges&& ranges)
         //ML thread
         [playlistId, high, low, to = ranges.lowTo]
         (vlc_medialibrary_t* ml, Ctx& ctx) {
-            int localTo = to;
-            for (int i = high; i >= low; i--)
-            {
-                vlc_ml_playlist_move(ml, playlistId, i, localTo  - 1);
-                localTo--;
-            }
-            ctx.newTo = localTo;
+            int nbElement = high - low + 1;
+            vlc_ml_playlist_move(ml, playlistId, low, to - 1, nbElement);
+            ctx.newTo = to - nbElement;
         },
         //UI thread
         [this, playlistId, high, low, r = std::move(ranges)](quint64, Ctx& ctx) mutable {
@@ -152,13 +134,9 @@ void MLPlaylistModel::moveImpl(int64_t playlistId, HighLowRanges&& ranges)
         m_mediaLib->runOnMLThread<Ctx>(this,
         //ML thread
         [playlistId, high, low, to = ranges.highTo](vlc_medialibrary_t* ml, Ctx& ctx) {
-            int localTo = to;
-            for (int i = low; i <= high; i++)
-            {
-                vlc_ml_playlist_move(ml, playlistId, i, localTo);
-                localTo++;
-            }
-            ctx.newTo = localTo;
+            int nbElement = high - low + 1;
+            vlc_ml_playlist_move(ml, playlistId, low, to, nbElement);
+            ctx.newTo = to + nbElement;
         },
         //UI thread
         [this, playlistId, low, high, r = std::move(ranges)](quint64, Ctx& ctx) mutable {
@@ -235,7 +213,7 @@ void MLPlaylistModel::moveImpl(int64_t playlistId, HighLowRanges&& ranges)
     highLowRanges.lowRangeIt = highLowRanges.lowRanges.size();
     highLowRanges.highRangeIt = 0;
 
-    m_transactionPending = true;
+    setTransactionPending(true);
 
     moveImpl(id, std::move(highLowRanges));
 }
@@ -255,10 +233,7 @@ void MLPlaylistModel::removeImpl(int64_t playlistId, const std::vector<std::pair
     m_mediaLib->runOnMLThread(this,
     //ML thread
     [playlistId, range](vlc_medialibrary_t* ml) {
-        for (int i = range.second; i >= range.first; i--)
-        {
-            vlc_ml_playlist_remove(ml, playlistId, i);
-        }
+        vlc_ml_playlist_remove(ml, playlistId, range.first, range.second - range.first + 1);
     },
     //UI thread
     [this, playlistId, range, rows = std::move(rangeList), index]() {
@@ -283,19 +258,32 @@ void MLPlaylistModel::removeImpl(int64_t playlistId, const std::vector<std::pair
     auto rangeList = getSortedRowsRanges(indexes, false);
     assert(rangeList.size() > 0);
 
-    m_transactionPending = true;
+    setTransactionPending(true);
     removeImpl(id, std::move(rangeList), 0);
 }
 
 void MLPlaylistModel::endTransaction()
 {
-    m_transactionPending = false;
-    if (m_resetAfterTransaction)
+    setTransactionPending(false);
+}
+
+void MLPlaylistModel::setTransactionPending(bool value)
+{
+    if (m_transactionPending == value)
+        return;
+
+    m_transactionPending = value;
+
+    if (!value)
     {
-        m_resetAfterTransaction = false;
-        emit resetRequested();
+        if (m_resetAfterTransaction)
+        {
+            m_resetAfterTransaction = false;
+            emit resetRequested();
+        }
     }
 
+    emit transactionPendingChanged();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -336,11 +324,11 @@ QVariant MLPlaylistModel::itemRoleData(MLItem *item, int role) const /* override
         case MEDIA_IS_NEW:
             return QVariant::fromValue(media->isNew());
         case MEDIA_TITLE:
-            return QVariant::fromValue(media->getTitle());
+            return QVariant::fromValue(media->title());
         case MEDIA_THUMBNAIL:
         {
             vlc_ml_thumbnail_status_t status;
-            QString thumbnail = media->getThumbnail(&status);
+            QString thumbnail = media->smallCover(&status);
             if ((media->getType() == VLC_ML_MEDIA_TYPE_VIDEO)
                 && (status == VLC_ML_THUMBNAIL_STATUS_MISSING
                     || status == VLC_ML_THUMBNAIL_STATUS_FAILURE))
@@ -351,11 +339,11 @@ QVariant MLPlaylistModel::itemRoleData(MLItem *item, int role) const /* override
             return QVariant::fromValue(thumbnail);
         }
         case MEDIA_DURATION:
-            return QVariant::fromValue(media->getDuration());
+            return QVariant::fromValue(media->duration());
         case MEDIA_PROGRESS:
-            return QVariant::fromValue(media->getProgress());
+            return QVariant::fromValue(media->progress());
         case MEDIA_PLAYCOUNT:
-            return QVariant::fromValue(media->getPlayCount());
+            return QVariant::fromValue(media->playCount());
         case MEDIA_RESOLUTION:
             return QVariant::fromValue(media->getResolutionName());
         case MEDIA_CHANNEL:
@@ -369,7 +357,7 @@ QVariant MLPlaylistModel::itemRoleData(MLItem *item, int role) const /* override
         case MEDIA_AUDIO_TRACK:
             return QVariant::fromValue(media->getAudio());
         case MEDIA_TITLE_FIRST_SYMBOL:
-            return QVariant::fromValue(getFirstSymbol(media->getTitle()));
+            return QVariant::fromValue(getFirstSymbol(media->title()));
         default:
             return QVariant();
     }
@@ -379,37 +367,22 @@ QVariant MLPlaylistModel::itemRoleData(MLItem *item, int role) const /* override
 // Protected MLBaseModel implementation
 //-------------------------------------------------------------------------------------------------
 
-vlc_ml_sorting_criteria_t MLPlaylistModel::roleToCriteria(int role) const /* override */
-{
-    switch (role)
-    {
-        case MEDIA_TITLE:
-            return VLC_ML_SORTING_ALPHA;
-        case MEDIA_DURATION:
-            return VLC_ML_SORTING_DURATION;
-        case MEDIA_PLAYCOUNT:
-            return VLC_ML_SORTING_PLAYCOUNT;
-        default:
-            return VLC_ML_SORTING_DEFAULT;
-    }
-}
-
 vlc_ml_sorting_criteria_t MLPlaylistModel::nameToCriteria(QByteArray name) const /* override */
 {
-    return criterias.value(name, VLC_ML_SORTING_DEFAULT);
-}
-
-QByteArray MLPlaylistModel::criteriaToName(vlc_ml_sorting_criteria_t criteria) const /* override */
-{
-    return criterias.key(criteria, "");
+    return QHash<QByteArray, vlc_ml_sorting_criteria_t> {
+        {"id",             VLC_ML_SORTING_DEFAULT},
+        {"title",          VLC_ML_SORTING_ALPHA},
+        {"duration",       VLC_ML_SORTING_DURATION},
+        {"playcount",      VLC_ML_SORTING_PLAYCOUNT},
+    }.value(name, VLC_ML_SORTING_DEFAULT);
 }
 
 //-------------------------------------------------------------------------------------------------
 
-std::unique_ptr<MLBaseModel::BaseLoader>
-MLPlaylistModel::createLoader() const /* override */
+std::unique_ptr<MLListCacheLoader>
+MLPlaylistModel::createMLLoader() const /* override */
 {
-    return std::make_unique<Loader>(*this);
+    return std::make_unique<MLListCacheLoader>(m_mediaLib, std::make_shared<MLPlaylistModel::Loader>(*this));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -448,7 +421,7 @@ void MLPlaylistModel::onVlcMlEvent(const MLEvent & event) /* override */
 void MLPlaylistModel::thumbnailUpdated(const QModelIndex& idx, MLItem* mlitem, const QString& mrl, vlc_ml_thumbnail_status_t status) /* override */
 {
     auto playlistItem = static_cast<MLPlaylistMedia*>(mlitem);
-    playlistItem->setThumbnail(mrl, status);
+    playlistItem->setSmallCover(mrl, status);
     emit dataChanged(idx, idx, { MEDIA_THUMBNAIL });
 }
 
@@ -513,22 +486,16 @@ void MLPlaylistModel::generateThumbnail(const MLItemId& itemid) const
 // Loader
 //=================================================================================================
 
-MLPlaylistModel::Loader::Loader(const MLPlaylistModel & model) : MLBaseModel::BaseLoader(model) {}
-
-size_t MLPlaylistModel::Loader::count(vlc_medialibrary_t* ml) const /* override */
+size_t MLPlaylistModel::Loader::count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams().toCQueryParams();
-
-    return vlc_ml_count_playlist_media(ml, &params, m_parent.id);
+    return vlc_ml_count_playlist_media(ml, queryParams, m_parent.id);
 }
 
 std::vector<std::unique_ptr<MLItem>>
-MLPlaylistModel::Loader::load(vlc_medialibrary_t* ml, size_t index, size_t count) const /* override */
+MLPlaylistModel::Loader::load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const /* override */
 {
-    vlc_ml_query_params_t params = getParams(index, count).toCQueryParams();
-
     ml_unique_ptr<vlc_ml_media_list_t> list {
-        vlc_ml_list_playlist_media(ml, &params, m_parent.id)
+        vlc_ml_list_playlist_media(ml, queryParams, m_parent.id)
     };
 
     if (list == nullptr)

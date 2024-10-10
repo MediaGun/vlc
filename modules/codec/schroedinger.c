@@ -47,6 +47,7 @@
  *****************************************************************************/
 static int        OpenDecoder  ( vlc_object_t * );
 static void       CloseDecoder ( vlc_object_t * );
+#ifdef ENABLE_SOUT
 static int        OpenEncoder  ( vlc_object_t * );
 static void       CloseEncoder ( encoder_t * );
 
@@ -354,6 +355,7 @@ static const char *const ppsz_enc_options[] = {
     ENC_ME_GLOBAL_MOTION, ENC_ME_PHASECORR, ENC_SCD, ENC_FORCE_PROFILE,
     NULL
 };
+#endif // !ENABLE_SOUT
 
 
 /* Module declaration */
@@ -366,6 +368,7 @@ vlc_module_begin ()
     set_callbacks( OpenDecoder, CloseDecoder )
     add_shortcut( "schroedinger" )
 
+#ifdef ENABLE_SOUT
     /* encoder */
     add_submodule()
     set_section( N_("Encoding") , NULL )
@@ -518,6 +521,7 @@ vlc_module_begin ()
     add_string( ENC_CFG_PREFIX ENC_FORCE_PROFILE, NULL,
                 ENC_FORCE_PROFILE_TEXT, NULL )
     change_string_list( enc_profile_list, enc_profile_list_text )
+#endif // !ENABLE_SOUT
 
 vlc_module_end ()
 
@@ -871,6 +875,7 @@ static int DecodeBlock( decoder_t *p_dec, block_t *p_block )
     }
 }
 
+#ifdef ENABLE_SOUT
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
@@ -1014,24 +1019,21 @@ static inline bool SchroSetEnum( encoder_t *p_enc, int i_list_size, const char *
     return false;
 }
 
-static bool SetEncChromaFormat( encoder_t *p_enc, uint32_t i_codec )
+static bool SetEncChromaFormat( encoder_t *p_enc, vlc_fourcc_t chroma )
 {
     encoder_sys_t *p_sys = p_enc->p_sys;
 
-    switch( i_codec ) {
+    switch( chroma ) {
     case VLC_CODEC_I420:
-        p_enc->fmt_in.i_codec = i_codec;
-        p_enc->fmt_in.video.i_bits_per_pixel = 12;
+        p_enc->fmt_in.video.i_chroma = p_enc->fmt_in.i_codec = chroma;
         p_sys->p_format->chroma_format = SCHRO_CHROMA_420;
-           break;
+        break;
     case VLC_CODEC_I422:
-        p_enc->fmt_in.i_codec = i_codec;
-        p_enc->fmt_in.video.i_bits_per_pixel = 16;
+        p_enc->fmt_in.video.i_chroma = p_enc->fmt_in.i_codec = chroma;
         p_sys->p_format->chroma_format = SCHRO_CHROMA_422;
         break;
     case VLC_CODEC_I444:
-        p_enc->fmt_in.i_codec = i_codec;
-        p_enc->fmt_in.video.i_bits_per_pixel = 24;
+        p_enc->fmt_in.video.i_chroma = p_enc->fmt_in.i_codec = chroma;
         p_sys->p_format->chroma_format = SCHRO_CHROMA_444;
         break;
     default:
@@ -1168,22 +1170,22 @@ static int OpenEncoder( vlc_object_t *p_this )
     if( !psz_tmp )
         goto error;
     else {
-        uint32_t i_codec;
+        vlc_fourcc_t i_chroma;
         if( !strcmp( psz_tmp, "420" ) ) {
-            i_codec = VLC_CODEC_I420;
+            i_chroma = VLC_CODEC_I420;
         }
         else if( !strcmp( psz_tmp, "422" ) ) {
-            i_codec = VLC_CODEC_I422;
+            i_chroma = VLC_CODEC_I422;
         }
         else if( !strcmp( psz_tmp, "444" ) ) {
-            i_codec = VLC_CODEC_I444;
+            i_chroma = VLC_CODEC_I444;
         }
         else {
             msg_Err( p_enc, "Invalid chroma format: %s", psz_tmp );
             free( psz_tmp );
             goto error;
         }
-        SetEncChromaFormat( p_enc, i_codec );
+        SetEncChromaFormat( p_enc, i_chroma );
     }
     free( psz_tmp );
 
@@ -1450,14 +1452,12 @@ static block_t *Encode( encoder_t *p_enc, picture_t *p_pic )
         date_t date;
 
         if( p_pic->format.i_chroma != p_enc->fmt_in.i_codec ) {
-            char chroma_in[5], chroma_out[5];
-            vlc_fourcc_to_char( p_pic->format.i_chroma, chroma_in );
-            chroma_in[4]  = '\0';
-            chroma_out[4] = '\0';
-            vlc_fourcc_to_char( p_enc->fmt_in.i_codec, chroma_out );
-            msg_Warn( p_enc, "Resetting chroma from %s to %s", chroma_out, chroma_in );
+            msg_Warn( p_enc, "Resetting chroma from %4.4s to %4.4s",
+                      (const char*)&p_enc->fmt_in.i_codec,
+                      (const char*)&p_pic->format.i_chroma );
             if( !SetEncChromaFormat( p_enc, p_pic->format.i_chroma ) ) {
-                msg_Err( p_enc, "Could not reset chroma format to %s", chroma_in );
+                msg_Err( p_enc, "Could not reset chroma format to %4.4s",
+                         (const char*)&p_pic->format.i_chroma );
                 return NULL;
             }
         }
@@ -1609,3 +1609,4 @@ static void CloseEncoder( encoder_t *p_enc )
     /* We need to reset p_sys since CloseEncoder is also called during error. */
     p_enc->p_sys = NULL;
 }
+#endif // !ENABLE_SOUT

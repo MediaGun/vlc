@@ -28,7 +28,6 @@
 #include "item.h"
 #include "playlist.h"
 #include "notify.h"
-#include "libvlc.h" /* for vlc_MetadataRequest() */
 
 typedef struct VLC_VECTOR(input_item_t *) media_vector_t;
 
@@ -112,24 +111,44 @@ static const struct vlc_metadata_cbs preparser_callbacks = {
 };
 
 void
-vlc_playlist_Preparse(vlc_playlist_t *playlist, input_item_t *input)
+vlc_playlist_Preparse(vlc_playlist_t *playlist, input_item_t *input,
+                      bool parse_subitems)
 {
 #ifdef TEST_PLAYLIST
     VLC_UNUSED(playlist);
     VLC_UNUSED(input);
     VLC_UNUSED(preparser_callbacks);
 #else
-    /* vlc_MetadataRequest is not exported */
-    vlc_MetadataRequest(playlist->libvlc, input,
-                        META_REQUEST_OPTION_SCOPE_LOCAL |
-                        META_REQUEST_OPTION_FETCH_LOCAL,
-                        &preparser_callbacks, playlist, -1, NULL);
+    assert(playlist->parser != NULL);
+
+    input_item_meta_request_option_t options =
+        META_REQUEST_OPTION_SCOPE_LOCAL | META_REQUEST_OPTION_FETCH_LOCAL;
+    if (parse_subitems)
+        options |= META_REQUEST_OPTION_PARSE_SUBITEMS;
+
+    vlc_preparser_Push(playlist->parser, input, options,
+                       &preparser_callbacks, playlist, -1, NULL);
 #endif
 }
 
 void
-vlc_playlist_AutoPreparse(vlc_playlist_t *playlist, input_item_t *input)
+vlc_playlist_AutoPreparse(vlc_playlist_t *playlist, input_item_t *input,
+                          bool parse_subitems)
 {
     if (playlist->auto_preparse && !input_item_IsPreparsed(input))
-        vlc_playlist_Preparse(playlist, input);
+    {
+        switch (playlist->recursive)
+        {
+            case VLC_PLAYLIST_RECURSIVE_NONE:
+                parse_subitems = false;
+                break;
+            case VLC_PLAYLIST_RECURSIVE_COLLAPSE:
+                break;
+            case VLC_PLAYLIST_RECURSIVE_EXPAND:
+                parse_subitems = true;
+                break;
+            default: vlc_assert_unreachable();
+        }
+        vlc_playlist_Preparse(playlist, input, parse_subitems);
+    }
 }

@@ -15,17 +15,18 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Player
+import VLC.Style
+import VLC.Util
 
 Widgets.ImageToolButton {
     id: control
 
-    text: I18n.qtr("A to B")
+    text: qsTr("A to B")
 
     sourceSize.width: VLCStyle.icon_toolbar
     sourceSize.height: VLCStyle.icon_toolbar

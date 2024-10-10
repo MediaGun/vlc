@@ -483,8 +483,7 @@ static filter_t *ResamplerCreate(filter_t *p_filter)
     p_resampler->fmt_out = p_filter->fmt_in;
     p_resampler->fmt_out.audio.i_rate = atomic_load( &p_sys->rate_shift );
     aout_FormatPrepare( &p_resampler->fmt_out.audio );
-    p_resampler->p_module = module_need( p_resampler, "audio resampler", NULL,
-                                         false );
+    p_resampler->p_module = module_need_var(p_resampler, "audio resampler", "audio-resampler");
 
     if( p_resampler->p_module == NULL )
     {
@@ -542,9 +541,7 @@ static void ClosePitch( filter_t *p_filter )
     vlc_object_t *p_aout = vlc_object_parent(p_filter);
     var_DelCallback( p_aout, "pitch-shift", PitchCallback, p_sys );
     var_Destroy( p_aout, "pitch-shift" );
-    filter_Close( p_sys->resampler );
-    module_unneed( p_sys->resampler, p_sys->resampler->p_module );
-    vlc_object_delete(p_sys->resampler);
+    vlc_filter_Delete( p_sys->resampler );
     Close( p_filter );
 }
 #endif

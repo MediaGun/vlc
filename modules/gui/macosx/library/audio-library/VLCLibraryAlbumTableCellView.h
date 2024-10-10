@@ -28,28 +28,32 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class VLCImageView;
 @class VLCTrackingView;
-@class VLCMediaLibraryAlbum;
+@class VLCLibraryRepresentedItem;
 
 @interface VLCLibraryAlbumTableCellView : NSTableCellView<VLCLibraryTableCellViewProtocol>
 
 extern NSString * const VLCAudioLibraryCellIdentifier;
 extern NSString * const VLCLibraryAlbumTableCellTableViewColumnIdentifier;
 
-+ (instancetype)fromNibWithOwner:(id)owner;
-+ (CGFloat)defaultHeight;
+@property (class, readonly) CGFloat defaultHeight;
 
-@property (readwrite, assign) IBOutlet VLCTrackingView *trackingView;
-@property (readwrite, assign) IBOutlet VLCImageView *representedImageView;
-@property (readwrite, assign) IBOutlet NSTextField *albumNameTextField;
-@property (readwrite, assign) IBOutlet NSTextField *artistNameTextField;
-@property (readwrite, assign) IBOutlet NSTextField *summaryTextField;
-@property (readwrite, assign) IBOutlet NSTextField *yearTextField;
-@property (readwrite, assign) IBOutlet NSButton *playInstantlyButton;
++ (instancetype)fromNibWithOwner:(id)owner;
+
+@property (readwrite, weak) IBOutlet VLCTrackingView *trackingView;
+@property (readwrite, weak) IBOutlet VLCImageView *representedImageView;
+@property (readwrite, weak) IBOutlet NSTextField *albumNameTextField;
+@property (readwrite, weak) IBOutlet NSButton *artistNameTextButton;
+@property (readwrite, weak) IBOutlet NSButton *genreNameTextButton;
+@property (readwrite, weak) IBOutlet NSTextField *summaryTextField;
+@property (readwrite, weak) IBOutlet NSTextField *yearTextField;
+@property (readwrite, weak) IBOutlet NSButton *playInstantlyButton;
 
 @property (readonly) CGFloat height;
-@property (readwrite, assign, nonatomic) VLCMediaLibraryAlbum *representedAlbum;
+@property (readwrite, assign, nonatomic) VLCLibraryRepresentedItem *representedItem;
 
 - (IBAction)playInstantly:(id)sender;
+- (IBAction)primaryDetailAction:(id)sender;
+- (IBAction)secondaryDetailAction:(id)sender;
 
 @end
 

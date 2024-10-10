@@ -13,12 +13,9 @@ endif
 
 libgpg-error: libgpg-error-$(GPGERROR_VERSION).tar.bz2 .sum-gpg-error
 	$(UNPACK)
-ifdef HAVE_WIN32
+	# $(call update_autoconfig,build-aux)
 	$(APPLY) $(SRC)/gpg-error/windres-make.patch
-ifdef HAVE_WINSTORE
 	$(APPLY) $(SRC)/gpg-error/winrt.patch
-endif
-endif
 	$(APPLY) $(SRC)/gpg-error/missing-unistd-include.patch
 	$(APPLY) $(SRC)/gpg-error/win32-unicode.patch
 	$(APPLY) $(SRC)/gpg-error/version-bump-gawk-5.patch
@@ -32,6 +29,13 @@ endif
 	cp -f -- "$(UNPACK_DIR)/src/syscfg/lock-obj-pub.mingw32.h" \
 		"$(UNPACK_DIR)/src/syscfg/lock-obj-pub.mingw32uwp.h"
 	$(APPLY) $(SRC)/gpg-error/gpg-error-uwp-fix.patch
+
+	# use CreateFile2 in Win8 as CreateFileW is forbidden in UWP
+	$(APPLY) $(SRC)/gpg-error/gpg-error-createfile2.patch
+
+	# don't use GetFileSize on UWP
+	$(APPLY) $(SRC)/gpg-error/gpg-error-uwp-GetFileSize.patch
+
 	$(MOVE)
 
 GPGERROR_CONF := \

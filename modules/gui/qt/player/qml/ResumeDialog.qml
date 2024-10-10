@@ -16,16 +16,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
-import "qrc:///menus/" as Menus
+import VLC.MainInterface
+import VLC.Player
+import VLC.Style
+import VLC.Widgets as Widgets
 
 FocusScope {
     id: resumePanel
@@ -39,7 +39,7 @@ FocusScope {
     enabled: visible
 
     Accessible.role: Accessible.Dialog
-    Accessible.name: I18n.qtr("Resume dialog")
+    Accessible.name: qsTr("Resume dialog")
 
     signal hidden()
 
@@ -68,7 +68,7 @@ FocusScope {
 
     Connections {
         target: Player
-        onCanRestorePlaybackChanged: {
+        function onCanRestorePlaybackChanged() {
             if (Player.canRestorePlayback) {
                 showResumePanel()
             } else {
@@ -113,7 +113,7 @@ FocusScope {
         font.bold: true
         wrapMode: Text.Wrap
 
-        text: I18n.qtr("Do you want to restart the playback where you left off?")
+        text: qsTr("Do you want to restart the playback where you left off?")
     }
 
     Widgets.ButtonExt {
@@ -123,7 +123,7 @@ FocusScope {
         anchors.left: label.right
         anchors.leftMargin: VLCStyle.margin_xsmall
 
-        text: I18n.qtr("Continue")
+        text: qsTr("Continue")
         font.bold: true
         color: theme.fg.primary
         focus: true
@@ -135,7 +135,7 @@ FocusScope {
         Navigation.parentItem: resumePanel
         Navigation.rightItem: closeBtn
         Keys.priority: Keys.AfterItem
-        Keys.onPressed:  continueBtn.Navigation.defaultKeyAction(event)
+        Keys.onPressed: (event) =>  continueBtn.Navigation.defaultKeyAction(event)
     }
 
     Widgets.ButtonExt {
@@ -144,7 +144,7 @@ FocusScope {
         anchors.verticalCenter: label.verticalCenter
         anchors.left: continueBtn.right
 
-        text: I18n.qtr("Dismiss")
+        text: qsTr("Dismiss")
         font.bold: true
         color: theme.fg.primary
         onClicked: hideResumePanel()
@@ -152,7 +152,7 @@ FocusScope {
         Navigation.parentItem: resumePanel
         Navigation.leftItem: continueBtn
         Keys.priority: Keys.AfterItem
-        Keys.onPressed: closeBtn.Navigation.defaultKeyAction(event)
+        Keys.onPressed: (event) => closeBtn.Navigation.defaultKeyAction(event)
     }
 
     states: [

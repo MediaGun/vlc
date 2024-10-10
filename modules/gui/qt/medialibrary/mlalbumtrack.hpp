@@ -18,26 +18,18 @@
 
 #pragma once
 
-#include <QObject>
 #include <QString>
-#include <memory>
 
-#include "mlhelper.hpp"
+#include <vlc_media_library.h>
+
 #include "mlqmltypes.hpp"
 
 class VLCTick;
 
-extern "C" {
-    struct vlc_medialibrary_t;
-    typedef struct vlc_ml_media_t vlc_ml_media_t;
-};
-
-class MLAlbumTrack : public QObject, public MLItem
+class MLAlbumTrack : public MLItem
 {
-    Q_OBJECT
-
 public:
-    MLAlbumTrack(vlc_medialibrary_t *_ml, const vlc_ml_media_t *_data, QObject *_parent = nullptr);
+    MLAlbumTrack(vlc_medialibrary_t *_ml, const vlc_ml_media_t *_data);
 
     QString getTitle() const;
     QString getAlbumTitle() const;
@@ -57,6 +49,4 @@ private:
     unsigned int m_discNumber;
     int64_t m_duration;
     QString m_mrl;
-
-   ml_unique_ptr<vlc_ml_media_t> m_data;
 };

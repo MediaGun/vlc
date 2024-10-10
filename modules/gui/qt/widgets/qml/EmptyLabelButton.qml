@@ -18,11 +18,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import org.videolan.vlc 0.1
+import QtQuick
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.Util
 
 EmptyLabel {
     id: root
@@ -37,28 +38,28 @@ EmptyLabel {
 
     // Functions
 
-    function onNavigate() {
-        History.push(["mc", "network"])
+    function onNavigate(reason) {
+        History.push(["mc", "network"], reason)
     }
 
     // Keys
 
     Keys.priority: Keys.AfterItem
 
-    Keys.onPressed: {
+    Keys.onPressed: (event) => {
         _keyPressed = true
 
         Navigation.defaultKeyAction(event)
     }
 
-    Keys.onReleased: {
+    Keys.onReleased: (event) => {
         if (_keyPressed === false)
             return
 
         _keyPressed = false
 
         if (KeyHelper.matchOk(event))
-            onNavigate()
+            onNavigate(Qt.TabFocusReason)
 
         Navigation.defaultKeyReleaseAction(event)
     }
@@ -74,11 +75,11 @@ EmptyLabel {
 
         focus: true
 
-        text: I18n.qtr("Browse")
+        text: qsTr("Browse")
         iconTxt: VLCIcons.topbar_network
 
         Navigation.parentItem: root
 
-        onClicked: onNavigate()
+        onClicked: onNavigate(Qt.OtherFocusReason)
     }
 }

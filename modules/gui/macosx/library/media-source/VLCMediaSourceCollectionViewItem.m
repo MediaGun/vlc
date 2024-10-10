@@ -52,9 +52,9 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     if (@available(macOS 10.14, *)) {
-        [[NSApplication sharedApplication] removeObserver:self forKeyPath:@"effectiveAppearance"];
+        [NSApplication.sharedApplication removeObserver:self forKeyPath:@"effectiveAppearance"];
     }
 }
 
@@ -62,11 +62,11 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 {
     [(VLCTrackingView *)self.view setViewToHide:self.playInstantlyButton];
     self.annotationTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
-    self.annotationTextField.textColor = [NSColor VLClibraryAnnotationColor];
-    self.annotationTextField.backgroundColor = [NSColor VLClibraryAnnotationBackgroundColor];
+    self.annotationTextField.textColor = NSColor.VLClibraryAnnotationColor;
+    self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
 
     if (@available(macOS 10.14, *)) {
-        [[NSApplication sharedApplication] addObserver:self
+        [NSApplication.sharedApplication addObserver:self
                                             forKeyPath:@"effectiveAppearance"
                                                options:NSKeyValueObservingOptionNew
                                                context:nil];
@@ -97,7 +97,7 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
         isDark = [appearance.name isEqualToString:NSAppearanceNameDarkAqua] || [appearance.name isEqualToString:NSAppearanceNameVibrantDark];
     }
 
-    self.mediaTitleTextField.textColor = isDark ? [NSColor VLClibraryDarkTitleColor] : [NSColor VLClibraryLightTitleColor];
+    self.mediaTitleTextField.textColor = isDark ? NSColor.VLClibraryDarkTitleColor : NSColor.VLClibraryLightTitleColor;
 }
 
 #pragma mark - view representation
@@ -156,12 +156,12 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 
 - (IBAction)playInstantly:(id)sender
 {
-    [[[VLCMain sharedInstance] playlistController] addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
+    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
 }
 
 - (IBAction)addToPlaylist:(id)sender
 {
-    [[[VLCMain sharedInstance] playlistController] addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:NO];
+    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:NO];
 }
 
 -(void)mouseDown:(NSEvent *)theEvent
@@ -171,7 +171,7 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
             _menuController = [[VLCLibraryMenuController alloc] init];
         }
 
-        [_menuController setRepresentedInputItem:_representedInputItem];
+        [_menuController setRepresentedInputItems:@[_representedInputItem]];
         [_menuController popupMenuWithEvent:theEvent forView:self.view];
     }
 
@@ -184,7 +184,7 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
         _menuController = [[VLCLibraryMenuController alloc] init];
     }
 
-    [_menuController setRepresentedInputItem:_representedInputItem];
+    [_menuController setRepresentedInputItems:@[_representedInputItem]];
     [_menuController popupMenuWithEvent:theEvent forView:self.view];
 
     [super rightMouseDown:theEvent];

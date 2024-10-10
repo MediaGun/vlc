@@ -15,14 +15,15 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtGraphicalEffects 1.12
+import QtQuick
+import QtQuick.Controls
+import Qt5Compat.GraphicalEffects
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.Style
+import VLC.Network
+import VLC.Util
 
 Item {
     id: root
@@ -44,25 +45,6 @@ Item {
     // currently shown image
     property var _image: typeImage.visible ? typeImage : artwork
 
-
-    function _baseUri(type) {
-        switch (type) {
-        case NetworkMediaModel.TYPE_DISC:
-            return "qrc:///sd/disc.svg"
-        case NetworkMediaModel.TYPE_CARD:
-            return "qrc:///sd/capture-card.svg"
-        case NetworkMediaModel.TYPE_STREAM:
-            return "qrc:///sd/stream.svg"
-        case NetworkMediaModel.TYPE_PLAYLIST:
-            return "qrc:///sd/playlist.svg"
-        case NetworkMediaModel.TYPE_FILE:
-            return "qrc:///sd/file.svg"
-        default:
-            return "qrc:///sd/directory.svg"
-        }
-    }
-
-
     Widgets.ScaledImage {
         // failsafe cover, we show this while loading artwork or if loading fails
 
@@ -82,7 +64,7 @@ Item {
             if (!networkModel || !visible)
                 return ""
 
-            const img = SVGColorImage.colorize(_baseUri(networkModel.type))
+            const img = SVGColorImage.colorize(networkModel.artworkFallback)
                 .color1(root.color1)
                 .accent(root.accent)
 
@@ -107,8 +89,8 @@ Item {
         verticalAlignment: root.verticalAlignment
 
         source: {
-            if (!!networkModel && !!networkModel.artwork && networkModel.artwork.length > 0)
-                return networkModel.artwork
+            if (networkModel?.artwork && networkModel.artwork.length > 0)
+                return VLCAccessImage.uri(networkModel.artwork)
 
             return ""
         }

@@ -58,19 +58,23 @@ public:
 
     Q_PROPERTY(PlaylistType playlistType READ playlistType WRITE setPlaylistType NOTIFY playlistTypeChanged FINAL)
 
+    Q_PROPERTY(bool transactionPending READ transactionPending NOTIFY transactionPendingChanged FINAL)
+
 public:
     explicit MLPlaylistListModel(QObject * parent = nullptr);
 
 public: // Interface
     Q_INVOKABLE void create(const QString & name, const QVariantList& initialItems);
 
-    Q_INVOKABLE bool append(const MLItemId & playlistId, const QVariantList & ids);
+    Q_INVOKABLE void append(const MLItemId & playlistId, const QVariantList & ids);
 
     Q_INVOKABLE bool deletePlaylists(const QVariantList & ids);
 
     Q_INVOKABLE bool showDialogRename(const QModelIndex & index);
 
-    MLItemId getItemId(int index) const;
+    Q_INVOKABLE MLItemId getItemId(int index) const;
+
+    bool transactionPending() const { return m_transactionPending; };
 
 public: // QAbstractItemModel implementation
     QHash<int, QByteArray> roleNames() const override;
@@ -82,14 +86,14 @@ public: // QAbstractItemModel reimplementation
 protected: // MLBaseModel implementation
     QVariant itemRoleData(MLItem* item, int role = Qt::DisplayRole) const override;
 
-    vlc_ml_sorting_criteria_t roleToCriteria(int role) const override;
-
-    std::unique_ptr<MLBaseModel::BaseLoader> createLoader() const override;
+    std::unique_ptr<MLListCacheLoader> createMLLoader() const override;
 
 private: // Functions
     QString getCover(MLPlaylist * playlist) const;
 
     void endTransaction();
+
+    void setTransactionPending(bool);
 
 private: // MLBaseModel implementation
     void onVlcMlEvent(const MLEvent & event) override;
@@ -99,6 +103,7 @@ signals:
     void coverDefaultChanged();
     void coverPrefixChanged ();
     void playlistTypeChanged();
+    void transactionPendingChanged(bool);
 
 public: // Properties
     QSize coverSize() const;
@@ -123,13 +128,13 @@ private: // Variables
     bool m_resetAfterTransaction = false;
 
 private:
-    struct Loader : public MLBaseModel::BaseLoader
+    struct Loader : public MLListCacheLoader::MLOp
     {
         Loader(const MLPlaylistListModel & model, PlaylistType playlistType);
 
-        size_t count(vlc_medialibrary_t* ml) const override;
+        size_t count(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const override;
 
-        std::vector<std::unique_ptr<MLItem>> load(vlc_medialibrary_t* ml, size_t index, size_t count) const override;
+        std::vector<std::unique_ptr<MLItem>> load(vlc_medialibrary_t* ml, const vlc_ml_query_params_t* queryParams) const override;
 
         std::unique_ptr<MLItem> loadItemById(vlc_medialibrary_t* ml, MLItemId itemId) const override;
 

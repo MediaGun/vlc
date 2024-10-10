@@ -17,11 +17,10 @@ misc_LTLIBRARIES += libexport_plugin.la
 
 libfingerprinter_plugin_la_SOURCES =  \
 	misc/webservices/acoustid.c misc/webservices/acoustid.h \
-	misc/webservices/json.c misc/webservices/json.h \
         misc/webservices/json_helper.h \
 	misc/fingerprinter.c
 libfingerprinter_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(srcdir)/misc
-libfingerprinter_plugin_la_LIBADD = $(LIBM)
+libfingerprinter_plugin_la_LIBADD = libvlc_json.la $(LIBM)
 misc_LTLIBRARIES += libfingerprinter_plugin.la
 
 libgnutls_plugin_la_SOURCES = misc/gnutls.c
@@ -54,11 +53,10 @@ endif
 libuikit_inhibit_plugin_la_SOURCES = misc/inhibit/uikit-inhibit.m
 libuikit_inhibit_plugin_la_LDFLAGS = $(AM_LDFLAGS) -Wl,-framework,UIKit,-framework,Foundation
 libuikit_inhibit_plugin_la_OBJCFLAGS = $(AM_OBJCFLAGS) -fobjc-arc
-if HAVE_IOS
+if HAVE_IOS_OR_TVOS
 misc_LTLIBRARIES += libuikit_inhibit_plugin.la
 endif
-
-if HAVE_TVOS
+if HAVE_XROS
 misc_LTLIBRARIES += libuikit_inhibit_plugin.la
 endif
 

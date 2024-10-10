@@ -18,21 +18,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.Player
+import VLC.Widgets as Widgets
+import VLC.Style
 
-Widgets.IconControlButton {
+Widgets.IconToolButton {
     id: root
 
     signal requestLockUnlockAutoHide(bool lock)
 
-    iconText: VLCIcons.tv
+    text: VLCIcons.tv
 
-    text: I18n.qtr("Programs")
+    description: qsTr("Programs")
 
     // NOTE: We want to pop the menu above the button.
     onClicked: menu.popup(this.mapToGlobal(0, 0), true)
@@ -43,8 +43,14 @@ Widgets.IconControlButton {
         id: menu
 
         player: Player
+        ctx: MainCtx
 
         onAboutToShow: root.requestLockUnlockAutoHide(true)
         onAboutToHide: root.requestLockUnlockAutoHide(false)
+    }
+
+    function forceUnlock() {
+        if(menu)
+            menu.close()
     }
 }

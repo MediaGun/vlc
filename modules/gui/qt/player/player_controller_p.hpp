@@ -23,6 +23,7 @@
 #include "util/variables.hpp"
 #include "input_models.hpp"
 #include "util/varchoicemodel.hpp"
+#include "util/shared_input_item.hpp"
 
 #include <QTimer>
 #include <QUrl>
@@ -44,10 +45,12 @@ public:
     void UpdateInfo( input_item_t *p_item );
     void UpdateStats( const input_stats_t& stats );
     void UpdateProgram(vlc_player_list_action action, const vlc_player_program *prgm);
-    void UpdateVouts(vout_thread_t **vouts, size_t i_vouts);
+    void UpdateVouts(vout_thread_t **vouts, size_t i_vouts, vlc_player_vout_action action);
     void UpdateTrackSelection(vlc_es_id_t *trackid, bool selected);
     void UpdateSpuOrder(vlc_es_id_t *es_id, enum vlc_vout_order spu_order);
     int interpolateTime(vlc_tick_t system_now);
+    bool isCurrentItemSynced();
+    void onArtFetchEnded(input_item_t *, bool fetched);
 
     // SMPTE Timer
     void addSMPTETimer();
@@ -58,7 +61,14 @@ public:
     void callAsync(Fun&& fun)
     {
         Q_Q(PlayerController);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+        // NOTE: Starting with Qt 6.7.0, lambda expression here without a return value
+        //       causes compilation issues with some compilers.
+        // TODO: Find out if a more recent Qt version does not behave that way.
+        QMetaObject::invokeMethod(q, [fun = std::forward<Fun>(fun)]() -> std::monostate { fun(); return std::monostate{}; }, Qt::QueuedConnection);
+#else
         QMetaObject::invokeMethod(q, std::forward<Fun>(fun), Qt::QueuedConnection, nullptr);
+#endif
     }
 
 public:
@@ -75,7 +85,6 @@ public:
     QString         m_name;
     float           m_buffering = 0.f;
     float           m_rate = 1.f;
-    PlayerController::MediaStopAction m_mediaStopAction = PlayerController::MEDIA_STOPPED_CONTINUE;
 
     VLCTick      m_time = 0;
     VLCTick      m_remainingTime = 0;
@@ -85,11 +94,7 @@ public:
     QString m_highResolutionTime { "00:00:00:00" };
     unsigned m_smpteTimerRequestCount = 0;
 
-    using InputItemPtr = vlc_shared_data_ptr_type(input_item_t,
-                                                  input_item_Hold,
-                                                  input_item_Release);
-
-    InputItemPtr    m_currentItem;
+    SharedInputItem    m_currentItem;
     bool            m_canRestorePlayback = false;
 
     int             m_capabilities = 0;
@@ -110,6 +115,7 @@ public:
     vlc_player_timer_id* m_player_timer = nullptr;
     vlc_player_timer_id* m_player_timer_smpte = nullptr;
     struct vlc_player_timer_point m_player_time;
+    bool seeking = false;
     QTimer m_position_timer;
     QTimer m_time_timer;
 
@@ -137,12 +143,14 @@ public:
     VLCVarChoiceModel m_zoom;
     VLCVarChoiceModel m_aspectRatio;
     VLCVarChoiceModel m_crop;
+    VLCVarChoiceModel m_fit;
     VLCVarChoiceModel m_deinterlace;
     VLCVarChoiceModel m_deinterlaceMode;
     QVLCBool m_autoscale;
     bool            m_hasVideo = false;
     bool            m_fullscreen = false;
     bool            m_wallpaperMode = false;
+    int m_vout_ref = 0;
 
     //aout properties
     VLCVarChoiceModel m_audioStereoMode;
@@ -167,6 +175,7 @@ public:
     QString m_artist;
     QString m_album;
     QUrl m_artwork;
+    QUrl m_url;
 };
 
 #endif /* QVLC_INPUT_MANAGER_P_H_ */

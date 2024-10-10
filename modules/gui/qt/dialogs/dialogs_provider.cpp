@@ -28,6 +28,7 @@
 #include <vlc_common.h>
 #include <vlc_interface.h>
 #include <vlc_intf_strings.h>
+#include <vlc_preparser.h>
 
 #include "qt.hpp"
 #include "dialogs_provider.hpp"
@@ -54,7 +55,6 @@
 #include "dialogs/podcast/podcast_configuration.hpp"
 #include "dialogs/plugins/plugins.hpp"
 #include "dialogs/epg/epg.hpp"
-#include "dialogs/errors/errors.hpp"
 #include "dialogs/playlists/playlists.hpp"
 #include "dialogs/firstrun/firstrunwizard.hpp"
 
@@ -79,27 +79,6 @@ DialogsProvider::DialogsProvider( qt_intf_t *_p_intf )
 
 DialogsProvider::~DialogsProvider()
 {
-    MediaInfoDialog::killInstance();
-    MessagesDialog::killInstance();
-    BookmarksDialog::killInstance();
-#ifdef ENABLE_VLM
-    VLMDialog::killInstance();
-#endif
-    HelpDialog::killInstance();
-#ifdef UPDATE_CHECK
-    UpdateDialog::killInstance();
-#endif
-    PluginDialog::killInstance();
-    EpgDialog::killInstance();
-    PlaylistsDialog::killInstance();
-    ExtendedDialog::killInstance();
-    GotoTimeDialog::killInstance();
-    AboutDialog::killInstance();
-    PodcastConfigDialog::killInstance();
-    OpenDialog::killInstance();
-    ErrorsDialog::killInstance();
-    FirstRunWizard::killInstance();
-
     /* free parentless menus  */
     VLCMenuBar::freeRendererMenu();
 }
@@ -269,79 +248,86 @@ void DialogsProvider::prefsDialog()
 
 void DialogsProvider::firstRunDialog()
 {
-    FirstRunWizard *p = FirstRunWizard::getInstance( p_intf );
-    QVLCDialog::setWindowTransientParent(p, nullptr, p_intf);
-    p->show();
+    ensureDialog(m_firstRunDialog);
+    QVLCDialog::setWindowTransientParent(m_firstRunDialog.get(), nullptr, p_intf);
+    m_firstRunDialog->show();
 }
 
 void DialogsProvider::extendedDialog()
 {
-    ExtendedDialog *extDialog = ExtendedDialog::getInstance(p_intf );
-
-    if( !extDialog->isVisible() || /* Hidden */
-        extDialog->currentTab() != 0 )  /* wrong tab */
-        extDialog->showTab( 0 );
+    ensureDialog(m_extendedDialog);
+    if( !m_extendedDialog->isVisible() || /* Hidden */
+        m_extendedDialog->currentTab() != 0 )  /* wrong tab */
+        m_extendedDialog->showTab( 0 );
     else
-        extDialog->hide();
+        m_extendedDialog->hide();
 }
 
 void DialogsProvider::synchroDialog()
 {
-    ExtendedDialog *extDialog = ExtendedDialog::getInstance(p_intf );
-
-    if( !extDialog->isVisible() || /* Hidden */
-        extDialog->currentTab() != 2 )  /* wrong tab */
-        extDialog->showTab( 2 );
+    ensureDialog(m_extendedDialog);
+    if( !m_extendedDialog->isVisible() || /* Hidden */
+        m_extendedDialog->currentTab() != 2 )  /* wrong tab */
+        m_extendedDialog->showTab( 2 );
     else
-        extDialog->hide();
+        m_extendedDialog->hide();
 }
 
 void DialogsProvider::messagesDialog(int page)
 {
-    MessagesDialog *msgDialog = MessagesDialog::getInstance( p_intf );
-
-    if(!msgDialog->isVisible() || page)
-        msgDialog->showTab(page);
+    ensureDialog(m_messagesDialog);
+    if(!m_messagesDialog->isVisible() || page)
+        m_messagesDialog->showTab(page);
     else
-        msgDialog->toggleVisible();
+        m_messagesDialog->toggleVisible();
 }
 
 void DialogsProvider::gotoTimeDialog()
 {
-    GotoTimeDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_vlmDialog);
 }
 
 #ifdef ENABLE_VLM
 void DialogsProvider::vlmDialog()
 {
-    VLMDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_vlmDialog);
 }
 #endif
 
 void DialogsProvider::helpDialog()
 {
-    HelpDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_helpDialog);
 }
 
 #ifdef UPDATE_CHECK
 void DialogsProvider::updateDialog()
 {
-    UpdateDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_updateDialog);
 }
 #endif
 
 void DialogsProvider::aboutDialog()
 {
-    AboutDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_aboutDialog);
 }
 
 void DialogsProvider::mediaInfoDialog( void )
 {
-    MediaInfoDialog *dialog = MediaInfoDialog::getInstance( p_intf );
-    if( !dialog->isVisible() || dialog->currentTab() != MediaInfoDialog::META_PANEL )
-        dialog->showTab( MediaInfoDialog::META_PANEL );
+    ensureDialog(m_mediaInfoDialog);
+    if( !m_mediaInfoDialog->isVisible() || m_mediaInfoDialog->currentTab() != MediaInfoDialog::META_PANEL )
+        m_mediaInfoDialog->showTab( MediaInfoDialog::META_PANEL );
     else
-        dialog->hide();
+        m_mediaInfoDialog->hide();
+}
+
+void DialogsProvider::mediaInfoDialog( const SharedInputItem& inputItem )
+{
+    assert(inputItem.get());
+
+    MediaInfoDialog * const mid = new MediaInfoDialog( p_intf, inputItem );
+    mid->setWindowFlag( Qt::Dialog );
+    mid->setAttribute( Qt::WA_DeleteOnClose );
+    mid->showTab( MediaInfoDialog::META_PANEL );
 }
 
 void DialogsProvider::mediaInfoDialog( const PlaylistItem& pItem )
@@ -357,57 +343,107 @@ void DialogsProvider::mediaInfoDialog( const PlaylistItem& pItem )
 
     if( p_input )
     {
-        MediaInfoDialog * const mid = new MediaInfoDialog( p_intf, p_input );
-        mid->setWindowFlag( Qt::Dialog );
-        mid->setAttribute(Qt::WA_DeleteOnClose);
-        mid->showTab( MediaInfoDialog::META_PANEL );
+        mediaInfoDialog( SharedInputItem{ p_input } );
+    }
+}
+
+void DialogsProvider::mediaInfoDialog( const MLItemId& itemId )
+{
+    assert( p_intf );
+
+    vlc_medialibrary_t* const ml = vlc_ml_instance_get( p_intf );
+    assert( ml );
+
+    input_item_t * const inputItem = vlc_ml_get_input_item( ml, itemId.id );
+    assert( inputItem );
+
+    const SharedInputItem sharedInputItem { inputItem, false };
+    if ( input_item_IsPreparsed( inputItem ) )
+    {
+        mediaInfoDialog( sharedInputItem );
+    }
+    else
+    {
+        static const struct vlc_metadata_cbs cbs = {
+            // on_preparse_ended
+            []( input_item_t * const item, enum input_item_preparse_status status, void * const userData ) {
+                const auto dp = static_cast<DialogsProvider *>( userData );
+
+                if ( status == ITEM_PREPARSE_TIMEOUT || status == ITEM_PREPARSE_FAILED )
+                    qWarning( "Could not preparse input item %p. Status %i", item, status );
+
+                const SharedInputItem sharedInputItem{ item };
+
+                QMetaObject::invokeMethod( dp, [dp, sharedInputItem]() {
+                        dp->mediaInfoDialog( sharedInputItem );
+                    }, Qt::QueuedConnection );
+            },
+            // on_art_fetch_ended
+            NULL,
+            // on_subtree_added
+            NULL,
+            // on_attachments_added
+            NULL
+        };
+
+        vlc_preparser_t *parser = libvlc_GetMainPreparser( vlc_object_instance( p_intf ) );
+        if (unlikely(parser == NULL))
+            return;
+
+        const int result = vlc_preparser_Push( parser, inputItem,
+                                               static_cast<input_item_meta_request_option_t>(META_REQUEST_OPTION_SCOPE_ANY | META_REQUEST_OPTION_SCOPE_FORCED | META_REQUEST_OPTION_PARSE_SUBITEMS),
+                                               &cbs, this, 0, NULL );
+        if( Q_UNLIKELY( result != VLC_SUCCESS ) )
+            msg_Warn( p_intf, "vlc_preparser_Push() failed for input item %p (%s, %s)",
+                      inputItem, inputItem->psz_name, inputItem->psz_uri );
     }
 }
 
 void DialogsProvider::mediaCodecDialog()
 {
-    MediaInfoDialog *dialog = MediaInfoDialog::getInstance( p_intf );
-    if( !dialog->isVisible() || dialog->currentTab() != MediaInfoDialog::INFO_PANEL )
-        dialog->showTab( MediaInfoDialog::INFO_PANEL );
+    ensureDialog(m_mediaInfoDialog);
+
+    if( !m_mediaInfoDialog->isVisible() || m_mediaInfoDialog->currentTab() != MediaInfoDialog::INFO_PANEL )
+        m_mediaInfoDialog->showTab( MediaInfoDialog::INFO_PANEL );
     else
-        dialog->hide();
+        m_mediaInfoDialog->hide();
 }
 
 void DialogsProvider::playlistsDialog()
 {
-    PlaylistsDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_playlistDialog);
 }
 
 void DialogsProvider::playlistsDialog( const QVariantList & medias )
 {
-    PlaylistsDialog * dialog = PlaylistsDialog::getInstance( p_intf );
+    ensureDialog(m_playlistDialog);
 
-    dialog->setMedias(medias);
+    m_playlistDialog->setMedias(medias);
 
-    dialog->show();
+    m_playlistDialog->show();
 
     // FIXME: We shouldn't have to call this on here.
-    dialog->getInstance( p_intf )->activateWindow();
+    m_playlistDialog->activateWindow();
 }
 
 void DialogsProvider::bookmarksDialog()
 {
-    BookmarksDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_bookmarkDialog);
 }
 
 void DialogsProvider::podcastConfigureDialog()
 {
-    PodcastConfigDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_podcastDialog);
 }
 
 void DialogsProvider::pluginDialog()
 {
-    PluginDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_pluginDialog);
 }
 
 void DialogsProvider::epgDialog()
 {
-    EpgDialog::getInstance( p_intf )->toggleVisible();
+    toggleDialogVisible(m_egpDialog);
 }
 
 void DialogsProvider::setPopupMenu()
@@ -490,36 +526,37 @@ void DialogsProvider::openFileGenericDialog( intf_dialog_args_t *p_arg )
  * Open Dialog first - Simple Open then
  ****************************************************************************/
 
-void DialogsProvider::openDialog( int i_tab )
+void DialogsProvider::openDialog( OpenDialog::OpenTab i_tab )
 {
-    OpenDialog::getInstance(p_intf )->showTab( i_tab );
+    ensureDialog(m_openDialog);
+    m_openDialog->showTab( i_tab, OpenDialog::OPEN_AND_PLAY );
 }
 void DialogsProvider::openDialog()
 {
-    openDialog( OPEN_FILE_TAB );
+    openDialog( OpenDialog::OPEN_FILE_TAB );
 }
 void DialogsProvider::openFileDialog()
 {
-    openDialog( OPEN_FILE_TAB );
+    openDialog( OpenDialog::OPEN_FILE_TAB );
 }
 void DialogsProvider::openDiscDialog()
 {
-    openDialog( OPEN_DISC_TAB );
+    openDialog( OpenDialog::OPEN_DISC_TAB );
 }
 void DialogsProvider::openNetDialog()
 {
-    openDialog( OPEN_NETWORK_TAB );
+    openDialog( OpenDialog::OPEN_NETWORK_TAB );
 }
 void DialogsProvider::openCaptureDialog()
 {
-    openDialog( OPEN_CAPTURE_TAB );
+    openDialog( OpenDialog::OPEN_CAPTURE_TAB );
 }
 
 /* Same as the open one, but force the enqueue */
-void DialogsProvider::PLAppendDialog( int tab )
+void DialogsProvider::PLAppendDialog( OpenDialog::OpenTab tab )
 {
-    OpenDialog::getInstance(p_intf, false,
-                             OPEN_AND_ENQUEUE )->showTab( tab );
+    ensureDialog(m_openDialog);
+    m_openDialog->showTab( tab, OpenDialog::OPEN_AND_ENQUEUE );
 }
 
 /**
@@ -818,14 +855,14 @@ void DialogsProvider::streamingDialog(const QList<QUrl> &urls, bool b_stream )
 
 void DialogsProvider::openAndStreamingDialogs()
 {
-    OpenDialog::getInstance(p_intf, false, OPEN_AND_STREAM )
-                                ->showTab( OPEN_FILE_TAB );
+    ensureDialog(m_openDialog);
+    m_openDialog->showTab( OpenDialog::OPEN_FILE_TAB, OpenDialog::OPEN_AND_STREAM );
 }
 
 void DialogsProvider::openAndTranscodingDialogs()
 {
-    OpenDialog::getInstance(p_intf, false, OPEN_AND_SAVE )
-                                ->showTab( OPEN_FILE_TAB );
+    ensureDialog(m_openDialog);
+    m_openDialog->showTab( OpenDialog::OPEN_FILE_TAB, OpenDialog::OPEN_AND_SAVE );
 }
 
 void  DialogsProvider::loadMediaFile( const es_format_category_e category, const int filter , const QString &dialogTitle)
@@ -904,4 +941,19 @@ void DialogsProvider::sendKey( int key )
 
      // forward key to vlc core when not a key accelerator
      var_SetInteger( vlc_object_instance(p_intf), "key-pressed", key );
+}
+
+
+template<typename T>
+void DialogsProvider::ensureDialog(std::unique_ptr<T>& dialog)
+{
+    if (!dialog)
+        dialog = std::make_unique<T>(p_intf);
+}
+
+template<typename T>
+void DialogsProvider::toggleDialogVisible(std::unique_ptr<T>& dialog)
+{
+    ensureDialog(dialog);
+    dialog->toggleVisible();
 }

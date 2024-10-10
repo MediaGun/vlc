@@ -1,5 +1,5 @@
 # UPNP
-UPNP_VERSION := 1.14.16
+UPNP_VERSION := 1.14.18
 UPNP_URL := $(GITHUB)/pupnp/pupnp/archive/refs/tags/release-$(UPNP_VERSION).tar.gz
 
 ifdef BUILD_NETWORK
@@ -31,10 +31,6 @@ endif
 
 upnp: pupnp-release-$(UPNP_VERSION).tar.gz .sum-upnp
 	$(UNPACK)
-ifdef HAVE_WIN32
-	$(APPLY) $(SRC)/upnp/libupnp-win32.patch
-	$(APPLY) $(SRC)/upnp/windows-version-inet.patch
-endif
 ifdef HAVE_ANDROID
 	$(APPLY) $(SRC)/upnp/revert-ifaddrs.patch
 else
@@ -46,11 +42,12 @@ endif
 ifdef HAVE_IOS
 	$(APPLY) $(SRC)/upnp/fix-reuseaddr-option.patch
 endif
+	$(APPLY) $(SRC)/upnp/0001-disable-fseeko-usage-on-32-bit-Android-older-than-AP.patch
 	$(MOVE)
 
 .upnp: upnp toolchain.cmake
 	$(CMAKECLEAN)
-	$(HOSTVARS) $(CMAKE) $(UPNP_CONF)
+	$(HOSTVARS_CMAKE) $(CMAKE) $(UPNP_CONF)
 	+$(CMAKEBUILD)
 	+$(CMAKEINSTALL)
 	touch $@

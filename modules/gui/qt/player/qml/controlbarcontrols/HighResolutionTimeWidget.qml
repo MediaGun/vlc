@@ -16,14 +16,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
+import QtQuick
+import QtQuick.Controls
 
-import org.videolan.vlc 0.1
 
-import "qrc:///player/"
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Player
+import VLC.Widgets as Widgets
+import VLC.Style
 
 
 Control {
@@ -34,7 +34,7 @@ Control {
     padding: VLCStyle.focus_border
 
     Keys.priority: Keys.AfterItem
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
     Accessible.role: Accessible.Indicator
     Accessible.name:  paintOnly ? "00:00:00:00" : Player.highResolutionTime
@@ -65,9 +65,8 @@ Control {
     }
 
     background: Widgets.AnimatedBackground {
-        active: visualFocus
-        animate: theme.initialized
-        activeBorderColor: theme.visualFocus
+        enabled: theme.initialized
+        border.color: visualFocus ? theme.visualFocus : "transparent"
     }
 
     contentItem: Item {

@@ -18,13 +18,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Util
+import VLC.Widgets as Widgets
+import VLC.Player
 
 TracksPage {
     id: root
@@ -32,7 +34,7 @@ TracksPage {
     // Functions
 
     function textFromValue(value, locale) {
-        return I18n.qtr("%1 ms").arg(Number(value).toLocaleString(locale, 'f', 0))
+        return qsTr("%1 ms").arg(Number(value).toLocaleString(locale, 'f', 0))
     }
 
     function valueFromText(text, locale) {
@@ -50,7 +52,7 @@ TracksPage {
         Widgets.SubtitleLabel {
             Layout.fillWidth: true
 
-            text: I18n.qtr("Audio track synchronization")
+            text: qsTr("Audio track synchronization")
 
             color: root.colorContext.fg.primary
         }
@@ -62,13 +64,18 @@ TracksPage {
             spacing: VLCStyle.margin_xsmall
 
             Accessible.role: Accessible.Grouping
-            Accessible.name: I18n.qtr("Audio track delay")
+            Accessible.name: qsTr("Audio track delay")
+
+            DelayEstimator {
+                id: delayEstimator
+                onDelayChanged: Player.addAudioDelay(delayEstimator.delay)
+            }
 
             Widgets.MenuCaption {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignHCenter
 
-                text: I18n.qtr("Audio track delay")
+                text: qsTr("Audio track delay")
 
                 color: root.colorContext.fg.primary
             }
@@ -106,7 +113,7 @@ TracksPage {
                 Connections {
                     target: Player
 
-                    onAudioDelayChanged: {
+                    function onAudioDelayChanged() {
                         spinBox.update = false
 
                         spinBox.value = Player.audioDelayMS
@@ -119,12 +126,50 @@ TracksPage {
             Widgets.ActionButtonOverlay {
                 id: reset
 
-                text: I18n.qtr("Reset")
+                text: qsTr("Reset")
 
-                onClicked: spinBox.value = 0
+                onClicked: {
+                    Player.audioDelayMS = 0
+                    delayEstimator.reset()
+                }
 
                 Navigation.parentItem: root
                 Navigation.leftItem: spinBox
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignRight
+
+            spacing: VLCStyle.margin_xsmall
+
+            Widgets.TrackDelayButton {
+                id: soundHeard
+
+                text: qsTr("Sound Heard")
+                iconTxt: VLCIcons.check
+                selected: delayEstimator.isSpottedTimeMarked
+
+                onClicked: {
+                    delayEstimator.markSpottedTime() //method name should be changed
+                    if (!delayEstimator.isHeardTimeMarked && delayEstimator.isSpottedTimeMarked)
+                        soundSpotted.animate()
+                }
+            }
+
+            Widgets.TrackDelayButton {
+                id: soundSpotted
+
+                text: qsTr("Sound Spotted")
+                iconTxt: VLCIcons.check
+                selected: delayEstimator.isHeardTimeMarked
+
+                onClicked: {
+                    delayEstimator.markHeardTime() //method name should be changed
+                    if (!delayEstimator.isSpottedTimeMarked && delayEstimator.isHeardTimeMarked)
+                        soundHeard.animate()
+                }
             }
         }
     }

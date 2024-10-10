@@ -15,22 +15,22 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
+import QtQuick
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Widgets as Widgets
+import VLC.Style
 
-import org.videolan.vlc 0.1
 
-Widgets.IconControlButton {
-    iconText: VLCIcons.fullscreen
+Widgets.IconToolButton {
+    text: VLCIcons.fullscreen
 
     onClicked: {
-        if (History.current.view === "player")
-            History.previous()
+        if (History.match(History.viewPath, ["player"]))
+            MainCtx.requestShowMainView()
         else
-            g_mainDisplay.showPlayer()
+            MainCtx.requestShowPlayerView()
     }
 
-    text: I18n.qtr("Switch Player")
+    description: qsTr("Switch Player")
 }

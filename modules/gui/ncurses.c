@@ -688,9 +688,9 @@ static int DrawStats(intf_thread_t *intf)
     vlc_mutex_lock(&item->lock);
     p_stats = item->p_stats;
 
-    for (int i = 0; i < item->i_es ; i++) {
-        i_audio += (item->es[i]->i_cat == AUDIO_ES);
-        i_video += (item->es[i]->i_cat == VIDEO_ES);
+    for (size_t i = 0; i < item->es_vec.size ; i++) {
+        i_audio += (item->es_vec.data[i].es.i_cat == AUDIO_ES);
+        i_video += (item->es_vec.data[i].es.i_cat == VIDEO_ES);
     }
 
     /* Input */
@@ -1503,17 +1503,17 @@ static void HandleCommonKey(intf_thread_t *intf, vlc_player_t *player, int key)
 
     case 'c':
         vlc_player_Lock(player);
-        vlc_player_SelectNextTrack(player, AUDIO_ES);
+        vlc_player_SelectNextTrack(player, AUDIO_ES, VLC_VOUT_ORDER_PRIMARY);
         vlc_player_Unlock(player);
         break;
     case 'v':
         vlc_player_Lock(player);
-        vlc_player_SelectNextTrack(player, SPU_ES);
+        vlc_player_SelectNextTrack(player, SPU_ES, VLC_VOUT_ORDER_PRIMARY);
         vlc_player_Unlock(player);
         break;
     case 'b':
         vlc_player_Lock(player);
-        vlc_player_SelectNextTrack(player, VIDEO_ES);
+        vlc_player_SelectNextTrack(player, VIDEO_ES, VLC_VOUT_ORDER_PRIMARY);
         vlc_player_Unlock(player);
         break;
 

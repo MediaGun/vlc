@@ -16,24 +16,23 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
+import QtQuick
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
-
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.PlayerControls
 
 FocusScope {
     id: playerControlLayout
 
     // Properties
 
-    property real defaultSize: VLCStyle.icon_normal // default size for IconToolButton based controls
-
     property real spacing: VLCStyle.margin_normal // spacing between controls
 
-    property real layoutSpacing: VLCStyle.margin_xlarge // spacing between layouts (left, center, and right)
+    property real layoutSpacing: VLCStyle.margin_xxlarge // spacing between layouts (left, center, and right)
 
     property int identifier: -1
 
@@ -49,114 +48,147 @@ FocusScope {
         colorSet: ColorContext.Window
     }
 
-    // Private
-
-    property int _minimumSpacing: layoutSpacing - spacing
-
     // Signals
 
     signal requestLockUnlockAutoHide(bool lock)
+    signal menuOpened(var menu)
+    ///incomming signal to request all menu and popup to close
+    signal forceUnlock()
 
     // Settings
 
-    // NOTE: We want a smaller ControlBar when the controls are pinned.
-    implicitHeight: (MainCtx.pinVideoControls) ? VLCStyle.controlLayoutHeightPinned
-                                               : VLCStyle.controlLayoutHeight
+    implicitWidth: loaderLeftRight.active ? loaderLeftRight.implicitWidth
+                                          : (loaderLeft.implicitWidth + loaderCenter.implicitWidth + loaderRight.implicitWidth)
+
+    implicitHeight: loaderLeftRight.active ? loaderLeftRight.implicitHeight
+                                           : Math.max(loaderLeft.implicitHeight, loaderCenter.implicitHeight, loaderRight.implicitHeight)
 
     // Events
 
-    Component.onCompleted: {
-        console.assert(identifier >= 0)
-
-        _updateLayout()
-    }
-
-    onWidthChanged: _updateLayout()
-
-    // Functions
-
-    function _updateLayout() {
-        let item = loaderCenter.item
-
-        // NOTE: Sometimes this gets called before the item is loaded.
-        if (item === null)
-            return
-
-        if (item.count) {
-
-            loaderCenter.width = Math.min(loaderCenter.implicitWidth, width)
-
-            loaderLeft.width = loaderCenter.x - _minimumSpacing
-
-            loaderRight.width = width - loaderCenter.x - loaderCenter.width - _minimumSpacing
-
-        } else if (loaderRight.item.count) {
-
-            const implicitLeft = loaderLeft.implicitWidth
-            const implicitRight = loaderRight.implicitWidth
-
-            const total = implicitLeft + implicitRight
-
-            let size = total + _minimumSpacing
-
-            if (size > width) {
-                size = width - _minimumSpacing
-
-                // NOTE: When both sizes are equals we expand on the left.
-                if (implicitLeft >= implicitRight) {
-
-                    loaderRight.width = Math.round(size * (implicitRight / total))
-
-                    item = loaderRight.item
-
-                    if (item === null)
-                        return
-
-                    const contentWidth = item.contentWidth
-
-                    // NOTE: We assign the remaining width based on the contentWidth.
-                    if (contentWidth)
-                        loaderLeft.width = width - contentWidth - _minimumSpacing
-                    else
-                        loaderLeft.width = width
-                } else {
-                    loaderLeft.width = Math.round(size * (implicitLeft / total))
-
-                    item = loaderLeft.item
-
-                    if (item === null)
-                        return
-
-                    const contentWidth = item.contentWidth
-
-                    // NOTE: We assign the remaining width based on the contentWidth.
-                    if (contentWidth)
-                        loaderRight.width = width - contentWidth - _minimumSpacing
-                    else
-                        loaderRight.width = width
-                }
-            } else {
-                loaderLeft.width = implicitLeft
-                loaderRight.width = implicitRight
-            }
-        } else
-            loaderLeft.width = width
-    }
+    Component.onCompleted: console.assert(identifier >= 0)
 
     // Children
 
     Loader {
+        id: loaderLeftRight
+
+        anchors.fill: parent
+
+        active: !loaderCenter.active &&
+                playerControlLayout.model &&
+                ((playerControlLayout.model.left && (playerControlLayout.model.left.count > 0)) ||
+                (playerControlLayout.model.right && (playerControlLayout.model.right.count > 0)))
+
+        focus: active
+
+        sourceComponent: RowLayout {
+            spacing: playerControlLayout.spacing
+
+            focus: true
+
+            // TODO: Qt >= 5.13 Use QConcatenateTablesProxyModel
+            //       instead of multiple repeaters
+
+            ControlRepeater {
+                id: leftRepeater
+                model: ControlListFilter {
+                    sourceModel: playerControlLayout.model.left
+
+                    player: Player
+                    ctx: MainCtx
+                }
+
+                Navigation.parentItem: playerControlLayout
+                Navigation.rightAction: function() {
+                    const item = rightRepeater.itemAt(0)
+                    if (item)
+                        item.forceActiveFocus(Qt.TabFocusReason)
+                    else
+                        return false
+                }
+
+                availableWidth: loaderLeftRight.width
+                availableHeight: loaderLeftRight.height
+
+                Component.onCompleted: {
+                    requestLockUnlockAutoHide.connect(playerControlLayout.requestLockUnlockAutoHide)
+                    menuOpened.connect(playerControlLayout.menuOpened)
+                    playerControlLayout.forceUnlock.connect(leftRepeater.forceUnlock)
+                }
+            }
+
+            Item {
+                function containsVisibleItem(repeater) {
+                    for (let i = 0; i < repeater.count; ++i) {
+                        const item = repeater.itemAt(i)
+
+                        if (item && item.visible)
+                            return true
+                    }
+
+                    return false
+                }
+
+                Layout.minimumWidth: (containsVisibleItem(leftRepeater) && containsVisibleItem(rightRepeater)) ? playerControlLayout.layoutSpacing
+                                                                                                               : 0
+
+                Layout.fillWidth: true
+                visible: true
+            }
+
+            ControlRepeater {
+                id: rightRepeater
+                model: ControlListFilter {
+                    sourceModel: playerControlLayout.model.right
+
+                    player: Player
+                    ctx: MainCtx
+                }
+
+                Navigation.parentItem: playerControlLayout
+                Navigation.leftAction: function() {
+                    const item = leftRepeater.itemAt(leftRepeater.count - 1)
+                    if (item)
+                        item.forceActiveFocus(Qt.BacktabFocusReason)
+                    else
+                        return false
+                }
+
+                availableWidth: loaderLeftRight.width
+                availableHeight: loaderLeftRight.height
+
+                Component.onCompleted: {
+                    requestLockUnlockAutoHide.connect(playerControlLayout.requestLockUnlockAutoHide)
+                    menuOpened.connect(playerControlLayout.menuOpened)
+                    playerControlLayout.forceUnlock.connect(rightRepeater.forceUnlock)
+                }
+            }
+
+        }
+    }
+
+
+    Loader {
         id: loaderLeft
 
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors {
+            right: loaderCenter.left
+            left: parent.left
+            top: parent.top
+            bottom: parent.bottom
 
-        active: !!playerControlLayout.model && !!playerControlLayout.model.left
+            // Spacing for the filler item acts as padding
+            rightMargin: layoutSpacing - spacing
+        }
 
-        focus: true
+        active: !!playerControlLayout.model?.left && (playerControlLayout.model.left.count > 0) &&
+                !loaderLeftRight.active
+
+        focus: active
 
         sourceComponent: ControlLayout {
+            id: leftControlLayout
+
             model: ControlListFilter {
                 sourceModel: playerControlLayout.model.left
 
@@ -164,34 +196,63 @@ FocusScope {
                 ctx: MainCtx
             }
 
-            alignment: Qt.AlignLeft
+            alignment: (Qt.AlignVCenter | Qt.AlignLeft)
+
+            spacing: playerControlLayout.spacing
 
             focus: true
 
-            altFocusAction: Navigation.defaultNavigationRight
+            altFocusAction: () => Navigation.defaultNavigationRight()
 
             Navigation.parentItem: playerControlLayout
             Navigation.rightItem: loaderCenter.item
 
-            onImplicitWidthChanged: playerControlLayout._updateLayout()
-
-            onCountChanged: playerControlLayout._updateLayout()
-
-            onRequestLockUnlockAutoHide: playerControlLayout.requestLockUnlockAutoHide(lock)
+            Component.onCompleted: {
+                requestLockUnlockAutoHide.connect(playerControlLayout.requestLockUnlockAutoHide)
+                menuOpened.connect(playerControlLayout.menuOpened)
+                playerControlLayout.forceUnlock.connect(leftControlLayout.forceUnlock)
+            }
         }
     }
 
     Loader {
         id: loaderCenter
 
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            top: parent.top
+            bottom: parent.bottom
+        }
 
-        anchors.horizontalCenter: parent.horizontalCenter
+        // TODO: "ControlListFilter"'s count......
+        active: !!playerControlLayout.model && !!playerControlLayout.model.center && (playerControlLayout.model.center.count > 0)
 
-        active: !!playerControlLayout.model && !!playerControlLayout.model.center
+        Binding on width {
+            delayed: true
+            when: loaderCenter._componentCompleted
+            value: {
+                const item = loaderCenter.item
+
+                const minimumWidth = (item && item.Layout.minimumWidth > 0) ? item.Layout.minimumWidth : implicitWidth
+                const maximumWidth = (item && item.Layout.maximumWidth > 0) ? item.Layout.maximumWidth : implicitWidth
+
+                if ((loaderLeft.active && (loaderLeft.width > 0)) || (loaderRight.active && (loaderRight.width > 0))) {
+                    return minimumWidth
+                } else {
+                    return Math.min(loaderCenter.parent.width, maximumWidth)
+                }
+            }
+        }
+
+        property bool _componentCompleted: false
+
+        Component.onCompleted: {
+            _componentCompleted = true
+        }
 
         sourceComponent: ControlLayout {
+            id: centerControlLayout
+
             model: ControlListFilter {
                 sourceModel: playerControlLayout.model.center
 
@@ -201,30 +262,41 @@ FocusScope {
 
             focus: true
 
-            altFocusAction: Navigation.defaultNavigationUp
+            spacing: playerControlLayout.spacing
+
+            altFocusAction: () => Navigation.defaultNavigationUp()
 
             Navigation.parentItem: playerControlLayout
             Navigation.leftItem: loaderLeft.item
             Navigation.rightItem: loaderRight.item
 
-            onImplicitWidthChanged: playerControlLayout._updateLayout()
-
-            onCountChanged: playerControlLayout._updateLayout()
-
-            onRequestLockUnlockAutoHide: playerControlLayout.requestLockUnlockAutoHide(lock)
+            Component.onCompleted: {
+                requestLockUnlockAutoHide.connect(playerControlLayout.requestLockUnlockAutoHide)
+                menuOpened.connect(playerControlLayout.menuOpened)
+                playerControlLayout.forceUnlock.connect(centerControlLayout.forceUnlock)
+            }
         }
     }
 
     Loader {
         id: loaderRight
 
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors {
+            left: loaderCenter.right
+            right: parent.right
+            top: parent.top
+            bottom: parent.bottom
 
-        active: !!playerControlLayout.model && !!playerControlLayout.model.right
+            // Spacing for the filler item acts as padding
+            leftMargin: layoutSpacing - spacing
+        }
+
+        active: !!playerControlLayout.model && !!playerControlLayout.model.right && (playerControlLayout.model.right.count > 0) &&
+                !loaderLeftRight.active
 
         sourceComponent: ControlLayout {
+            id: rightControlLayout
+
             model: ControlListFilter {
                 sourceModel: playerControlLayout.model.right
 
@@ -232,20 +304,24 @@ FocusScope {
                 ctx: MainCtx
             }
 
-            alignment: Qt.AlignRight
+            alignment: (Qt.AlignVCenter | Qt.AlignRight)
+
+            spacing: playerControlLayout.spacing
 
             focus: true
 
-            altFocusAction: Navigation.defaultNavigationLeft
+            altFocusAction: () => Navigation.defaultNavigationLeft()
 
             Navigation.parentItem: playerControlLayout
             Navigation.leftItem: loaderCenter.item
 
-            onImplicitWidthChanged: playerControlLayout._updateLayout()
+            onRequestLockUnlockAutoHide: (lock) => playerControlLayout.requestLockUnlockAutoHide(lock)
 
-            onCountChanged: playerControlLayout._updateLayout()
+            onMenuOpened: (menu) => playerControlLayout.menuOpened(menu)
 
-            onRequestLockUnlockAutoHide: playerControlLayout.requestLockUnlockAutoHide(lock)
+            Component.onCompleted:{
+                playerControlLayout.forceUnlock.connect(rightControlLayout.forceUnlock)
+            }
         }
     }
 }

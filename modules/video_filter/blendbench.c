@@ -32,7 +32,6 @@
 #include <vlc_configuration.h>
 #include <vlc_plugin.h>
 #include <vlc_sout.h>
-#include <vlc_modules.h>
 
 #include <vlc_filter.h>
 #include <vlc_picture.h>
@@ -243,7 +242,7 @@ static picture_t *Filter( filter_t *p_filter, picture_t *p_pic )
     }
     p_blend->fmt_out.video = p_sys->p_base_image->format;
     p_blend->fmt_in.video = p_sys->p_blend_image->format;
-    p_blend->p_module = module_need( p_blend, "video blending", NULL, false );
+    p_blend->p_module = vlc_filter_LoadModule( p_blend, "video blending", NULL, false );
     if( !p_blend->p_module )
     {
         picture_Release( p_pic );
@@ -268,10 +267,7 @@ static picture_t *Filter( filter_t *p_filter, picture_t *p_pic )
                   p_sys->p_blend_image->p[Y_PLANE].i_visible_pitch *
                   p_sys->p_blend_image->p[Y_PLANE].i_visible_lines );
 
-    filter_Close( p_blend );
-    module_unneed( p_blend, p_blend->p_module );
-
-    vlc_object_delete(p_blend);
+    vlc_filter_Delete( p_blend );
 
     p_sys->b_done = true;
     return p_pic;

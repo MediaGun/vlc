@@ -77,16 +77,16 @@ static int Control(vout_display_t *vd, int query)
 
     switch (query) {
         case VOUT_DISPLAY_CHANGE_DISPLAY_SIZE:
-        case VOUT_DISPLAY_CHANGE_DISPLAY_FILLED:
-        case VOUT_DISPLAY_CHANGE_ZOOM:
         case VOUT_DISPLAY_CHANGE_SOURCE_ASPECT:
         case VOUT_DISPLAY_CHANGE_SOURCE_CROP:
+        case VOUT_DISPLAY_CHANGE_SOURCE_PLACE:
             return VLC_SUCCESS;
     }
     return VLC_EGENERIC;
 }
 
-static void Prepare(vout_display_t *vd, picture_t *pic, subpicture_t *subpic,
+static void Prepare(vout_display_t *vd, picture_t *pic,
+                    const struct vlc_render_subpicture *subpic,
                     vlc_tick_t date)
 {
     VLC_UNUSED(subpic); VLC_UNUSED(date);
@@ -102,18 +102,15 @@ static void Display(vout_display_t *vd, picture_t *picture)
     vlc_window_t *wnd = vd->cfg->window;
     const video_format_t *fmt = vd->fmt;
     picture_t *pic = sys->buffers[sys->front_buf];
-    vout_display_place_t place;
-
-    vout_display_PlacePicture(&place, vd->fmt, &vd->cfg->display);
 
     struct drm_mode_set_plane sp = {
         .plane_id = sys->plane_id,
         .crtc_id = wnd->handle.crtc,
         .fb_id = vlc_drm_dumb_get_fb_id(pic),
-        .crtc_x = place.x,
-        .crtc_y = place.y,
-        .crtc_w = place.width,
-        .crtc_h = place.height,
+        .crtc_x = vd->place->x,
+        .crtc_y = vd->place->y,
+        .crtc_w = vd->place->width,
+        .crtc_h = vd->place->height,
         /* Source values as U16.16 fixed point */
         .src_x = fmt->i_x_offset << 16,
         .src_y = fmt->i_y_offset << 16,
@@ -201,7 +198,7 @@ static int Open(vout_display_t *vd,
 
     if (drm_fourcc == 0) {
         drm_fourcc = vlc_drm_find_best_format(fd, sys->plane_id, nfmt,
-                                              vd->fmt->i_chroma);
+                                              vd->source->i_chroma);
         if (drm_fourcc == 0) {
             msg_Err(vd, "DRM plane format error: %s", vlc_strerror_c(errno));
             return -errno;
@@ -212,13 +209,15 @@ static int Open(vout_display_t *vd,
             (char *)&drm_fourcc, drm_fourcc);
 
     video_format_ApplyRotation(&fmt, vd->source);
-    if (!vlc_video_format_drm(&fmt, drm_fourcc)) {
+    vlc_fourcc_t vlc_fourcc = vlc_fourcc_drm(drm_fourcc);
+    if (vlc_fourcc == 0) {
         /* This can only occur if $vlc-drm-chroma is unknown. */
         assert(chroma != NULL);
         msg_Err(vd, "unknown DRM pixel format %4.4s (0x%08"PRIXFAST32")",
                 (char *)&drm_fourcc, drm_fourcc);
         return -ENOTSUP;
     }
+    fmt.i_chroma = vlc_fourcc;
 
     for (size_t i = 0; i < ARRAY_SIZE(sys->buffers); i++) {
         sys->buffers[i] = vlc_drm_dumb_alloc_fb(vd->obj.logger, fd, &fmt);

@@ -41,8 +41,8 @@
     - Single mode that shows the info on ONE SINGLE Item on the playlist
    Please be Careful of not breaking one the modes behaviour... */
 
-MediaInfoDialog::MediaInfoDialog( qt_intf_t *_p_intf,
-                                  input_item_t *p_item )
+MediaInfoDialog::MediaInfoDialog(qt_intf_t *_p_intf,
+                                 SharedInputItem p_item )
     : QVLCFrame( _p_intf )
 {
     isMainInputInfo = ( p_item == NULL );
@@ -77,9 +77,11 @@ MediaInfoDialog::MediaInfoDialog( qt_intf_t *_p_intf,
     saveMetaButton = new QPushButton( qtr( "&Save Metadata" ) );
     saveMetaButton->hide();
     QPushButton *closeButton = new QPushButton( qtr( "&Close" ) );
+    closeButton->setMaximumWidth(closeButton->minimumSizeHint().width());
     closeButton->setDefault( true );
 
     QLabel *uriLabel = new QLabel( qtr( "Location:" ) );
+    uriLabel->setMaximumWidth(uriLabel->minimumSizeHint().width());
     uriLine = new QLineEdit;
     uriLine->setReadOnly( true );
 
@@ -111,14 +113,16 @@ MediaInfoDialog::MediaInfoDialog( qt_intf_t *_p_intf,
          **/
         connect( THEMIM, &PlayerController::infoChanged,
                   IP, &InfoPanel::update, Qt::DirectConnection  );
-        connect( THEMIM, &PlayerController::currentMetaChanged,
-                  MP, &MetaPanel::update, Qt::DirectConnection  );
+        connect( THEMIM, &PlayerController::inputChanged,
+            MP, [this]() {
+                MP->update( SharedInputItem { THEMIM->getInput() } );
+            }, Qt::DirectConnection  );
         connect( THEMIM, &PlayerController::currentMetaChanged,
                   EMP, &ExtraMetaPanel::update, Qt::DirectConnection );
         connect( THEMIM, &PlayerController::statisticsUpdated,
                   ISP, &InputStatsPanel::update, Qt::DirectConnection);
 
-        p_item = THEMIM->getInput();
+        p_item = SharedInputItem{ THEMIM->getInput() };
     }
     else
         msg_Dbg( p_intf, "Using an item specific info windows" );
@@ -152,14 +156,14 @@ void MediaInfoDialog::saveMeta()
     saveMetaButton->hide();
 }
 
-void MediaInfoDialog::updateAllTabs( input_item_t *p_item )
+void MediaInfoDialog::updateAllTabs( const SharedInputItem& p_item )
 {
     if (! p_item)
         return;
 
-    IP->update( p_item );
+    IP->update( p_item.get() );
     MP->update( p_item );
-    EMP->update( p_item );
+    EMP->update( p_item.get() );
 
     if( isMainInputInfo && p_item->p_stats ) ISP->update( *p_item->p_stats );
 }

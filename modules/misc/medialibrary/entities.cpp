@@ -37,6 +37,7 @@
 #include <medialibrary/IPlaylist.h>
 #include <medialibrary/IAudioTrack.h>
 #include <medialibrary/IVideoTrack.h>
+#include <medialibrary/ISubtitleTrack.h>
 #include <medialibrary/IFolder.h>
 #include <medialibrary/filesystem/IDevice.h>
 #include <medialibrary/filesystem/Errors.h>
@@ -132,7 +133,9 @@ static bool convertTracks( const medialibrary::IMedia* inputMedia, vlc_ml_media_
 {
     auto videoTracks = inputMedia->videoTracks()->all();
     auto audioTracks = inputMedia->audioTracks()->all();
-    auto nbItems = videoTracks.size() + audioTracks.size();
+    auto subtitleTracks = inputMedia->subtitleTracks()->all();
+
+    auto nbItems = videoTracks.size() + audioTracks.size() + subtitleTracks.size();
     outputMedia.p_tracks = static_cast<vlc_ml_media_track_list_t*>(
                 calloc( 1, sizeof( *outputMedia.p_tracks ) +
                         nbItems * sizeof( *outputMedia.p_tracks->p_items ) ) );
@@ -167,6 +170,19 @@ static bool convertTracks( const medialibrary::IMedia* inputMedia, vlc_ml_media_
         output->a.i_nbChannels = t->nbChannels();
         output->a.i_sampleRate = t->sampleRate();
     }
+
+    for ( const auto& t : subtitleTracks )
+    {
+        vlc_ml_media_track_t* output = &items[outputMedia.p_tracks->i_nb_items++];
+
+        if ( convertTracksCommon( output, t->codec(), t->language(), t->description() ) == false )
+            return false;
+
+        output->i_type = VLC_ML_TRACK_TYPE_SUBTITLE;
+        if ( !strdup_helper( t->encoding(), output->s.psz_encoding ) )
+            return false;
+    }
+
     return true;
 }
 
@@ -240,6 +256,7 @@ bool Convert( const medialibrary::IMedia* input, vlc_ml_media_t& output )
     output.i_playcount = input->playCount();
     output.f_progress = input->lastPosition();
     output.i_last_played_date = input->lastPlayedDate();
+    output.b_is_public = input->isPublic();
 
     output.psz_title = strdup( input->title().c_str() );
     if ( unlikely( output.psz_title == nullptr ) )
@@ -311,6 +328,7 @@ bool Convert( const medialibrary::IAlbum* input, vlc_ml_album_t& output )
     output.i_nb_discs = input->nbDiscs();
     output.i_duration = input->duration();
     output.i_year = input->releaseYear();
+    output.b_is_favorite = input->isFavorite();
 
     if( !strdup_helper( input->title(), output.psz_title ) ||
         !strdup_helper( input->shortSummary(), output.psz_summary ) )
@@ -361,6 +379,7 @@ bool Convert( const medialibrary::IArtist* input, vlc_ml_artist_t& output )
     output.i_nb_tracks = input->nbTracks();
     output.i_nb_present_tracks = input->nbPresentTracks();
     output.psz_name = strdup( artistName( input ) );
+    output.b_is_favorite = input->isFavorite();
     if ( unlikely( output.psz_name == nullptr ) )
         return false;
 
@@ -375,6 +394,7 @@ bool Convert( const medialibrary::IGenre* input, vlc_ml_genre_t& output )
 {
     output.i_id = input->id();
     output.i_nb_tracks = input->nbTracks();
+    output.b_is_favorite = input->isFavorite();
     assert( input->name().empty() == false );
 
     if  ( !strdup_helper( input->name(), output.psz_name ) )
@@ -463,18 +483,20 @@ bool Convert( const medialibrary::IPlaylist* input, vlc_ml_playlist_t& output )
     output.i_nb_duration_unknown = input->nbDurationUnknown();
 
     output.b_is_read_only = input->isReadOnly();
+    output.b_is_favorite = input->isFavorite();
 
     if( !strdup_helper( input->name(), output.psz_name ) ||
         !strdup_helper( input->artworkMrl(), output.psz_artwork_mrl ) )
         return false;
 
     // NOTE: mrl() must only be called when isReadOnly() is true.
-    if( output.b_is_read_only && !strdup_helper( input->mrl(), output.psz_mrl ) )
-        return false;
-    else
+    if (!output.b_is_read_only)
+    {
         output.psz_mrl = nullptr;
+        return true;
+    }
 
-    return true;
+    return strdup_helper(input->mrl(), output.psz_mrl) == true;
 }
 
 bool Convert( const medialibrary::IFolder* input, vlc_ml_folder_t& output )
@@ -485,7 +507,10 @@ bool Convert( const medialibrary::IFolder* input, vlc_ml_folder_t& output )
     output.i_nb_audio = input->nbAudio();
     output.i_nb_video = input->nbVideo();
 
+    output.i_duration = input->duration();
+
     output.b_banned = input->isBanned();
+    output.b_is_favorite = input->isFavorite();
 
     if ( strdup_helper( input->name(), output.psz_name ) == false )
         return false;

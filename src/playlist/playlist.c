@@ -37,12 +37,24 @@ vlc_playlist_New(vlc_object_t *parent)
     if (unlikely(!playlist))
         return NULL;
 
+#ifdef TEST_PLAYLIST
+    playlist->parser = NULL;
+#else
+    playlist->parser = libvlc_GetMainPreparser(vlc_object_instance(parent));
+    if (unlikely(playlist->parser == NULL))
+    {
+        free(playlist);
+        return NULL;
+    }
+#endif
+
     bool ok = vlc_playlist_PlayerInit(playlist, parent);
     if (unlikely(!ok))
     {
         free(playlist);
         return NULL;
     }
+    playlist->stopped_action = VLC_PLAYLIST_MEDIA_STOPPED_CONTINUE;
 
     vlc_vector_init(&playlist->items);
     randomizer_Init(&playlist->randomizer);
@@ -53,13 +65,22 @@ vlc_playlist_New(vlc_object_t *parent)
     playlist->repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_NONE;
     playlist->order = VLC_PLAYLIST_PLAYBACK_ORDER_NORMAL;
     playlist->idgen = 0;
+    playlist->recursive = VLC_PLAYLIST_RECURSIVE_COLLAPSE;
 #ifdef TEST_PLAYLIST
-    playlist->libvlc = NULL;
     playlist->auto_preparse = false;
 #else
     assert(parent);
-    playlist->libvlc = vlc_object_instance(parent);
     playlist->auto_preparse = var_InheritBool(parent, "auto-preparse");
+
+    char *rec = var_InheritString(parent, "recursive");
+    if (rec != NULL)
+    {
+        if (!strcasecmp(rec, "none"))
+            playlist->recursive = VLC_PLAYLIST_RECURSIVE_NONE;
+        else if (!strcasecmp(rec, "expand"))
+            playlist->recursive = VLC_PLAYLIST_RECURSIVE_EXPAND;
+        free(rec);
+    }
 #endif
 
     return playlist;

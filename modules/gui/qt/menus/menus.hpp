@@ -27,8 +27,35 @@
 #include "qt.hpp"
 
 #include "custom_menus.hpp"
+#include "widgets/native/qvlcframe.hpp"
 
 #include <QObject>
+
+class VLCMenu : public QMenu
+{
+    Q_OBJECT
+
+public:
+    explicit VLCMenu(qt_intf_t* p_intf) : QMenu()
+    {
+        assert(p_intf);
+        if (isWindow())
+        {
+            ensurePolished();
+            QVLCDialog::setWindowTransientParent(this, nullptr, p_intf);
+        }
+    }
+
+    explicit VLCMenu(const QString& title, qt_intf_t* p_intf) : VLCMenu(p_intf)
+    {
+        setTitle(title);
+    }
+
+    explicit VLCMenu(const QString &title, QWidget *parent) : QMenu(title, parent)
+    {
+        assert(parent); // use VLCMenu(qt_intf_t* p_intf) if parent is null pointer
+    }
+};
 
 class VLCMenuBar : public QObject
 {
@@ -44,20 +71,16 @@ public:
     static QMenu* VideoPopupMenu( qt_intf_t *, bool );
     static QMenu* MiscPopupMenu( qt_intf_t *, bool );
 
-    /* Systray */
-    static void updateSystrayMenu( MainCtx *, qt_intf_t  *,
-                                   bool b_force_visible = false);
 
     /* destructor for parentless Menus (kept in static variables) */
     static void freeRendererMenu(){ delete rendererMenu; rendererMenu = NULL; }
 
-protected:
     /* All main Menus */
     static void FileMenu( qt_intf_t *, QMenu * );
 
     static void ToolsMenu( qt_intf_t *, QMenu * );
 
-    static void ViewMenu( qt_intf_t *, QMenu *);
+    static void ViewMenu( qt_intf_t *, QMenu *, std::optional<bool> playerViewVisible = std::nullopt );
 
     static void InterfacesMenu( qt_intf_t *p_intf, QMenu * );
     static void ExtensionsMenu( qt_intf_t *p_intf, QMenu * );
@@ -79,6 +102,8 @@ protected:
     static void PopupMenuPlaylistEntries( QMenu *menu, qt_intf_t *p_intf );
     static void PopupMenuPlaylistControlEntries( QMenu *menu, qt_intf_t *p_intf );
     static void PopupMenuControlEntries( QMenu *menu, qt_intf_t *p_intf, bool b = true );
+
+    static void VolumeEntries( qt_intf_t *p_intf, QMenu *current );
 
     /* recentMRL menu */
     static RendererMenu *rendererMenu;

@@ -28,14 +28,10 @@
 #include <vlc_clock.h>
 
 typedef struct input_thread_t input_thread_t;
+typedef struct vlc_spu_highlight_t vlc_spu_highlight_t;
 
-/* It should be high enough to absorbe jitter due to difficult picture(s)
- * to decode but not too high as memory is not that cheap.
- *
- * It can be made lower at compilation time if needed, but performance
- * may be degraded.
- */
-#define VOUT_MAX_PICTURES (20)
+///< Use the aspect ratio from the source video format
+#define VLC_DAR_FROM_SOURCE  ((vlc_rational_t){0, 0})
 
 /**
  * Vout configuration

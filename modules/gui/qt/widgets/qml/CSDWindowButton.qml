@@ -15,12 +15,14 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Templates as T
+import QtQuick.Layouts
 
-import "qrc:///style/"
+import VLC.Widgets as Widgets
+import VLC.MainInterface
+import VLC.Style
 
 
 T.Button {
@@ -36,8 +38,12 @@ T.Button {
 
     padding: 0
     width: VLCStyle.dp(40, VLCStyle.scale)
-    implicitWidth: contentItem.implicitWidth
-    implicitHeight: contentItem.implicitHeight
+
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
+
     focusPolicy: Qt.NoFocus
 
     background: Rectangle {
@@ -56,10 +62,24 @@ T.Button {
     }
 
     contentItem: Item {
-        IconLabel {
+        Widgets.IconLabel {
             id: icon
             anchors.centerIn: parent
             text: control.iconTxt
+
+            font.family:{
+                if (MainCtx.osName === MainCtx.Windows)
+                {
+                    if(MainCtx.osVersion === 10)
+                        return "Segoe MDL2 Assets"
+
+                    else if(MainCtx.osVersion >= 11)
+                        return "Segoe Fluent Icons"
+                }
+     
+                return VLCIcons.fontFamily
+            }
+
             font.pixelSize: VLCStyle.icon_CSD
             color: control.color
         }

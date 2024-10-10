@@ -95,9 +95,9 @@ HRESULT WINAPI CopyMediaType( AM_MEDIA_TYPE *pmtTarget,
     return S_OK;
 }
 
-int GetFourCCFromMediaType( const AM_MEDIA_TYPE &media_type )
+vlc_fourcc_t GetFourCCFromMediaType( const AM_MEDIA_TYPE &media_type )
 {
-    int i_fourcc = 0;
+    vlc_fourcc_t i_fourcc = 0;
 
     if( media_type.majortype == MEDIATYPE_Video )
     {
@@ -112,15 +112,15 @@ int GetFourCCFromMediaType( const AM_MEDIA_TYPE &media_type )
             else if( media_type.subtype == MEDIASUBTYPE_RGB8 )
                i_fourcc = VLC_FOURCC( 'R', 'G', 'B', '8' );
             else if( media_type.subtype == MEDIASUBTYPE_RGB555 )
-               i_fourcc = VLC_CODEC_RGB15;
+               i_fourcc = VLC_CODEC_RGB555LE;
             else if( media_type.subtype == MEDIASUBTYPE_RGB565 )
-               i_fourcc = VLC_CODEC_RGB16;
+               i_fourcc = VLC_CODEC_RGB565LE;
             else if( media_type.subtype == MEDIASUBTYPE_RGB24 )
-               i_fourcc = VLC_CODEC_RGB24;
+               i_fourcc = VLC_CODEC_BGR24;
             else if( media_type.subtype == MEDIASUBTYPE_RGB32 )
-               i_fourcc = VLC_CODEC_RGB32;
+               i_fourcc = VLC_CODEC_BGRX;
             else if( media_type.subtype == MEDIASUBTYPE_ARGB32 )
-               i_fourcc = VLC_CODEC_RGBA;
+               i_fourcc = VLC_CODEC_BGRA;
 
             /* Planar YUV formats */
             else if( media_type.subtype == MEDIASUBTYPE_I420 )
@@ -505,7 +505,7 @@ STDMETHODIMP CapturePin::QueryAccept( const AM_MEDIA_TYPE *pmt )
         return S_FALSE;
     }
 
-    int i_fourcc = GetFourCCFromMediaType(*pmt);
+    vlc_fourcc_t i_fourcc = GetFourCCFromMediaType(*pmt);
     if( !i_fourcc )
     {
         msg_Dbg( p_input, "CapturePin::QueryAccept "

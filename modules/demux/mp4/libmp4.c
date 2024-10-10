@@ -147,6 +147,39 @@ static inline void GetUUID( UUID_t *p_uuid, const uint8_t *p_buff )
     memcpy( p_uuid, p_buff, 16 );
 }
 
+static video_palette_t * ReadQuicktimePalette( uint8_t **pp_peek, uint64_t *pi_read )
+{
+    uint8_t *p_peek = *pp_peek;
+    uint64_t i_read = *pi_read;
+    uint32_t v;
+    MP4_GET4BYTES(v);
+    if( v != 0 )
+        return NULL;
+    MP4_GET2BYTES(v); // should be == 0x8000, but does not in the wild
+    uint16_t i_colors_count;
+    MP4_GET2BYTES(i_colors_count);
+    if( i_colors_count == UINT16_MAX ||
+        ++i_colors_count > VIDEO_PALETTE_COLORS_MAX ||
+        i_read < i_colors_count * 8U)
+        return NULL;
+    video_palette_t *p_palette = malloc( sizeof(video_palette_t) );
+    if( p_palette == NULL )
+        return NULL;
+    for( uint16_t i=0; i<i_colors_count; i++ )
+    {
+        uint16_t dummy;
+        MP4_GET2BYTES(dummy); VLC_UNUSED(dummy);
+        MP4_GET2BYTES(p_palette->palette[i][0]);
+        MP4_GET2BYTES(p_palette->palette[i][1]);
+        MP4_GET2BYTES(p_palette->palette[i][2]);
+        p_palette->palette[i][3] = 0xFF;
+    }
+    p_palette->i_entries = i_colors_count;
+    *pp_peek = p_peek;
+    *pi_read = i_read;
+    return p_palette;
+}
+
 static uint8_t *mp4_readbox_enter_common( stream_t *s, MP4_Box_t *box,
                                           size_t typesize,
                                           void (*release)( MP4_Box_t * ),
@@ -626,6 +659,33 @@ static int MP4_ReadBoxSkip( stream_t *p_stream, MP4_Box_t *p_box )
         msg_Dbg( p_stream, "skip box: \"c%3.3s\"", (char*)&p_box->i_type+1 );
 #endif
     return 1;
+}
+
+static int MP4_ReadBox_mdia( stream_t *p_stream, MP4_Box_t *p_container )
+{
+    if( p_container->i_size &&
+        ( p_container->i_size <= (size_t)mp4_box_headersize(p_container ) + 8 ) )
+    {
+        /* container is empty, 8 stand for the first header in this box */
+        return 1;
+    }
+
+    /* enter box */
+    if ( MP4_Seek( p_stream, p_container->i_pos +
+                               mp4_box_headersize( p_container ) ) )
+        return 0;
+    int ret = MP4_ReadBoxContainerChildren( p_stream, p_container, NULL );
+    MP4_Box_t *stsd = MP4_BoxGet( p_container, "minf/stbl/stsd" );
+    if( stsd && stsd->i_handler == 0 )
+    {
+        /* Delayed parsing due to missing hdlr */
+        if( MP4_Seek( p_stream, stsd->i_pos ) ||
+            MP4_Box_Read_Specific( p_stream, stsd, stsd->p_father ) ||
+            stsd->i_handler == 0 )
+            msg_Warn( p_stream, "Failed to re-parse stsd" );
+    }
+
+    return ret;
 }
 
 static int MP4_ReadBox_ilst( stream_t *p_stream, MP4_Box_t *p_box )
@@ -2223,6 +2283,7 @@ static int MP4_ReadBox_sgpd( stream_t *p_stream, MP4_Box_t *p_box )
     switch( p_sgpd->i_grouping_type )
     {
         case SAMPLEGROUP_rap:
+        case SAMPLEGROUP_roll:
             break;
 
         default:
@@ -2279,6 +2340,23 @@ static int MP4_ReadBox_sgpd( stream_t *p_stream, MP4_Box_t *p_box )
                     MP4_GET1BYTE( i_data );
                     p_sgpd->p_entries[i].rap.i_num_leading_samples_known = i_data & 0x80;
                     p_sgpd->p_entries[i].rap.i_num_leading_samples = i_data & 0x7F;
+                }
+                break;
+
+            case SAMPLEGROUP_roll:
+                {
+                    if( i_read < 2 )
+                    {
+                        free( p_sgpd->p_entries );
+                        MP4_READBOX_EXIT( 0 );
+                    }
+                    union
+                    {
+                        uint16_t u;
+                        int16_t  s;
+                    } readsigned;
+                    MP4_GET2BYTES( readsigned.u );
+                    p_sgpd->p_entries[i].roll.i_roll_distance = readsigned.s;
                 }
                 break;
 
@@ -2692,6 +2770,7 @@ static int MP4_ReadBox_sample_soun( stream_t *p_stream, MP4_Box_t *p_box )
 static void MP4_FreeBox_sample_vide( MP4_Box_t *p_box )
 {
     free( p_box->data.p_sample_vide->p_qt_image_description );
+    free( p_box->data.p_sample_vide->p_palette );
 }
 
 int MP4_ReadBox_sample_vide( stream_t *p_stream, MP4_Box_t *p_box )
@@ -2748,6 +2827,14 @@ int MP4_ReadBox_sample_vide( stream_t *p_stream, MP4_Box_t *p_box )
 
     MP4_GET2BYTES( p_box->data.p_sample_vide->i_depth );
     MP4_GET2BYTES( p_box->data.p_sample_vide->i_qt_color_table );
+
+    if( p_box->data.p_sample_vide->i_depth == 8 &&
+        p_box->data.p_sample_vide->i_qt_color_table == 0 )
+    {
+        p_box->data.p_sample_vide->p_palette = ReadQuicktimePalette( &p_peek, &i_read );
+        if( p_box->data.p_sample_vide->p_palette == NULL )
+            MP4_READBOX_EXIT( 0 );
+    }
 
     if( p_box->i_type == ATOM_drmi )
     {
@@ -2860,6 +2947,11 @@ static int MP4_ReadBox_stsd( stream_t *p_stream, MP4_Box_t *p_box )
     if( p_mdia == NULL || p_mdia->i_type != ATOM_mdia ||
         (p_hdlr = MP4_BoxGet( p_mdia, "hdlr" )) == NULL )
     {
+        if ( MP4_Seek( p_stream, p_box->i_pos + p_box->i_size ) == VLC_SUCCESS )
+        {
+            msg_Warn( p_stream, "missing hdlr for stsd, delaying" );
+            MP4_READBOX_EXIT( 1 );
+        }
         MP4_READBOX_EXIT( 0 );
     }
 
@@ -3279,7 +3371,7 @@ static int MP4_ReadBox_stdp( stream_t *p_stream, MP4_Box_t *p_box )
     MP4_GETVERSIONFLAGS( p_box->data.p_stdp );
 
     p_box->data.p_stdp->i_priority =
-        calloc( i_read / 2, sizeof(uint16_t) );
+        calloc( i_read / 2, sizeof(*p_box->data.p_stdp->i_priority) );
 
     if( unlikely( !p_box->data.p_stdp->i_priority ) )
         MP4_READBOX_EXIT( 0 );
@@ -3437,6 +3529,7 @@ static int MP4_ReadBox_cmvd( stream_t *p_stream, MP4_Box_t *p_box )
 static int MP4_ReadBox_cmov( stream_t *p_stream, MP4_Box_t *p_box )
 {
 #ifndef HAVE_ZLIB
+    (void)p_box;
     msg_Dbg( p_stream, "read box: \"cmov\" zlib unsupported" );
     return 0;
 #else
@@ -4933,7 +5026,7 @@ static const struct
     { ATOM_moov,    MP4_ReadBoxContainer,     0 },
     { ATOM_trak,    MP4_ReadBoxContainer,     ATOM_moov },
     { ATOM_trak,    MP4_ReadBoxContainer,     ATOM_foov },
-    { ATOM_mdia,    MP4_ReadBoxContainer,     ATOM_trak },
+    { ATOM_mdia,    MP4_ReadBox_mdia,         ATOM_trak },
     { ATOM_moof,    MP4_ReadBoxContainer,     0 },
     { ATOM_minf,    MP4_ReadBoxContainer,     ATOM_mdia },
     { ATOM_stbl,    MP4_ReadBoxContainer,     ATOM_minf },
@@ -5009,6 +5102,7 @@ static const struct
     { ATOM_av1C,    MP4_ReadBox_av1C,         ATOM_av01 },
     { ATOM_avcC,    MP4_ReadBox_avcC,         ATOM_avc1 },
     { ATOM_avcC,    MP4_ReadBox_avcC,         ATOM_avc3 },
+    { ATOM_vvcC,    MP4_ReadBox_Binary,       ATOM_vvc1 },
     { ATOM_hvcC,    MP4_ReadBox_Binary,       0 },
     { ATOM_jpeC,    MP4_ReadBox_Binary,       0 }, /* heif */
     { ATOM_av1C,    MP4_ReadBox_av1C,         ATOM_ipco }, /* heif */

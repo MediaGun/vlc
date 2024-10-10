@@ -1,14 +1,12 @@
 # rav1e
 
-RAV1E_VERSION := 0.6.6
+RAV1E_VERSION := 0.7.1
 RAV1E_URL := https://crates.io/api/v1/crates/rav1e/$(RAV1E_VERSION)/download
 
 ifdef BUILD_RUST
 ifdef BUILD_ENCODERS
-# Rav1e is not linking correctly on iOS arm64
-ifndef HAVE_IOS
 PKGS += rav1e
-endif
+PKGS_ALL += vendor-rav1e
 endif
 endif
 
@@ -23,18 +21,31 @@ $(TARBALLS)/rav1e-$(RAV1E_VERSION).tar.gz:
 
 RAV1E_FEATURES=--features=asm
 
-rav1e: rav1e-$(RAV1E_VERSION).tar.gz .sum-rav1e .rav1e-vendor
+DEPS_rav1e = vendor-rav1e $(DEPS_vendor-rav1e) cargo-c $(DEPS_cargo-c)
+
+# vendor-rav1e
+
+$(TARBALLS)/rav1e-$(RAV1E_VERSION)-vendor.tar.bz2: .sum-rav1e
+	$(call download_vendor,rav1e-$(RAV1E_VERSION)-vendor.tar.bz2,rav1e,rav1e-$(RAV1E_VERSION).tar.gz)
+
+.sum-vendor-rav1e: rav1e-$(RAV1E_VERSION)-vendor.tar.bz2
+
+rav1e-vendor: rav1e-$(RAV1E_VERSION)-vendor.tar.bz2 .sum-vendor-rav1e
 	$(UNPACK)
-ifdef HAVE_WIN32
-ifndef HAVE_WIN64
-	$(APPLY) $(SRC)/rav1e/unwind-resume-stub.patch
-endif
-endif
-	$(CARGO_VENDOR_SETUP)
 	$(MOVE)
 
-.rav1e: rav1e .cargo
-	+cd $< && $(CARGOC_INSTALL) --no-default-features $(RAV1E_FEATURES)
+.vendor-rav1e: rav1e-vendor
+	touch $@
+
+# rav1e
+
+rav1e: rav1e-$(RAV1E_VERSION).tar.gz .sum-rav1e
+	$(UNPACK)
+	$(call cargo_vendor_setup,$(UNPACK_DIR),$@)
+	$(MOVE)
+
+.rav1e: rav1e
+	+cd $< && $(CARGOC_INSTALL) --target-dir vlc_build --no-default-features $(RAV1E_FEATURES)
 # No gcc in Android NDK25
 ifdef HAVE_ANDROID
 	sed -i -e 's/ -lgcc//g' $(PREFIX)/lib/pkgconfig/rav1e.pc

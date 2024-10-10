@@ -25,15 +25,26 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class VLCSubScrollView;
+@class VLCLibraryRepresentedItem;
 
 // This class can be subclassed to create new supplementary detail views for library views.
 // It provides a consistent background and properties. It is not meant to be used directly.
 
 @interface VLCLibraryCollectionViewSupplementaryDetailView : NSView <NSCollectionViewElement>
 
-@property (readwrite, assign) NSCollectionViewItem *selectedItem;
-@property (readwrite, assign) NSScrollView *parentScrollView;
-@property (readwrite, assign) VLCSubScrollView *internalScrollView;
+@property (readwrite, retain, nonatomic) VLCLibraryRepresentedItem *representedItem;
+
+@property (readwrite) NSCollectionViewItem *selectedItem;
+@property (readwrite, weak) NSScrollView *parentScrollView;
+
+@property (readwrite, assign, nonatomic) NSCollectionViewScrollDirection layoutScrollDirection;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *contentViewTopConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *contentViewBottomConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *contentViewLeftConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *contentViewRightConstraint;
+@property (readwrite, weak) IBOutlet VLCSubScrollView *internalScrollView;
+
+- (void)updateRepresentation;
 
 @end
 

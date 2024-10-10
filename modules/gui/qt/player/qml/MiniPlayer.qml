@@ -15,95 +15,63 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
-import QtGraphicalEffects 1.12
+import QtQuick
 
-import org.videolan.vlc 0.1
 
-import "qrc:///widgets/" as Widgets
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Player
+import VLC.PlayerControls
+import VLC.Style
 
-T.Pane {
+ControlBar {
     id: root
 
-    height: 0
+    visible: animation.running || (state === "inViewport")
 
-    implicitWidth: Math.max(background ? background.implicitWidth : 0, contentItem.implicitWidth + leftPadding + rightPadding)
-    implicitHeight: Math.max(background ? background.implicitHeight : 0, contentItem.implicitHeight + topPadding + bottomPadding)
+    anchors.bottomMargin: (state === "outViewport") ? -_delayedImplicitHeight : 0
 
-    visible: false
+    state: Player.isStarted ? "inViewport"
+                            : "outViewport"
 
-    state: (Player.playingState === Player.PLAYING_STATE_STOPPED) ? ""
-                                                                  : "expanded"
+    textPosition: (MainCtx.pinVideoControls) ? ControlBar.TimeTextPosition.LeftRightSlider
+                                             : ControlBar.TimeTextPosition.Hide
 
-    //redundant with child ControlBar
-    Accessible.ignored: true
+    sliderHeight: (MainCtx.pinVideoControls) ? VLCStyle.heightBar_xxsmall
+                                             : VLCStyle.dp(3, VLCStyle.scale)
 
-    states: State {
-        name: "expanded"
+    bookmarksHeight: (MainCtx.pinVideoControls) ? VLCStyle.controlBarBookmarksHeight
+                                                : VLCStyle.icon_xsmall * 0.7
 
-        PropertyChanges {
-            target: root
-            visible: true
-            height: implicitHeight
+    identifier: PlayerControlbarModel.Miniplayer
+
+    property real _delayedImplicitHeight
+
+    onImplicitHeightChanged: {
+        if (!animation.running) {
+            // Animation should not be based on the implicit height change
+            // but rather the visibility state:
+            behavior.enabled = false
+            Qt.callLater(() => { behavior.enabled = true })
         }
     }
 
-    transitions: Transition {
-        from: ""; to: "expanded"
-        reversible: true
-
-        SequentialAnimation {
-            // visible should change first, in order for inner layouts to calculate implicitHeight correctly
-            PropertyAction { property: "visible" }
-            NumberAnimation { property: "height"; easing.type: Easing.InOutSine; duration: VLCStyle.duration_long; }
-        }
+    Binding on _delayedImplicitHeight {
+        // eliminate intermediate adjustments until implicit height is calculated fully
+        // we can not delay on component load because we do not want twitching
+        // NOTE: The delay here can be removed, as long as a direct height is set
+        //       for the whole control instead of implicit height.
+        delayed: behavior.enabled
+        value: root.implicitHeight
     }
 
-    readonly property ColorContext colorContext: ColorContext {
-        id: theme
-        colorSet: ColorContext.Window
-    }
-
-    // this MouseArea prevents mouse events to be sent below miniplayer
-    MouseArea {
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.AllButtons
-    }
-
-    background: Rectangle {
-        color: theme.bg.primary
-    }
-
-    contentItem: ControlBar {
-        focus: true
-
-        // NOTE: When controls are pinned we keep the same slider in both views. Otherwise we make
-        //       it more compact to fit the modern design.
-
-        textPosition: (MainCtx.pinVideoControls) ? ControlBar.TimeTextPosition.LeftRightSlider
-                                                 : ControlBar.TimeTextPosition.Hide
-
-        sliderHeight: (MainCtx.pinVideoControls) ? VLCStyle.heightBar_xxsmall
-                                                 : VLCStyle.dp(3, VLCStyle.scale)
-
-        bookmarksHeight: (MainCtx.pinVideoControls) ? VLCStyle.controlBarBookmarksHeight
-                                                    : VLCStyle.icon_xsmall * 0.7
-
-        identifier: PlayerControlbarModel.Miniplayer
-
-        Navigation.parentItem: root
-
-        Keys.onPressed: {
-            Navigation.defaultKeyAction(event)
-
-            if (!event.accepted) {
-                MainCtx.sendHotkey(event.key, event.modifiers)
-            }
+    Behavior on anchors.bottomMargin {
+        id: behavior
+        enabled: false
+        NumberAnimation {
+            id: animation
+            easing.type: Easing.InOutSine
+            duration: VLCStyle.duration_long
         }
     }
 }
+

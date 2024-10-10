@@ -15,20 +15,22 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
+import QtQuick
+import QtQuick.Templates as T
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
+import VLC.MainInterface
+import VLC.Style
 
 T.ToolButton {
     id: control
 
     font.pixelSize: VLCStyle.fontSize_normal
 
-    implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
-    implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
 
     padding: VLCStyle.margin_xxsmall
 
@@ -36,7 +38,7 @@ T.ToolButton {
 
     Keys.priority: Keys.AfterItem
 
-    Keys.onPressed: Navigation.defaultKeyAction(event)
+    Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
     // Accessible
 
@@ -64,9 +66,8 @@ T.ToolButton {
     }
 
     background: AnimatedBackground {
-        animate: theme.initialized
-        active: visualFocus
-        backgroundColor: theme.bg.primary
-        activeBorderColor: theme.visualFocus
+        enabled: theme.initialized
+        color: theme.bg.primary
+        border.color: visualFocus ? theme.visualFocus : "transparent"
     }
 }

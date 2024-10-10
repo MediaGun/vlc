@@ -16,25 +16,28 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-import QtQuick 2.12
-import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
-import "qrc:///util/Helpers.js" as Helpers
+import VLC.MainInterface
+import VLC.Player
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.Util
 
 ColumnLayout {
     id: root
+
+    property alias slider: slider
 
     // Private
 
     property var _model: [{ "value": 0.25 },
                           { "value": 0.5 },
                           { "value": 0.75 },
-                          { "value": 1, "title": I18n.qtr("Normal") },
+                          { "value": 1, "title": qsTr("Normal") },
                           { "value": 1.25 },
                           { "value": 1.5 },
                           { "value": 1.75 },
@@ -149,7 +152,9 @@ ColumnLayout {
     Connections {
         target: Player
 
-        onRateChanged: _updateValue(Player.rate)
+        function onRateChanged() {
+            _updateValue(Player.rate)
+        }
     }
 
     // Children
@@ -166,7 +171,7 @@ ColumnLayout {
 
         Layout.alignment: Qt.AlignTop
 
-        text: I18n.qtr("Playback Speed")
+        text: qsTr("Playback Speed")
 
         color: theme.fg.primary
     }
@@ -179,45 +184,17 @@ ColumnLayout {
 
         Layout.alignment: Qt.AlignTop
 
-        implicitHeight: buttonReset.height
-
         Navigation.parentItem: root
         Navigation.downItem: slider
 
         Widgets.CaptionLabel {
             anchors.verticalCenter: parent.verticalCenter
 
-            text: I18n.qtr("0.25")
+            text: qsTr("0.25")
 
             color: theme.fg.primary
 
             font.pixelSize: VLCStyle.fontSize_normal
-        }
-
-        Widgets.IconControlButton {
-            id: buttonReset
-
-            // NOTE: This needs to be wider to fully encapsulate the label.
-            width: VLCStyle.dp(64, VLCStyle.scale)
-
-            anchors.centerIn: parent
-
-            focus: true
-
-            Navigation.parentItem: rowA
-            Navigation.downItem: slider
-
-            onClicked: slider.value = 0
-
-            Widgets.CaptionLabel {
-                anchors.centerIn: parent
-
-                text: I18n.qtr("1.00x")
-
-                color: theme.fg.primary
-
-                font.pixelSize: VLCStyle.fontSize_xlarge
-            }
         }
 
         Widgets.CaptionLabel {
@@ -225,7 +202,7 @@ ColumnLayout {
 
             anchors.verticalCenter: parent.verticalCenter
 
-            text: I18n.qtr("4.00")
+            text: qsTr("4.00")
 
             color: theme.fg.primary
 
@@ -233,10 +210,12 @@ ColumnLayout {
         }
     }
 
-    Widgets.Slider {
+    Widgets.SliderExt {
         id: slider
 
         Layout.fillWidth: true
+        Layout.topMargin: VLCStyle.margin_xsmall
+        topPadding: 0
 
         // NOTE: These values come from the VLC 3.x implementation.
         from: -34
@@ -250,14 +229,13 @@ ColumnLayout {
             return sliderToSpeed(value).toFixed(2)
         }
 
-        tooltipFollowsMouse: true
+        toolTipFollowsMouse: true
 
         Navigation.parentItem: root
-        Navigation.upItem: buttonReset
         Navigation.downItem: comboBox
 
         Keys.priority: Keys.AfterItem
-        Keys.onPressed: Navigation.defaultKeyAction(event)
+        Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
         onValueChanged: root._applyPlayer(value)
 
@@ -266,32 +244,48 @@ ColumnLayout {
 
             acceptedButtons: Qt.LeftButton
 
-            onPressed: {
+            onPressed: (mouse) => {
                 mouse.accepted = false
 
                 root._shiftPressed = (mouse.modifiers === Qt.ShiftModifier)
             }
         }
+
+        Rectangle {
+            id: tickmark
+
+            parent: slider.background
+            x: parent.width * .5
+            width: VLCStyle.dp(1, VLCStyle.scale)
+            height: parent.height
+            visible: root.sliderToSpeed(slider.value) !== 1
+            color: {
+                const theme = slider.colorContext
+                return root.sliderToSpeed(slider.value) > 1 ? theme.fg.negative : theme.fg.primary
+            }
+        }
     }
 
-    Item {
+    RowLayout {
         id: rowB
 
         Layout.fillWidth: true
         Layout.topMargin: VLCStyle.margin_xsmall
 
-        implicitHeight: comboBox.height
-
         Navigation.parentItem: root
         Navigation.upItem: slider
+
+        Widgets.ListLabel {
+            text: qsTr("Presets")
+            color: colorContext.fg.primary
+            Layout.fillWidth: true
+        }
 
         Widgets.ComboBoxExt {
             id: comboBox
 
-            anchors.centerIn: parent
-
-            width: VLCStyle.combobox_width_normal
-            height: VLCStyle.combobox_height_normal
+            Layout.preferredWidth: VLCStyle.combobox_width_normal
+            Layout.preferredHeight: VLCStyle.combobox_height_normal
 
             model: ListModel {}
 

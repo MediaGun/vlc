@@ -75,13 +75,7 @@ unsigned int AudioDescription::getSampleRate() const
 }
 
 MLVideo::MLVideo(const vlc_ml_media_t* data)
-    : MLItem( MLItemId( data->i_id, VLC_ML_PARENT_UNKNOWN ) )
-    , m_title( QString::fromUtf8( data->psz_title ) )
-    , m_thumbnail( QString::fromUtf8( data->thumbnails[VLC_ML_THUMBNAIL_SMALL].psz_mrl ) )
-    , m_duration( data->i_duration )
-    , m_progress( data->f_progress )
-    , m_playCount( data->i_playcount )
-    , m_thumbnailStatus( data->thumbnails[VLC_ML_THUMBNAIL_SMALL].i_status )
+    : MLMedia ( data )
 {
     assert( data->i_type == VLC_ML_MEDIA_TYPE_VIDEO || data->i_type == VLC_ML_MEDIA_TYPE_UNKNOWN );
 
@@ -119,6 +113,13 @@ MLVideo::MLVideo(const vlc_ml_media_t* data)
                                      QString::fromUtf8( track.psz_language ) ,
                                      track.v.i_fpsNum }
                                  );
+        } else if ( track.i_type == VLC_ML_TRACK_TYPE_SUBTITLE )
+        {
+            m_subtitleDesc.emplaceBack( qfu(track.psz_codec)
+                                        , qfu(track.psz_language)
+                                        , qfu(track.psz_description)
+                                        , qfu(track.s.psz_encoding)
+                                    );
         }
     }
 
@@ -159,32 +160,9 @@ void MLVideo::setIsFavorite(bool isFavorite)
     m_isFavorite = isFavorite;
 }
 
-QString MLVideo::getFileName() const
+void MLVideo::setSmallCover(vlc_ml_thumbnail_status_t status, QString mrl)
 {
-    return m_fileName;
-}
-
-QString MLVideo::getTitle() const
-{
-    return m_title;
-}
-
-QString MLVideo::getThumbnail(vlc_ml_thumbnail_status_t* status)
-{
-    if (status)
-        *status = m_thumbnailStatus;
-    return m_thumbnail;
-}
-
-void MLVideo::setThumbnail(vlc_ml_thumbnail_status_t status, QString mrl)
-{
-    m_thumbnailStatus = status;
-    m_thumbnail = mrl;
-}
-
-VLCTick MLVideo::getDuration() const
-{
-    return VLCTick::fromMS(m_duration);
+    m_smallCover = {mrl, status};
 }
 
 QString MLVideo::getMRL() const
@@ -206,27 +184,46 @@ QString MLVideo::getChannel() const
     return m_channel;
 }
 
-float MLVideo::getProgress() const
-{
-    return m_progress;
-}
-
-unsigned int MLVideo::getPlayCount() const
-{
-    return m_playCount;
-}
-
-VLCTick MLVideo::getProgressTime() const
-{
-    return VLCTick::fromMS(m_duration * m_progress);
-}
-
 QList<VideoDescription> MLVideo::getVideoDesc() const
 {
     return m_videoDesc;
 }
 
+QList<SubtitleDescription> MLVideo::getSubtitleDesc() const
+{
+    return m_subtitleDesc;
+}
+
 QList<AudioDescription> MLVideo::getAudioDesc() const
 {
     return m_audioDesc;
+}
+
+SubtitleDescription::SubtitleDescription(const QString &codec, const QString &language
+                                         , const QString &description, const QString &encoding)
+    : m_codec {codec}
+    , m_language {language}
+    , m_description {description}
+    , m_encoding {encoding}
+{
+}
+
+QString SubtitleDescription::getCodec() const
+{
+    return m_codec;
+}
+
+QString SubtitleDescription::getLanguage() const
+{
+    return m_language;
+}
+
+QString SubtitleDescription::getDescription() const
+{
+    return m_description;
+}
+
+QString SubtitleDescription::getEncoding() const
+{
+    return m_encoding;
 }

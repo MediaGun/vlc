@@ -28,26 +28,34 @@
 
 #include "qt.hpp"
 
-#include "maininterface/mainctx.hpp"
+#include "mainctx.hpp"
+#include "mainctx_submodels.hpp"
+#include "medialibrary/mlhelper.hpp"
+
 #include "compositor.hpp"
 #include "util/renderer_manager.hpp"
 #include "util/csdbuttonmodel.hpp"
+#include "util/workerthreadset.hpp"
 
 #include "widgets/native/customwidgets.hpp"               // qtEventToVLCKey, QVLCStackedWidget
 #include "util/qt_dirs.hpp"                     // toNativeSeparators
 
+#include "util/color_scheme_model.hpp"
+
 #include "widgets/native/interface_widgets.hpp"     // bgWidget, videoWidget
 
 #include "playlist/playlist_controller.hpp"
+#include "player/player_controller.hpp"
 
 #include "dialogs/dialogs_provider.hpp"
+#include "dialogs/systray/systray.hpp"
 
 #include "videosurface.hpp"
 
 #include "menus/menus.hpp"                            // Menu creation
 
 #include "dialogs/toolbar/controlbar_profile_model.hpp"
-
+#include "dialogs/help/help.hpp"
 
 #include <QKeyEvent>
 
@@ -60,11 +68,15 @@
 
 #include <QWindow>
 #include <QScreen>
+
+#include <QOperatingSystemVersion>
+
 #ifdef _WIN32
 #include <QFileInfo>
 #endif
 
 #include <vlc_interface.h>
+#include <vlc_preparser.h>
 
 #define VLC_REFERENCE_SCALE_FACTOR 96.
 
@@ -124,6 +136,22 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
     settings = getSettings();
     m_colorScheme = new ColorSchemeModel(this);
 
+    m_sort = new SortCtx(this);
+    m_search = new SearchCtx(this);
+
+    // getOSInfo();
+    QOperatingSystemVersion currentOS = QOperatingSystemVersion::current();
+    switch (currentOS.type()) {
+    case QOperatingSystemVersion::OSType::Windows:
+        m_osName = Windows;
+        break;
+
+    default:
+        m_osName = Unknown;
+        break;
+    }
+    m_osVersion = (currentOS.majorVersion());
+
     loadPrefs(false);
     loadFromSettingsImpl(false);
 
@@ -133,19 +161,17 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
     vlc_medialibrary_t* ml = vlc_ml_instance_get( p_intf );
     b_hasMedialibrary = (ml != NULL);
     if (b_hasMedialibrary) {
-        m_medialib = new MediaLib(p_intf);
+        m_medialib = new MediaLib(p_intf, p_intf->p_mainPlaylistController);
     }
 
     /* Controlbar Profile Model Creation */
-    m_controlbarProfileModel = new ControlbarProfileModel(p_intf, this);
+    m_controlbarProfileModel = new ControlbarProfileModel(p_intf->mainSettings, this);
 
     m_dialogFilepath = getSettings()->value( "filedialog-path", QVLCUserDir( VLC_HOME_DIR ) ).toString();
 
     QString platformName = QGuiApplication::platformName();
 
-#ifdef QT5_HAS_WAYLAND
     b_hasWayland = platformName.startsWith(QLatin1String("wayland"), Qt::CaseInsensitive);
-#endif
 
     /*********************************
      * Create the Systray Management *
@@ -169,14 +195,6 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
 
     /* VideoWidget connects for asynchronous calls */
     connect( this, &MainCtx::askToQuit, THEDP, &DialogsProvider::quit, Qt::QueuedConnection  );
-
-    QMetaObject::invokeMethod(this, [this]()
-    {
-        // *** HACKY ***
-        assert(p_intf->p_compositor->interfaceMainWindow());
-        connect(p_intf->p_compositor->interfaceMainWindow(), &QWindow::screenChanged,
-                this, &MainCtx::screenChanged);
-    }, Qt::QueuedConnection);
 
     /** END of CONNECTS**/
 
@@ -203,6 +221,41 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
     {
         QMetaObject::invokeMethod(m_medialib, &MediaLib::reload, Qt::QueuedConnection);
     }
+
+    m_preparser = libvlc_GetMainPreparser(libvlc);
+
+#ifdef UPDATE_CHECK
+    /* Checking for VLC updates */
+    if( var_InheritBool( p_intf, "qt-updates-notif" ) &&
+        !var_InheritBool( p_intf, "qt-privacy-ask" ) )
+    {
+        int interval = var_InheritInteger( p_intf, "qt-updates-days" );
+        if( QDate::currentDate() >
+            getSettings()->value( "updatedate" ).toDate().addDays( interval ) )
+        {
+            /* check for update at startup */
+            m_updateModel = std::make_unique<UpdateModel>(p_intf);
+            connect(m_updateModel.get(), &UpdateModel::updateStatusChanged, this, [this](){
+                switch (m_updateModel->updateStatus())
+                {
+                case UpdateModel::Checking:
+                case UpdateModel::Unchecked:
+                    break;
+                case UpdateModel::NeedUpdate:
+                    qWarning() << "Need Udpate";
+                    THEDP->updateDialog();
+                    [[fallthrough]];
+                case UpdateModel::UpToDate:
+                case UpdateModel::CheckFailed:
+                    disconnect(m_updateModel.get(), nullptr, this, nullptr);
+                    break;
+                }
+            });
+            m_updateModel->checkUpdate();
+            getSettings()->setValue( "updatedate", QDate::currentDate() );
+        }
+    }
+#endif
 }
 
 MainCtx::~MainCtx()
@@ -214,11 +267,14 @@ MainCtx::~MainCtx()
     settings->beginGroup("MainWindow");
     settings->setValue( "pl-dock-status", b_playlistDocked );
     settings->setValue( "ShowRemainingTime", m_showRemainingTime );
-    settings->setValue( "interface-scale", m_intfUserScaleFactor );
+    settings->setValue( "interface-scale", QString::number( m_intfUserScaleFactor ) );
 
     /* Save playlist state */
-    settings->setValue( "playlist-visible", playlistVisible );
-    settings->setValue( "playlist-width-factor", playlistWidthFactor);
+    settings->setValue( "playlist-visible", m_playlistVisible );
+    settings->setValue( "playlist-width-factor", QString::number( m_playlistWidthFactor ) );
+    settings->setValue( "player-playlist-width-factor", QString::number( m_playerPlaylistWidthFactor ) );
+
+    settings->setValue( "artist-albums-width-factor", QString::number( m_artistAlbumsWidthFactor ) );
 
     settings->setValue( "grid-view", m_gridView );
     settings->setValue( "grouping", m_grouping );
@@ -240,7 +296,7 @@ MainCtx::~MainCtx()
     var_DelCallback( libvlc, "intf-popupmenu", PopupMenuCB, p_intf );
 
     if (m_medialib)
-        m_medialib->destroy();
+        delete m_medialib;
 
     p_intf->p_mi = NULL;
 }
@@ -271,6 +327,20 @@ void MainCtx::setUseGlobalShortcuts( bool useShortcuts )
     emit useGlobalShortcutsChanged(m_useGlobalShortcuts);
 }
 
+void MainCtx::setWindowSuportExtendedFrame(bool support) {
+    if (m_windowSuportExtendedFrame == support)
+        return;
+    m_windowSuportExtendedFrame = support;
+    emit windowSuportExtendedFrameChanged();
+}
+
+void MainCtx::setWindowExtendedMargin(unsigned int margin) {
+    if (margin == m_windowExtendedMargin)
+        return;
+    m_windowExtendedMargin = margin;
+    emit windowExtendedMarginChanged(margin);
+}
+
 /*****************************
  *   Main UI handling        *
  *****************************/
@@ -292,10 +362,9 @@ void MainCtx::loadPrefs(const bool callSignals)
     };
 
     /* Are we in the enhanced always-video mode or not ? */
-    loadFromVLCOption(b_minimalView, "qt-minimal-view", nullptr);
+    loadFromVLCOption(m_minimalView, "qt-minimal-view", &MainCtx::minimalViewChanged);
 
-    /* Do we want annoying popups or not */
-    loadFromVLCOption(i_notificationSetting, "qt-notification", nullptr);
+    loadFromVLCOption(m_bgCone, "qt-bgcone", &MainCtx::bgConeToggled);
 
     /* Should the UI stays on top of other windows */
     loadFromVLCOption(b_interfaceOnTop, "video-on-top", [this](MainCtx *)
@@ -305,9 +374,7 @@ void MainCtx::loadPrefs(const bool callSignals)
 
     loadFromVLCOption(m_hasToolbarMenu, "qt-menubar", &MainCtx::hasToolbarMenuChanged);
 
-#if QT_CLIENT_SIDE_DECORATION_AVAILABLE
     loadFromVLCOption(m_windowTitlebar, "qt-titlebar" , &MainCtx::useClientSideDecorationChanged);
-#endif
 
     loadFromVLCOption(m_smoothScroll, "qt-smooth-scrolling", &MainCtx::smoothScrollChanged);
 
@@ -338,9 +405,14 @@ void MainCtx::loadFromSettingsImpl(const bool callSignals)
 
     loadFromSettings(b_playlistDocked, "MainWindow/pl-dock-status", true, &MainCtx::playlistDockedChanged);
 
-    loadFromSettings(playlistVisible, "MainWindow/playlist-visible", false, &MainCtx::playlistVisibleChanged);
+    loadFromSettings(m_playlistVisible, "MainWindow/playlist-visible", false, &MainCtx::playlistVisibleChanged);
 
-    loadFromSettings(playlistWidthFactor, "MainWindow/playlist-width-factor", 4.0 , &MainCtx::playlistWidthFactorChanged);
+    loadFromSettings(m_playlistWidthFactor, "MainWindow/playlist-width-factor", 4.0 , &MainCtx::playlistWidthFactorChanged);
+
+    loadFromSettings(m_playerPlaylistWidthFactor, "MainWindow/player-playlist-width-factor", 4.0 , &MainCtx::playerPlaylistFactorChanged);
+
+    loadFromSettings(m_artistAlbumsWidthFactor, "MainWindow/artist-albums-width-factor"
+                     , 4.0 , &MainCtx::artistAlbumsWidthFactorChanged);
 
     loadFromSettings(m_gridView, "MainWindow/grid-view", true, &MainCtx::gridViewChanged);
 
@@ -485,9 +557,39 @@ inline void MainCtx::initSystray()
     }
 
     if( b_systrayAvailable && b_systrayWanted )
-        createSystray();
+        m_systray = std::make_unique<VLCSystray>(this);
 }
 
+WorkerThreadSet* MainCtx::workersThreads() const
+{
+    if (!m_workersThreads)
+    {
+        m_workersThreads.reset( new WorkerThreadSet );
+    }
+
+    return m_workersThreads.get();
+}
+
+QUrl MainCtx::folderMRL(const QString &fileMRL) const
+{
+    return folderMRL(QUrl::fromUserInput(fileMRL));
+}
+
+QUrl MainCtx::folderMRL(const QUrl &fileMRL) const
+{
+    if (fileMRL.isLocalFile())
+    {
+        const QString f = fileMRL.toLocalFile();
+        return QUrl::fromLocalFile(QFileInfo(f).absoluteDir().absolutePath());
+    }
+
+    return {};
+}
+
+QString MainCtx::displayMRL(const QUrl &mrl) const
+{
+    return urlToDisplayString(mrl);
+}
 
 void MainCtx::setPlaylistDocked( bool docked )
 {
@@ -498,7 +600,7 @@ void MainCtx::setPlaylistDocked( bool docked )
 
 void MainCtx::setPlaylistVisible( bool visible )
 {
-    playlistVisible = visible;
+    m_playlistVisible = visible;
 
     emit playlistVisibleChanged(visible);
 }
@@ -507,9 +609,37 @@ void MainCtx::setPlaylistWidthFactor( double factor )
 {
     if (factor > 0.0)
     {
-        playlistWidthFactor = factor;
+        m_playlistWidthFactor = factor;
         emit playlistWidthFactorChanged(factor);
     }
+}
+
+void MainCtx::setPlayerPlaylistWidthFactor( double factor )
+{
+    if (factor > 0.0)
+    {
+        m_playerPlaylistWidthFactor = factor;
+        emit playerPlaylistFactorChanged(factor);
+    }
+}
+
+void MainCtx::setbgCone(bool bgCone)
+{
+    if (m_bgCone == bgCone)
+        return;
+
+    m_bgCone = bgCone;
+
+    emit bgConeToggled();
+}
+
+void MainCtx::setMinimalView(bool minimalView)
+{
+    if (m_minimalView == minimalView)
+        return;
+
+    m_minimalView = minimalView;
+    emit minimalViewChanged();
 }
 
 void MainCtx::setShowRemainingTime( bool show )
@@ -554,124 +684,53 @@ void MainCtx::setVideoSurfaceProvider(VideoSurfaceProvider* videoSurfaceProvider
     emit hasEmbededVideoChanged(m_videoSurfaceProvider && m_videoSurfaceProvider->hasVideoEmbed());
 }
 
+QJSValue MainCtx::urlListToMimeData(const QJSValue &array) {
+    // NOTE: Due to a Qt regression since 17318c4
+    //       (Nov 11, 2022), it is not possible to
+    //       use RFC-2483 compliant string here.
+    //       This regression was later corrected by
+    //       c25f53b (Jul 31, 2024).
+    // NOTE: Qt starts supporting string list since
+    //       17318c4, so starting from 6.5.0 a string
+    //       list can be used which is not affected
+    //       by the said issue. For Qt versions below
+    //       6.5.0, use byte array which is used as is
+    //       by Qt.
+    assert(array.property("length").toInt() > 0);
+
+    QJSEngine* const engine = qjsEngine(this);
+    assert(engine);
+
+    QJSValue data;
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
+    QString string;
+    for (int i = 0; i < array.property(QStringLiteral("length")).toInt(); ++i)
+    {
+        QString decodedUrl;
+        const QJSValue element = array.property(i);
+        if (element.isUrl())
+            // QJSValue does not have `toUrl()`
+            decodedUrl = QJSManagedValue(element, engine).toUrl().toString(QUrl::FullyEncoded);
+        else if (element.isString())
+            // If the element is string, we assume it is already encoded
+            decodedUrl = element.toString();
+        else
+            Q_UNREACHABLE(); // Assertion failure in debug builds
+        string += decodedUrl + QStringLiteral("\r\n");
+    }
+    string.chop(2);
+    data = engine->toScriptValue(string);
+#else
+    data = array;
+#endif
+    QJSValue ret = engine->newObject();
+    ret.setProperty(QStringLiteral("text/uri-list"), data);
+    return ret;
+}
+
 VideoSurfaceProvider* MainCtx::getVideoSurfaceProvider() const
 {
     return m_videoSurfaceProvider;
-}
-
-/*****************************************************************************
- * Systray Icon and Systray Menu
- *****************************************************************************/
-/**
- * Create a SystemTray icon and a menu that would go with it.
- * Connects to a click handler on the icon.
- **/
-void MainCtx::createSystray()
-{
-    QIcon iconVLC;
-    if( QDate::currentDate().dayOfYear() >= QT_XMAS_JOKE_DAY && var_InheritBool( p_intf, "qt-icon-change" ) )
-        iconVLC = QIcon::fromTheme( "vlc-xmas", QIcon( ":/logo/vlc128-xmas.png" ) );
-    else
-        iconVLC = QIcon::fromTheme( "vlc", QIcon( ":/logo/vlc256.png" ) );
-    sysTray = new QSystemTrayIcon( iconVLC, this );
-    sysTray->setToolTip( qtr( "VLC media player" ));
-
-    systrayMenu = std::make_unique<QMenu>( qtr( "VLC media player") );
-    systrayMenu->setIcon( iconVLC );
-
-    VLCMenuBar::updateSystrayMenu( this, p_intf, true );
-    sysTray->show();
-
-    connect( sysTray, &QSystemTrayIcon::activated,
-             this, &MainCtx::handleSystrayClick );
-
-    /* Connects on nameChanged() */
-    connect( THEMIM, &PlayerController::nameChanged,
-             this, &MainCtx::updateSystrayTooltipName );
-    /* Connect PLAY_STATUS on the systray */
-    connect( THEMIM, &PlayerController::playingStateChanged,
-             this, &MainCtx::updateSystrayTooltipStatus );
-}
-
-/**
- * Updates the Systray Icon's menu and toggle the main interface
- */
-void MainCtx::toggleUpdateSystrayMenu()
-{
-    emit toggleWindowVisibility();
-    if( sysTray )
-        VLCMenuBar::updateSystrayMenu( this, p_intf );
-}
-
-/* First Item of the systray menu */
-void MainCtx::showUpdateSystrayMenu()
-{
-    emit setInterfaceVisibible(true);
-    VLCMenuBar::updateSystrayMenu( this, p_intf );
-}
-
-/* First Item of the systray menu */
-void MainCtx::hideUpdateSystrayMenu()
-{
-    emit setInterfaceVisibible(false);
-    VLCMenuBar::updateSystrayMenu( this, p_intf );
-}
-
-/* Click on systray Icon */
-void MainCtx::handleSystrayClick(
-                                    QSystemTrayIcon::ActivationReason reason )
-{
-    switch( reason )
-    {
-        case QSystemTrayIcon::Trigger:
-        case QSystemTrayIcon::DoubleClick:
-#ifdef Q_OS_MAC
-            VLCMenuBar::updateSystrayMenu( this, p_intf );
-#else
-            toggleUpdateSystrayMenu();
-#endif
-            break;
-        case QSystemTrayIcon::MiddleClick:
-            sysTray->showMessage( qtr( "VLC media player" ),
-                    qtr( "Control menu for the player" ),
-                    QSystemTrayIcon::Information, 3000 );
-            break;
-        default:
-            break;
-    }
-}
-
-/**
- * Updates the name of the systray Icon tooltip.
- * Doesn't check if the systray exists, check before you call it.
- **/
-void MainCtx::updateSystrayTooltipName( const QString& name )
-{
-    if( name.isEmpty() )
-    {
-        sysTray->setToolTip( qtr( "VLC media player" ) );
-    }
-    else
-    {
-        sysTray->setToolTip( name );
-        if( ( i_notificationSetting == NOTIFICATION_ALWAYS ) ||
-            ( i_notificationSetting == NOTIFICATION_MINIMIZED && (m_windowVisibility == QWindow::Hidden || m_windowVisibility == QWindow::Minimized)))
-        {
-            sysTray->showMessage( qtr( "VLC media player" ), name,
-                    QSystemTrayIcon::NoIcon, 3000 );
-        }
-    }
-
-    VLCMenuBar::updateSystrayMenu( this, p_intf );
-}
-
-/**
- * Updates the status of the systray Icon tooltip.
- * Doesn't check if the systray exists, check before you call it.
- **/
-void MainCtx::updateSystrayTooltipStatus( PlayerController::PlayingState )
-{
-    VLCMenuBar::updateSystrayMenu( this, p_intf );
 }
 
 /************************************************************************
@@ -680,7 +739,7 @@ void MainCtx::updateSystrayTooltipStatus( PlayerController::PlayingState )
 
 bool MainCtx::onWindowClose( QWindow* )
 {
-    PlaylistControllerModel* playlistController = p_intf->p_mainPlaylistController;
+    PlaylistController* playlistController = p_intf->p_mainPlaylistController;
     PlayerController* playerController = p_intf->p_mainPlayerController;
 
     if (m_videoSurfaceProvider)
@@ -866,12 +925,13 @@ void MainCtx::setAttachedToolTip(QObject *toolTip)
     // one that is set
 #ifndef NDEBUG
     QQmlComponent component(engine);
-    component.setData(QByteArrayLiteral("import QtQuick 2.12; import QtQuick.Controls 2.12; Item { }"), {});
+    component.setData(QByteArrayLiteral("import QtQuick; import QtQuick.Controls; Item { }"), {});
     QObject* const obj = component.create();
     assert(obj);
     // Consider disabling setting of custom attached
     // tooltip if the following assertion fails:
-    assert(QQmlProperty::read(obj, QStringLiteral("ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() == toolTip);
+    if (QQmlProperty::read(obj, QStringLiteral("ToolTip.toolTip"), qmlContext(obj)).value<QObject*>() != toolTip)
+        qmlWarning(obj) << "Could not set self as custom ToolTip!";
     obj->deleteLater();
 #endif
 }
@@ -885,3 +945,98 @@ double MainCtx::dp(const double px) const
 {
     return dp(px, m_intfScaleFactor);
 }
+
+bool MainCtx::useXmasCone() const
+{
+    return (QDate::currentDate().dayOfYear() >= QT_XMAS_JOKE_DAY)
+            && var_InheritBool( p_intf, "qt-icon-change" );
+}
+
+bool WindowStateHolder::holdFullscreen(QWindow *window, Source source, bool hold)
+{
+    QVariant prop = window->property("__windowFullScreen");
+    bool ok = false;
+    unsigned fullscreenCounter = prop.toUInt(&ok);
+    if (!ok)
+        fullscreenCounter = 0;
+
+    if (hold)
+        fullscreenCounter |= source;
+    else
+        fullscreenCounter &= ~source;
+
+    Qt::WindowStates oldflags = window->windowStates();
+    Qt::WindowStates newflags;
+
+    if( fullscreenCounter != 0 )
+        newflags = oldflags | Qt::WindowFullScreen;
+    else
+        newflags = oldflags & ~Qt::WindowFullScreen;
+
+    if( newflags != oldflags )
+    {
+        window->setWindowStates( newflags );
+    }
+
+    window->setProperty("__windowFullScreen", QVariant::fromValue(fullscreenCounter));
+
+    return fullscreenCounter != 0;
+}
+
+bool WindowStateHolder::holdOnTop(QWindow *window, Source source, bool hold)
+{
+    QVariant prop = window->property("__windowOnTop");
+    bool ok = false;
+    unsigned onTopCounter = prop.toUInt(&ok);
+    if (!ok)
+        onTopCounter = 0;
+
+    if (hold)
+        onTopCounter |= source;
+    else
+        onTopCounter &= ~source;
+
+    Qt::WindowStates oldStates = window->windowStates();
+    Qt::WindowFlags oldflags = window->flags();
+    Qt::WindowFlags newflags;
+
+    if( onTopCounter != 0 )
+        newflags = oldflags | Qt::WindowStaysOnTopHint;
+    else
+        newflags = oldflags & ~Qt::WindowStaysOnTopHint;
+    if( newflags != oldflags )
+    {
+
+        window->setFlags( newflags );
+        window->show(); /* necessary to apply window flags */
+        //workaround: removing onTop state might drop fullscreen state
+        window->setWindowStates(oldStates);
+    }
+
+    window->setProperty("__windowOnTop", QVariant::fromValue(onTopCounter));
+
+    return onTopCounter != 0;
+}
+
+double MainCtx::artistAlbumsWidthFactor() const
+{
+    return m_artistAlbumsWidthFactor;
+}
+
+void MainCtx::setArtistAlbumsWidthFactor(double newArtistAlbumsWidthFactor)
+{
+    if (qFuzzyCompare(m_artistAlbumsWidthFactor, newArtistAlbumsWidthFactor))
+        return;
+
+    m_artistAlbumsWidthFactor = newArtistAlbumsWidthFactor;
+    emit artistAlbumsWidthFactorChanged( m_artistAlbumsWidthFactor );
+}
+
+#ifdef UPDATE_CHECK
+UpdateModel* MainCtx::getUpdateModel() const
+{
+    if (!m_updateModel)
+        m_updateModel = std::make_unique<UpdateModel>(p_intf);
+    return m_updateModel.get();
+}
+#endif

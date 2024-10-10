@@ -35,7 +35,6 @@
 
 #include <vlc_common.h>
 #include <vlc_interface.h>
-#include <vlc_events.h>
 #include <vlc_dialog.h>
 #include <vlc_player.h>
 
@@ -558,7 +557,6 @@ static int Control(extensions_manager_t *p_mgr, int i_control,
         }
         case EXTENSION_META_CHANGED:
         {
-            ext = va_arg( args, extension_t* );
             PushCommand(ext, CMD_UPDATE_META);
             break;
         }
@@ -678,8 +676,8 @@ static int GetMenuEntries( extensions_manager_t *p_mgr, extension_t *p_ext,
 
     /* Get table size */
     size_t i_size = lua_objlen( L, -1 );
-    *pppsz_titles = calloc(i_size+1, sizeof(char*));
-    *ppi_ids = calloc(i_size+1, sizeof(uint16_t));
+    *pppsz_titles = calloc(i_size+1, sizeof(**pppsz_titles));
+    *ppi_ids = calloc(i_size+1, sizeof(**ppi_ids));
 
     /* Walk table */
     size_t i_idx = 0;
@@ -878,7 +876,10 @@ int lua_ExecuteFunctionVa( extensions_manager_t *p_mgr, extension_t *p_ext,
         i_ret = VLC_EGENERIC;
     }
 
-    i_ret |= lua_DialogFlush( L );
+    if (i_ret != VLC_SUCCESS)
+        lua_DialogFlush( L );
+    else
+        i_ret = lua_DialogFlush( L );
 
 exit:
     return i_ret;
@@ -920,7 +921,10 @@ int lua_ExtensionTriggerMenu( extensions_manager_t *p_mgr,
         i_ret = VLC_EGENERIC;
     }
 
-    i_ret |= lua_DialogFlush( L );
+    if (i_ret != VLC_SUCCESS)
+        lua_DialogFlush( L );
+    else
+        i_ret = lua_DialogFlush( L );
     if( i_ret < VLC_SUCCESS )
     {
         msg_Dbg( p_mgr, "Something went wrong in %s (%s:%d)",

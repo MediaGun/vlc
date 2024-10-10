@@ -15,19 +15,21 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-import QtQuick 2.12
-import QtQuick.Templates 2.12 as T
-import QtQuick.Layouts 1.12
+import QtQuick
+import QtQuick.Templates as T
+import QtQuick.Layouts
 
-import org.videolan.vlc 0.1
 
-import "qrc:///style/"
-import "qrc:///widgets/" as Widgets
+import VLC.MainInterface
+import VLC.Style
+import VLC.Widgets as Widgets
+import VLC.Network
+import VLC.Menus
 
 T.Control {
     id: control
 
-    property var path
+    property var path: []
 
     property var _contentModel
     property var _menuModel
@@ -103,7 +105,7 @@ T.Control {
                     contentRepeater.itemAt(0).forceActiveFocus(Qt.TabFocusReason)
             }
             Keys.priority: Keys.AfterItem
-            Keys.onPressed: Navigation.defaultKeyAction(event)
+            Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
             onClicked: control.homeButtonClicked(focusReason)
         }
@@ -123,7 +125,7 @@ T.Control {
                 contentRepeater.itemAt(0).forceActiveFocus(Qt.TabFocusReason)
             }
             Keys.priority: Keys.AfterItem
-            Keys.onPressed: Navigation.defaultKeyAction(event)
+            Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
             onClicked: popup.show()
         }
@@ -158,7 +160,7 @@ T.Control {
                 }
 
                 Keys.priority: Keys.AfterItem
-                Keys.onPressed: Navigation.defaultKeyAction(event)
+                Keys.onPressed: (event) => Navigation.defaultKeyAction(event)
 
                 AddressbarButton {
                     id: btn
@@ -204,6 +206,8 @@ T.Control {
 
     StringListMenu {
         id: popup
+
+        ctx: MainCtx
 
         function show() {
             const model = control._menuModel.map(function (modelData) {

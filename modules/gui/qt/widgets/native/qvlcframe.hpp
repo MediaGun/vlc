@@ -72,8 +72,7 @@ class QVLCTools
 class QVLCFrame : public QWidget
 {
 public:
-    QVLCFrame( qt_intf_t *_p_intf ) : QWidget( NULL ), p_intf( _p_intf )
-    {}
+    QVLCFrame( qt_intf_t *_p_intf );
     virtual ~QVLCFrame()   {}
 
     void toggleVisible()
@@ -132,52 +131,6 @@ protected:
         hide();
     }
     void keyPressEvent( QKeyEvent *keyEvent ) override;
-};
-
-class QVLCMW : public QMainWindow
-{
-public:
-    QVLCMW( qt_intf_t *_p_intf,QWidget *parent = nullptr, Qt::WindowFlags flags = Qt::WindowFlags() )
-        : QMainWindow( parent, flags )
-        , p_intf( _p_intf )
-    {}
-
-    void toggleVisible()
-    {
-        if( isVisible() ) hide();
-        else show();
-    }
-protected:
-    qt_intf_t *p_intf;
-    QSize mainSize;
-
-    void readSettings( const QString& name, QSize defSize )
-    {
-        QVLCTools::restoreWidgetPosition( p_intf, name, this, defSize);
-    }
-
-    void readSettings( const QString& name )
-    {
-        QVLCTools::restoreWidgetPosition( p_intf, name, this);
-    }
-    void readSettings( QSettings *settings )
-    {
-        QVLCTools::restoreWidgetPosition(settings, this);
-    }
-
-    void readSettings( QSettings *settings, QSize defSize)
-    {
-        QVLCTools::restoreWidgetPosition(settings, this, defSize);
-    }
-
-    void writeSettings( const QString& name )
-    {
-        QVLCTools::saveWidgetPosition( p_intf, name, this);
-    }
-    void writeSettings(QSettings *settings )
-    {
-        QVLCTools::saveWidgetPosition(settings, this);
-    }
 };
 
 #endif

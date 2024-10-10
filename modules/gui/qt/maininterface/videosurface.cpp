@@ -22,6 +22,11 @@
 #include <QThreadPool>
 #include <vlc_window.h>
 
+#include <QQuickRenderControl>
+#ifdef QT_DECLARATIVE_PRIVATE
+#  include <QtGui/qpa/qplatformwindow.h>
+#endif
+
 WindowResizer::WindowResizer(vlc_window_t* window):
     m_requestedWidth(0),
     m_requestedHeight(0),
@@ -204,24 +209,16 @@ VideoSurface::VideoSurface(QQuickItem* parent)
     setAcceptHoverEvents(true);
     setAcceptedMouseButtons(Qt::AllButtons);
     setFlag(ItemAcceptsInputMethod, true);
-    setFlag(ItemHasContents, true);
 
-    connect(this, &QQuickItem::xChanged, this, &VideoSurface::onSurfacePositionChanged);
-    connect(this, &QQuickItem::yChanged, this, &VideoSurface::onSurfacePositionChanged);
-    connect(this, &QQuickItem::widthChanged, this, &VideoSurface::onSurfaceSizeChanged);
-    connect(this, &QQuickItem::heightChanged, this, &VideoSurface::onSurfaceSizeChanged);
-    connect(this, &VideoSurface::enabledChanged, this, &VideoSurface::updatePositionAndSize);
-}
+    {
+        connect(this, &QQuickItem::widthChanged, this, &VideoSurface::updateSurfaceSize);
+        connect(this, &QQuickItem::heightChanged, this, &VideoSurface::updateSurfaceSize);
 
-MainCtx* VideoSurface::getCtx()
-{
-    return m_ctx;
-}
-
-void VideoSurface::setCtx(MainCtx* ctx)
-{
-    m_ctx = ctx;
-    emit ctxChanged(ctx);
+        connect(this, &QQuickItem::xChanged, this, &VideoSurface::updateSurfacePosition);
+        connect(this, &QQuickItem::yChanged, this, &VideoSurface::updateSurfacePosition);
+        connect(this, &QQuickItem::parentChanged, this, &VideoSurface::updateParentChanged);
+        updateParentChanged();
+    }
 }
 
 int VideoSurface::qtMouseButton2VLC( Qt::MouseButton qtButton )
@@ -265,7 +262,7 @@ void VideoSurface::mouseReleaseEvent(QMouseEvent* event)
 
 void VideoSurface::mouseMoveEvent(QMouseEvent* event)
 {
-    QPointF current_pos = event->localPos();
+    QPointF current_pos = event->position();
     QQuickWindow* window = this->window();
     if (!window)
         return;
@@ -276,7 +273,7 @@ void VideoSurface::mouseMoveEvent(QMouseEvent* event)
 
 void VideoSurface::hoverMoveEvent(QHoverEvent* event)
 {
-    QPointF current_pos = event->posF();
+    QPointF current_pos = event->position();
     if (current_pos != m_oldHoverPos)
     {
         QQuickWindow* window = this->window();
@@ -307,17 +304,11 @@ void VideoSurface::keyPressEvent(QKeyEvent* event)
     event->ignore();
 }
 
-void VideoSurface::geometryChanged(const QRectF& newGeometry, const QRectF& oldGeometry)
-{
-    QQuickItem::geometryChanged(newGeometry, oldGeometry);
-    onSurfaceSizeChanged();
-}
-
 #if QT_CONFIG(wheelevent)
 void VideoSurface::wheelEvent(QWheelEvent *event)
 {
     emit mouseWheeled(*event);
-    event->ignore();
+    event->accept();
 }
 #endif
 
@@ -331,19 +322,57 @@ void VideoSurface::setCursorShape(Qt::CursorShape shape)
     setCursor(shape);
 }
 
-QSGNode*VideoSurface::updatePaintNode(QSGNode* oldNode, QQuickItem::UpdatePaintNodeData* data)
+void VideoSurface::updatePolish()
 {
-    const auto node = ViewBlockingRectangle::updatePaintNode(oldNode, data);
+    QQuickItem::updatePolish();
 
-    if (m_provider == nullptr)
+    if (m_sizeDirty)
     {
-        if (m_ctx == nullptr)
-            return node;
-        m_provider =  m_ctx->getVideoSurfaceProvider();
-        if (!m_provider)
-            return node;
+        emit surfaceSizeChanged(size() * window()->effectiveDevicePixelRatio());
+        m_sizeDirty = false;
+    }
 
-        //forward signal to the provider
+    if (m_positionDirty)
+    {
+        QPointF scenePosition = this->mapToScene(QPointF(0,0));
+
+        emit surfacePositionChanged(scenePosition * window()->effectiveDevicePixelRatio());
+        m_positionDirty = false;
+    }
+}
+
+void VideoSurface::updateSurfacePosition()
+{
+    m_positionDirty = true;
+    polish();
+}
+
+void VideoSurface::updateSurfaceSize()
+{
+    m_sizeDirty = true;
+    polish();
+}
+
+void VideoSurface::updateSurfacePositionAndSize()
+{
+    updateSurfacePosition();
+    updateSurfaceSize();
+}
+
+void VideoSurface::setVideoSurfaceProvider(VideoSurfaceProvider *newVideoSurfaceProvider)
+{
+    if (m_provider == newVideoSurfaceProvider)
+        return;
+
+    if (m_provider)
+    {
+        disconnect(m_provider, nullptr, this, nullptr);
+    }
+
+    m_provider = newVideoSurfaceProvider;
+
+    if (m_provider)
+    {
         connect(this, &VideoSurface::mouseMoved, m_provider, &VideoSurfaceProvider::onMouseMoved);
         connect(this, &VideoSurface::mousePressed, m_provider, &VideoSurfaceProvider::onMousePressed);
         connect(this, &VideoSurface::mouseDblClicked, m_provider, &VideoSurfaceProvider::onMouseDoubleClick);
@@ -353,53 +382,39 @@ QSGNode*VideoSurface::updatePaintNode(QSGNode* oldNode, QQuickItem::UpdatePaintN
         connect(this, &VideoSurface::surfaceSizeChanged, m_provider, &VideoSurfaceProvider::onSurfaceSizeChanged);
         connect(this, &VideoSurface::surfacePositionChanged, m_provider, &VideoSurfaceProvider::surfacePositionChanged);
 
-        connect(m_provider, &VideoSurfaceProvider::hasVideoEmbedChanged, this, &VideoSurface::onProviderVideoChanged);
+        connect(m_provider, &VideoSurfaceProvider::videoEnabledChanged, this, &VideoSurface::updateSurfacePositionAndSize);
 
-        updatePositionAndSize();
+        setFlag(ItemHasContents, true);
+        updateSurfacePositionAndSize(); // Polish is queued anyway, updatePolish() should be called when the initial size is set.
     }
-    return node;
+    else
+    {
+        setFlag(ItemHasContents, false);
+    }
+
+    emit videoSurfaceProviderChanged();
 }
 
-void VideoSurface::onProviderVideoChanged(bool hasVideo)
+void VideoSurface::updateParentChanged()
 {
-    if (!hasVideo)
-        return;
-    updatePositionAndSize();
-}
+    //we need to track the global position of the VideoSurface within the scene
+    //it depends on the position of the VideoSurface itself and all its parents
 
-void VideoSurface::onSurfaceSizeChanged()
-{
-    if (!isEnabled())
-        return;
-    QQuickWindow* window = this->window();
-    if (!window)
-        return;
-    emit surfaceSizeChanged(size() * window->effectiveDevicePixelRatio());
-}
+    for (const QPointer<QQuickItem>& p : m_parentList)
+    {
+        if (!p)
+            continue;
+        disconnect(p, &QQuickItem::xChanged, this, &VideoSurface::updateSurfacePosition);
+        disconnect(p, &QQuickItem::yChanged, this, &VideoSurface::updateSurfacePosition);
+        disconnect(p, &QQuickItem::parentChanged, this, &VideoSurface::updateParentChanged);
+    }
+    m_parentList.clear();
 
-void VideoSurface::onSurfacePositionChanged()
-{
-    if (!isEnabled())
-        return;
-
-    QPointF scenePosition = this->mapToScene(QPointF(0,0));
-    QQuickWindow* window = this->window();
-    if (!window)
-        return;
-    qreal dpr = window->effectiveDevicePixelRatio();
-    emit surfacePositionChanged(scenePosition * dpr);
-}
-
-void VideoSurface::updatePositionAndSize()
-{
-    if (!isEnabled())
-        return;
-
-    QQuickWindow* window = this->window();
-    if (!window)
-        return;
-    qreal dpr = window->effectiveDevicePixelRatio();
-    emit surfaceSizeChanged(size() * dpr);
-    QPointF scenePosition = this->mapToScene(QPointF(0, 0));
-    emit surfacePositionChanged(scenePosition * dpr);
+    for (QQuickItem* p = parentItem(); p != nullptr; p = p->parentItem())
+    {
+        connect(p, &QQuickItem::xChanged, this, &VideoSurface::updateSurfacePosition);
+        connect(p, &QQuickItem::yChanged, this, &VideoSurface::updateSurfacePosition);
+        connect(p, &QQuickItem::parentChanged, this, &VideoSurface::updateParentChanged);
+        m_parentList.push_back(p);
+    }
 }

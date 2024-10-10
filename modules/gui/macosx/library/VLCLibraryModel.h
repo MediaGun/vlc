@@ -22,45 +22,52 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import <vlc_media_library.h>
+#import "library/VLCLibraryDataTypes.h"
+#import "library/VLCLibraryModelChangeDelegate.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class VLCMediaLibraryMediaItem;
-@class VLCMediaLibraryArtist;
-@class VLCMediaLibraryAlbum;
-@class VLCMediaLibraryGenre;
-@class VLCMediaLibraryEntryPoint;
-
-extern NSString * const VLCLibraryModelArtistListUpdated;
-extern NSString * const VLCLibraryModelAlbumListUpdated;
-extern NSString * const VLCLibraryModelGenreListUpdated;
+extern NSString * const VLCLibraryModelArtistListReset;
+extern NSString * const VLCLibraryModelAlbumListReset;
+extern NSString * const VLCLibraryModelGenreListReset;
+extern NSString * const VLCLibraryModelPlaylistAdded;
 extern NSString * const VLCLibraryModelListOfMonitoredFoldersUpdated;
 extern NSString * const VLCLibraryModelMediaItemThumbnailGenerated;
 
 extern NSString * const VLCLibraryModelAudioMediaListReset;
 extern NSString * const VLCLibraryModelVideoMediaListReset;
 extern NSString * const VLCLibraryModelRecentsMediaListReset;
+extern NSString * const VLCLibraryModelRecentAudioMediaListReset;
+extern NSString * const VLCLibraryModelListOfShowsReset;
+extern NSString * const VLCLibraryModelListOfGroupsReset;
 
 extern NSString * const VLCLibraryModelAudioMediaItemDeleted;
 extern NSString * const VLCLibraryModelVideoMediaItemDeleted;
 extern NSString * const VLCLibraryModelRecentsMediaItemDeleted;
+extern NSString * const VLCLibraryModelRecentAudioMediaItemDeleted;
 extern NSString * const VLCLibraryModelAlbumDeleted;
 extern NSString * const VLCLibraryModelArtistDeleted;
 extern NSString * const VLCLibraryModelGenreDeleted;
+extern NSString * const VLCLibraryModelGroupDeleted;
+extern NSString * const VLCLibraryModelPlaylistDeleted;
 
 extern NSString * const VLCLibraryModelAudioMediaItemUpdated;
 extern NSString * const VLCLibraryModelVideoMediaItemUpdated;
 extern NSString * const VLCLibraryModelRecentsMediaItemUpdated;
+extern NSString * const VLCLibraryModelRecentAudioMediaItemUpdated;
 extern NSString * const VLCLibraryModelAlbumUpdated;
 extern NSString * const VLCLibraryModelArtistUpdated;
 extern NSString * const VLCLibraryModelGenreUpdated;
+extern NSString * const VLCLibraryModelGroupUpdated;
+extern NSString * const VLCLibraryModelPlaylistUpdated;
 
 @interface VLCLibraryModel : NSObject
 
 + (NSUInteger)modelIndexFromModelItemNotification:(NSNotification * const)aNotification;
 
 - (instancetype)initWithLibrary:(vlc_medialibrary_t *)library;
+
+@property (readonly) VLCLibraryModelChangeDelegate *changeDelegate;
 
 @property (readonly) size_t numberOfAudioMedia;
 @property (readonly) NSArray <VLCMediaLibraryMediaItem *> *listOfAudioMedia;
@@ -77,15 +84,36 @@ extern NSString * const VLCLibraryModelGenreUpdated;
 @property (readonly) size_t numberOfVideoMedia;
 @property (readonly) NSArray <VLCMediaLibraryMediaItem *> *listOfVideoMedia;
 
+@property (readwrite) uint32_t recentMediaLimit;
 @property (readonly) size_t numberOfRecentMedia;
 @property (readonly) NSArray <VLCMediaLibraryMediaItem *> *listOfRecentMedia;
 
+@property (readwrite) uint32_t recentAudioMediaLimit;
+@property (readonly) size_t numberOfRecentAudioMedia;
+@property (readonly) NSArray <VLCMediaLibraryMediaItem *> *listOfRecentAudioMedia;
+
+@property (readonly) size_t numberOfShows;
+@property (readonly) NSArray <VLCMediaLibraryShow *> *listOfShows;
+
+@property (readonly) size_t numberOfGroups;
+@property (readonly) NSArray <VLCMediaLibraryGroup *> *listOfGroups;
+
 @property (readonly) NSArray <VLCMediaLibraryEntryPoint *> *listOfMonitoredFolders;
 
-- (nullable NSArray <VLCMediaLibraryAlbum *>*)listAlbumsOfParentType:(enum vlc_ml_parent_type)parentType forID:(int64_t)ID;
+@property (readonly) NSDictionary<NSNumber *, NSString *> *albumDict;
+@property (readonly) NSDictionary<NSNumber *, NSString *> *artistDict;
+@property (readonly) NSDictionary<NSNumber *, NSString *> *genreDict;
 
-- (void)sortByCriteria:(enum vlc_ml_sorting_criteria_t)sortCriteria andDescending:(bool)descending;
-- (void)filterByString:(NSString*)filterString;
+@property (readwrite, nonatomic) NSString *filterString;
+
+- (size_t)numberOfPlaylistsOfType:(const enum vlc_ml_playlist_type_t)playlistType;
+- (nullable NSArray<VLCMediaLibraryPlaylist *> *)listOfPlaylistsOfType:(const enum vlc_ml_playlist_type_t)playlistType;
+- (nullable NSArray<VLCMediaLibraryAlbum *> *)listAlbumsOfParentType:(const enum vlc_ml_parent_type)parentType forID:(int64_t)ID;
+- (NSArray<id<VLCMediaLibraryItemProtocol>> *)listOfLibraryItemsOfParentType:(const VLCMediaLibraryParentGroupType)parentType;
+- (NSArray<VLCMediaLibraryMediaItem *> *)listOfMediaItemsForParentType:(const VLCMediaLibraryParentGroupType)parentType;
+
+- (void)sortByCriteria:(enum vlc_ml_sorting_criteria_t)sortCriteria
+         andDescending:(bool)descending;
 
 @end
 

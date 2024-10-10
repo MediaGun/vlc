@@ -1,8 +1,8 @@
 # FFmpeg
 
 FFMPEG_HASH=ec47a3b95f88fc3f820b900038ac439e4eb3fede
-FFMPEG_MAJVERSION := 5.1
-FFMPEG_REVISION := 2
+FFMPEG_MAJVERSION := 6.1
+FFMPEG_REVISION := 1
 FFMPEG_VERSION := $(FFMPEG_MAJVERSION).$(FFMPEG_REVISION)
 FFMPEG_BRANCH=release/$(FFMPEG_MAJVERSION)
 FFMPEG_URL := https://ffmpeg.org/releases/ffmpeg-$(FFMPEG_VERSION).tar.xz
@@ -12,8 +12,10 @@ FFMPEG_LAVC_MIN := 57.37.100
 FFMPEG_BASENAME := $(subst .,_,$(subst \,_,$(subst /,_,$(FFMPEG_HASH))))
 
 # bsf=vp9_superframe is needed to mux VP9 inside webm/mkv
-FFMPEGCONF = \
+FFMPEGCONF = --prefix="$(PREFIX)" --enable-static --disable-shared \
+	--extra-ldflags="$(LDFLAGS)" \
 	--cc="$(CC)" \
+	--host-cc="$(BUILDCC)" \
 	--pkg-config="$(PKG_CONFIG)" \
 	--disable-doc \
 	--disable-encoder=vorbis \
@@ -38,6 +40,10 @@ FFMPEGCONF = \
 ifdef HAVE_DARWIN_OS
 FFMPEGCONF += \
 	--disable-securetransport
+endif
+
+ifdef ENABLE_PDB
+FFMPEGCONF += --ln_s=false
 endif
 
 DEPS_ffmpeg = zlib $(DEPS_zlib) gsm $(DEPS_gsm) openjpeg $(DEPS_openjpeg)
@@ -137,12 +143,19 @@ FFMPEGCONF += --cpu=core2
 endif
 ifdef HAVE_IOS
 FFMPEGCONF += --enable-pic --extra-ldflags="$(EXTRA_CFLAGS) -isysroot $(IOS_SDK)"
+ifdef HAVE_WATCHOS
+FFMPEGCONF += --disable-everything
+FFMPEGCONF += --enable-decoder='aac,aac_latm,aac_fixed,aadec,ac3,adpcm_*,aiff,alac,alsdec,amrnb,amrwb,ape,atrac1,atrac3,atrac3plus,atrac9,binkaudio_dct,binkaudio_rdft,bmv_audio,cook,dca,derf,dpcm,dts,dvaudio,eaac,eac3,flac,flv,g722,g723,g726,g729,gsm,metasound,mpc7,mpc8,mpegaudiodec_fixed,mp3,m4a,nellymoser,opus,pcm_*,qdmc,qdm2,ra144,ra288,ralf,rka,shorten,tta,tak,truespeech,vorbis,wavpack,wma,wmalossless,wmapro,wmavoice'
+FFMPEGCONF += --enable-parser='aac,aac_latm,ac3,adpcm,amr,aac_latm,ape,cook,dca,dvaudio,flac,g723,g729,gsm,mlp,mpegaudio,opus,sipr,vorbis,xma'
+FFMPEGCONF += --enable-demuxer='aac,ac3,adts,aiff,ape,asf,au,avi,caf,daud,dirac,dts,dv,ea,flac,flv,gsm,ivf,matroska,mmf,mov,mp3,mpeg,ogg,pcm,rm,sbc,sdp,shorten,voc,w64,wav,wv'
+FFMPEGCONF += --enable-swresample
+endif
 endif
 endif
 
 # Linux
 ifdef HAVE_LINUX
-FFMPEGCONF += --target-os=linux --enable-pic --extra-libs="-lm"
+FFMPEGCONF += --target-os=linux --enable-pic
 
 endif
 
@@ -156,14 +169,14 @@ endif
 # Windows
 ifdef HAVE_WIN32
 ifndef HAVE_VISUALSTUDIO
-DEPS_ffmpeg += wine-headers
+DEPS_ffmpeg += wine-headers mingw12-fixes
 endif
 FFMPEGCONF += --target-os=mingw32
 FFMPEGCONF += --enable-w32threads
 ifndef HAVE_WINSTORE
 FFMPEGCONF += --enable-dxva2
 else
-FFMPEGCONF += --disable-dxva2
+FFMPEGCONF += --disable-dxva2 --disable-mediafoundation
 endif
 
 ifeq ($(ARCH),x86_64)
@@ -191,7 +204,7 @@ FFMPEGCONF += --target-os=sunos --enable-pic
 endif
 
 ifdef HAVE_EMSCRIPTEN
-FFMPEGCONF+= --arch=wasm32 --target-os=emscripten
+FFMPEGCONF+= --arch=wasm32 --target-os=none --enable-pic
 endif
 
 # Build
@@ -216,7 +229,6 @@ $(TARBALLS)/ffmpeg-$(FFMPEG_VERSION).tar.xz:
 
 ffmpeg: ffmpeg-$(FFMPEG_VERSION).tar.xz .sum-ffmpeg
 	$(UNPACK)
-	$(APPLY) $(SRC)/ffmpeg/armv7_fixup.patch
 	$(APPLY) $(SRC)/ffmpeg/dxva_vc1_crash.patch
 	$(APPLY) $(SRC)/ffmpeg/h264_early_SAR.patch
 	$(APPLY) $(SRC)/ffmpeg/0001-avcodec-dxva2_hevc-add-support-for-parsing-HEVC-Rang.patch
@@ -225,16 +237,13 @@ ffmpeg: ffmpeg-$(FFMPEG_VERSION).tar.xz .sum-ffmpeg
 	$(APPLY) $(SRC)/ffmpeg/0001-avcodec-mpeg12dec-don-t-call-hw-end_frame-when-start.patch
 	$(APPLY) $(SRC)/ffmpeg/0002-avcodec-mpeg12dec-don-t-end-a-slice-without-first_sl.patch
 	$(APPLY) $(SRC)/ffmpeg/0001-fix-mf_utils-compilation-with-mingw64.patch
-	$(APPLY) $(SRC)/ffmpeg/0001-ffmpeg-add-target_os-support-for-emscripten.patch
-	$(APPLY) $(SRC)/ffmpeg/0001-vulkan-Fix-win-i386-calling-convention.patch
-	$(APPLY) $(SRC)/ffmpeg/0002-lavu-vulkan-fix-handle-type-for-32-bit-targets.patch
+	$(APPLY) $(SRC)/ffmpeg/0011-avcodec-videotoolboxenc-disable-calls-on-unsupported.patch
+	$(APPLY) $(SRC)/ffmpeg/avcodec-fix-compilation-visionos.patch
 	$(MOVE)
 
 .ffmpeg: ffmpeg
 	$(MAKEBUILDDIR)
-	$(MAKECONFDIR)/configure \
-		--extra-ldflags="$(LDFLAGS)" $(FFMPEGCONF) \
-		--prefix="$(PREFIX)" --enable-static --disable-shared
+	$(MAKECONFDIR)/configure $(FFMPEGCONF)
 	+$(MAKEBUILD)
 	+$(MAKEBUILD) install-libs install-headers
 	touch $@

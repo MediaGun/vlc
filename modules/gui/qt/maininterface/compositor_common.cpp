@@ -23,12 +23,15 @@
 #ifndef QT_NO_ACCESSIBILITY
 #include <QAccessible>
 #endif
+#include <QQuickItem>
 
 #ifdef QT5_DECLARATIVE_PRIVATE
 #include <private/qquickwindow_p.h>
 #endif
 
 using namespace vlc;
+
+DummyRenderWindow::~DummyRenderWindow() = default;
 
 DummyRenderWindow::DummyRenderWindow(QWindow* parent)
     : QWindow(parent)
@@ -82,7 +85,7 @@ void DummyRenderWindow::init()
     if (m_initialized)
         return;
     m_initialized = true;
-    m_backingStore = new QBackingStore(this);
+    m_backingStore = std::make_unique<QBackingStore>(this);
 }
 
 void DummyRenderWindow::render()
@@ -164,6 +167,21 @@ void CompositorOffscreenWindow::setWindowStateExt(Qt::WindowState state)
 //don't set the window visible, this would create the window, and show make it actually visible
 void CompositorOffscreenWindow::setPseudoVisible(bool)
 {
+}
+
+void CompositorOffscreenWindow::focusOutEvent(QFocusEvent *ev)
+{
+    // QTBUG-125309
+    // Although on Qt 6.5 it appears that the focus item
+    // is restored, it is not the case with Qt 6.2.
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 3)
+    QPointer<QQuickItem> focusItem = activeFocusItem();
+    QQuickWindow::focusOutEvent(ev);
+    if (focusItem)
+        focusItem->forceActiveFocus();
+#else
+    QQuickWindow::focusOutEvent(ev);
+#endif
 }
 
 #endif

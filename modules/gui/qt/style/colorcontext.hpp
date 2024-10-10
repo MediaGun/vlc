@@ -28,6 +28,8 @@
 
 #include "qtthemeprovider.hpp"
 
+Q_MOC_INCLUDE("style/systempalette.hpp")
+
 class SystemPalette;
 class ColorContext;
 class ColorContextState;

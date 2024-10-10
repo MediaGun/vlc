@@ -333,7 +333,9 @@ time_t timegm(struct tm *);
 #endif
 
 #ifndef HAVE_TIMESPEC_GET
+#ifndef TIME_UTC
 #define TIME_UTC 1
+#endif
 struct timespec;
 int timespec_get(struct timespec *, int);
 #endif
@@ -342,6 +344,15 @@ int timespec_get(struct timespec *, int);
 #ifndef HAVE_GETTIMEOFDAY
 struct timezone;
 int gettimeofday(struct timeval *, struct timezone *);
+#endif
+
+#if defined(WIN32) && !defined(WINSTORECOMPAT)
+#include <winapifamily.h>
+#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+// getpid is incorrectly detected in UWP so we won't use the compat version
+#include <processthreadsapi.h>
+#define getpid()  GetCurrentProcessId()
+#endif
 #endif
 
 /* unistd.h */
@@ -755,11 +766,6 @@ void sincosf(float, float *, float *);
 
 #ifndef HAVE_REALPATH
 char *realpath(const char * restrict pathname, char * restrict resolved_path);
-#endif
-
-/* mingw-w64 has a broken IN6_IS_ADDR_MULTICAST macro */
-#if defined(_WIN32) && defined(__MINGW64_VERSION_MAJOR)
-# define IN6_IS_ADDR_MULTICAST IN6_IS_ADDR_MULTICAST
 #endif
 
 #ifdef __APPLE__

@@ -112,8 +112,8 @@ class VIntConfigControl : public ConfigControl
     Q_OBJECT
 public:
     virtual int getValue() const = 0;
-    virtual void doApply() override;
-    virtual void storeValue() override;
+    void doApply() override;
+    void storeValue() override;
 protected:
     VIntConfigControl( module_config_t *i ) : ConfigControl(i) {}
 };
@@ -435,7 +435,7 @@ public:
 protected:
     bool eventFilter( QObject *, QEvent * ) override;
 #ifndef QT_NO_CONTEXTMENU
-    void tableContextMenuEvent( QContextMenuEvent * );
+    void tableContextMenuEvent( QWidget *, QContextMenuEvent * );
 #endif
     void changeVisibility( bool ) override;
     void unset( KeyTableItem *, enum ColumnIndex );

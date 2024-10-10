@@ -1,0 +1,7 @@
+[package]
+name = "vlcrs-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vlcrs-messages = { path = "../vlcrs-messages" }

@@ -37,6 +37,7 @@
 #include <vlc_url.h>
 #include <vlc_meta.h>
 #include <vlc_input_item.h>
+#include <vlc_list.hpp>
 
 #include <QTreeWidget>
 #include <QTableWidget>
@@ -48,6 +49,7 @@
 #include <QTextEdit>
 #include <QApplication>
 #include <QPushButton>
+#include <QRegularExpression>
 
 /************************************************************************
  * Single panels
@@ -130,25 +132,21 @@ MetaPanel::MetaPanel( QWidget *parent,
     ADD_META( VLC_META_LANGUAGE, language_text, 7, -1 ); line++;
     ADD_META( VLC_META_PUBLISHER, publisher_text, 0, 7 );
 
+    /* Fingerprint button on the same line */
     fingerprintButton = new QPushButton( qtr("&Fingerprint") );
     fingerprintButton->setToolTip( qtr( "Find meta data using audio fingerprinting" ) );
-    fingerprintButton->setVisible( false );
-    metaLayout->addWidget( fingerprintButton, line, 7 , 3, -1 );
+    fingerprintButton->setEnabled( false );
+    metaLayout->addWidget( fingerprintButton, line++, 7 , 1, -1, Qt::AlignCenter );
     connect( fingerprintButton, &QPushButton::clicked, this, &MetaPanel::fingerprint );
-
-    line++;
-
-    lblURL = new QLabel;
-    lblURL->setOpenExternalLinks( true );
-    lblURL->setTextFormat( Qt::RichText );
-    lblURL->setMaximumWidth( 128 );
-    metaLayout->addWidget( lblURL, line -1, 7, 1, -1 );
-
-    ADD_META( VLC_META_COPYRIGHT, copyright_text, 0,  7 ); line++;
 
     /* ART_URL */
     art_cover = new CoverArtLabel( this, p_intf );
-    metaLayout->addWidget( art_cover, line, 7, 6, 3, Qt::AlignLeft );
+    metaLayout->addWidget( art_cover, line, 7, 6, 3, Qt::AlignCenter );
+
+    ADD_META( VLC_META_COPYRIGHT, copyright_text, 0,  7 ); line++;
+
+    fingerprintButton->setMinimumWidth( std::max( fingerprintButton->minimumSizeHint().width(),
+                                                  art_cover->minimumSizeHint().width() ) );
 
     ADD_META( VLC_META_ENCODED_BY, encodedby_text, 0, 7 ); line++;
 
@@ -159,7 +157,6 @@ MetaPanel::MetaPanel( QWidget *parent,
     description_text->setAcceptRichText( false );
     metaLayout->addWidget( description_text, line, 0, 1, 7 );
     connect( description_text, &QTextEdit::textChanged, this, &MetaPanel::enterEditMode );
-    line++;
 
     /* VLC_META_SETTING: Useless */
     /* ADD_META( TRACKID )  Useless ? */
@@ -182,11 +179,13 @@ MetaPanel::MetaPanel( QWidget *parent,
 }
 
 /**
- * Update all the MetaData and art on an "item-changed" event
+ * Update all the MetaData and art
  **/
-void MetaPanel::update( input_item_t *p_item )
+void MetaPanel::update( const SharedInputItem& p_item )
 {
-    if( !p_item )
+    input_item_t * const inputItem = p_item.get();
+
+    if( !inputItem )
     {
         clear();
         return;
@@ -198,18 +197,18 @@ void MetaPanel::update( input_item_t *p_item )
 
     char *psz_meta;
 #define UPDATE_META( meta, widget ) {                                   \
-    psz_meta = input_item_Get##meta( p_item );                          \
+    psz_meta = input_item_Get##meta( inputItem );                       \
     widget->setText( !EMPTY_STR( psz_meta ) ? qfu( psz_meta ) : "" );   \
     free( psz_meta ); }
 
-#define UPDATE_META_INT( meta, widget ) {           \
-    psz_meta = input_item_Get##meta( p_item );      \
-    if( !EMPTY_STR( psz_meta ) )                    \
-        widget->setValue( atoi( psz_meta ) ); }     \
+#define UPDATE_META_INT( meta, widget ) {            \
+    psz_meta = input_item_Get##meta( inputItem );    \
+    if( !EMPTY_STR( psz_meta ) )                     \
+        widget->setValue( atoi( psz_meta ) ); }      \
     free( psz_meta );
 
     /* Name / Title */
-    psz_meta = input_item_GetTitleFbName( p_item );
+    psz_meta = input_item_GetTitleFbName( inputItem );
     if( psz_meta )
     {
         title_text->setText( qfu( psz_meta ) );
@@ -219,10 +218,10 @@ void MetaPanel::update( input_item_t *p_item )
         title_text->setText( "" );
 
     /* URL / URI */
-    psz_meta = input_item_GetURI( p_item );
+    psz_meta = input_item_GetURI( inputItem );
     if( !EMPTY_STR( psz_meta ) )
         emit uriSet( qfu( psz_meta ) );
-    fingerprintButton->setVisible( Chromaprint::isSupported( QString( psz_meta ) ) );
+    fingerprintButton->setEnabled( Chromaprint::isSupported( QString( psz_meta ) ) );
     free( psz_meta );
 
     /* Other classic though */
@@ -242,40 +241,14 @@ void MetaPanel::update( input_item_t *p_item )
     UPDATE_META( TrackTotal, seqtot_text );
 
     /* Now Playing || ES Now Playing */
-    psz_meta = input_item_GetNowPlayingFb( p_item );
+    psz_meta = input_item_GetNowPlayingFb( inputItem );
     if( !EMPTY_STR( psz_meta ) )
         nowplaying_text->setText( qfu( psz_meta ) );
     free( psz_meta );
 
-    /* URL */
-    psz_meta = input_item_GetURL( p_item );
-    if( !EMPTY_STR( psz_meta ) )
-    {
-        QString newURL = qfu(psz_meta);
-        if( currentURL != newURL )
-        {
-            currentURL = newURL;
-            lblURL->setText( "<a href='" + currentURL + "'>" +
-                             currentURL.remove( QRegExp( ".*://") ) + "</a>" );
-        }
-    }
-    free( psz_meta );
 #undef UPDATE_META_INT
 #undef UPDATE_META
 
-    // If a artURL is available as a local file, directly display it !
-
-    QString file;
-    char *psz_art = input_item_GetArtURL( p_item );
-    if( psz_art )
-    {
-        char *psz = vlc_uri2path( psz_art );
-        free( psz_art );
-        file = qfu( psz );
-        free( psz );
-    }
-
-    art_cover->showArtUpdate( file );
     art_cover->setItem( p_item );
 }
 
@@ -284,24 +257,26 @@ void MetaPanel::update( input_item_t *p_item )
  **/
 void MetaPanel::saveMeta()
 {
-    if( p_input == NULL )
+    const auto input = p_input.get();
+
+    if( input == NULL )
         return;
 
     /* now we read the modified meta data */
-    input_item_SetTitle(  p_input, qtu( title_text->text() ) );
-    input_item_SetArtist( p_input, qtu( artist_text->text() ) );
-    input_item_SetAlbum(  p_input, qtu( collection_text->text() ) );
-    input_item_SetGenre(  p_input, qtu( genre_text->text() ) );
-    input_item_SetTrackNum(  p_input, qtu( seqnum_text->text() ) );
-    input_item_SetTrackTotal(  p_input, qtu( seqtot_text->text() ) );
-    input_item_SetDate(  p_input, qtu( date_text->text() ) );
-    input_item_SetLanguage(  p_input, qtu( language_text->text() ) );
+    input_item_SetTitle(  input, qtu( title_text->text() ) );
+    input_item_SetArtist( input, qtu( artist_text->text() ) );
+    input_item_SetAlbum(  input, qtu( collection_text->text() ) );
+    input_item_SetGenre(  input, qtu( genre_text->text() ) );
+    input_item_SetTrackNum(  input, qtu( seqnum_text->text() ) );
+    input_item_SetTrackTotal(  input, qtu( seqtot_text->text() ) );
+    input_item_SetDate(  input, qtu( date_text->text() ) );
+    input_item_SetLanguage(  input, qtu( language_text->text() ) );
 
-    input_item_SetCopyright( p_input, qtu( copyright_text->text() ) );
-    input_item_SetPublisher( p_input, qtu( publisher_text->text() ) );
-    input_item_SetDescription( p_input, qtu( description_text->toPlainText() ) );
+    input_item_SetCopyright( input, qtu( copyright_text->text() ) );
+    input_item_SetPublisher( input, qtu( publisher_text->text() ) );
+    input_item_SetDescription( input, qtu( description_text->toPlainText() ) );
 
-    input_item_WriteMeta( VLC_OBJECT(p_intf), p_input );
+    input_item_WriteMeta( VLC_OBJECT(p_intf), input );
 
     /* Reset the status of the mode. No need to emit any signal because parent
        is the only caller */
@@ -346,8 +321,7 @@ void MetaPanel::clear()
     publisher_text->clear();
     encodedby_text->clear();
     art_cover->clear();
-    fingerprintButton->setVisible( false );
-    lblURL->clear();
+    fingerprintButton->setEnabled( false );
 
     setEditMode( false );
     emit uriSet( "" );
@@ -355,13 +329,13 @@ void MetaPanel::clear()
 
 void MetaPanel::fingerprint()
 {
-    FingerprintDialog *dialog = new FingerprintDialog( this, p_intf, p_input );
+    FingerprintDialog *dialog = new FingerprintDialog( this, p_intf, p_input.get() );
     connect( dialog, &FingerprintDialog::metaApplied, this, &MetaPanel::fingerprintUpdate );
     dialog->setAttribute( Qt::WA_DeleteOnClose, true );
     dialog->show();
 }
 
-void MetaPanel::fingerprintUpdate( input_item_t *p_item )
+void MetaPanel::fingerprintUpdate( const SharedInputItem& p_item )
 {
     update( p_item );
     setEditMode( true );
@@ -441,6 +415,9 @@ void ExtraMetaPanel::update( input_item_t *p_item )
     if( char const* psz_disc = vlc_meta_Get( p_meta,  vlc_meta_DiscNumber ) )
         add_row( VLC_META_DISCNUMBER, psz_disc );
 
+    if( char const* psz_url = vlc_meta_Get( p_meta, vlc_meta_URL ) )
+        add_row( VLC_META_URL, psz_url );
+
     char ** ppsz_keys = vlc_meta_CopyExtraNames( p_meta );
     if( ppsz_keys )
     {
@@ -502,25 +479,19 @@ void InfoPanel::update( input_item_t *p_item)
 
     vlc_mutex_locker locker( &p_item->lock );
 
-    info_category_t *cat;
-    vlc_list_foreach(cat, &p_item->categories, node)
+    for (auto &cat : vlc::from(p_item->categories, &info_category_t::node))
     {
-        if (info_category_IsHidden(cat))
+        if (info_category_IsHidden(&cat))
             continue;
 
-        struct vlc_list *const head = &cat->infos;
-
         current_item = new QTreeWidgetItem();
-        current_item->setText( 0, qfu(cat->psz_name) );
+        current_item->setText(0, qfu(cat.psz_name));
         InfoTree->addTopLevelItem( current_item );
 
-        for (info_t *info = vlc_list_first_entry_or_null(head, info_t, node);
-             info != NULL;
-             info = vlc_list_next_entry_or_null(head, info, info_t, node))
+        for (auto &info : vlc::from(cat.infos, &info_t::node))
         {
             child_item = new QTreeWidgetItem ();
-            child_item->setText( 0, qfu(info->psz_name) + ": "
-                                    + qfu(info->psz_value));
+            child_item->setText(0, qfu(info.psz_name) + ": " + qfu(info.psz_value));
             current_item->addChild(child_item);
         }
         current_item->setExpanded( true );
