@@ -94,7 +94,6 @@ jobs:
     runs-on: [ macos-13 ]
     strategy:
       matrix:
-        #arch: [x86_64]
         arch: [x86_64, aarch64]
 
     env:
@@ -129,6 +128,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libvlc4-macos-${{matrix.arch}}
+          #tarball is already compressed
+          compression-level: 0
           path: ./vlc-macos-sdk-4.0.0-dev.tar.gz
 
   build_macos_universal:
@@ -146,13 +147,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: libvlc4-macos-aarch64
-          path: .
+          path: ./artifacts/aarch64
 
       - name: Get Artifact (x86_64)
         uses: actions/download-artifact@v4
         with:
           name: libvlc4-macos-x86_64
-          path: .
+          path: ./artifacts/x86_64
+
+      - name: Debug
+        shell: bash
+        run: find .
 
       - name: Build
         run: .github/workflows/osx_package.sh

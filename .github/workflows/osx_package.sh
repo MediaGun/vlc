@@ -36,7 +36,7 @@ hash_compare() {
 extract_source() {
     mkdir -p $1
     pushd $1
-    tar -xvf ../src/$1/vlc-macos-sdk-4.0.0-dev.tar.gz
+    tar -xvf ../artifacts/$1/vlc-macos-sdk-4.0.0-dev.tar.gz
     popd
 }
 # Main logic
