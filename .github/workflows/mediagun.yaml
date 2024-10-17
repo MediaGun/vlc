@@ -22,6 +22,7 @@ permissions:
 
 jobs:
   build_linux:
+    if: false #save some CPU for now
     name: Build for Linux
     runs-on: [ ubuntu-24.04 ]
     container:
@@ -62,6 +63,7 @@ jobs:
           path: ${{ env.install_prefix }}
 
   build_windows:
+    if: false #save some CPU for now
     name: Build for Windows
     runs-on: [ ubuntu-24.04 ]
     container:
