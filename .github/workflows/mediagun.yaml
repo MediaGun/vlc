@@ -6,8 +6,11 @@ on:
     branches:
       - master
       - mg-ci
-      - mg-volume-win32
-      - feat/ci
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - master
+      - mg-ci
   workflow_dispatch:
 
 concurrency:
@@ -19,6 +22,7 @@ permissions:
 
 jobs:
   build_linux:
+    if: false #save some CPU for now
     name: Build for Linux
     runs-on: [ ubuntu-24.04 ]
     container:
@@ -59,6 +63,7 @@ jobs:
           path: ${{ env.install_prefix }}
 
   build_windows:
+    if: false #save some CPU for now
     name: Build for Windows
     runs-on: [ ubuntu-24.04 ]
     container:
@@ -84,14 +89,20 @@ jobs:
           name: libvlc4-windows
           path: ./win64/vlc-4.0.0-dev
 
-  build_macos_arm:
-    name: Build for MacOS (ARM)
+  build_macos:
+    name: Build for MacOS
     runs-on: [ macos-13 ]
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
 
     env:
-      CONTRIBFLAGS: --disable-qt --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-x265 --disable-shout --disable-rav1e --disable-vpx --disable-x264 --disable-x262 --disable-aom --disable-twolame --disable-librist --disable-ncurses
-      VLC_CONFIGURE_ARGS: --disable-macosx --disable-sparkle --disable-osx-notifications  --disable-sout --disable-shout --disable-ncurses --disable-twolame --disable-vlm --disable-vlc --disable-nls --disable-chromecast --disable-dc1394 --disable-dc1394
+
+      CONTRIBFLAGS: --disable-qt --disable-sout --disable-medialibrary --disable-cddb --disable-chromaprint --disable-microdns --disable-vnc --disable-x265 --disable-shout --disable-rav1e --disable-vpx --disable-x264 --disable-x262 --disable-aom --disable-twolame --disable-librist --disable-ncurses --disable-fluid --disable-aribb25 --disable-xcb --disable-asdcplib --disable-protobuf --enable-gnutls --enable-gpg-error --enable-libtasn1 --enable-harfbuzz --enable-iconv --enable-png --enable-regex --enable-nettle
+      VLC_CONFIGURE_ARGS: --disable-macosx --disable-sparkle --disable-osx-notifications  --disable-sout --disable-shout --disable-ncurses --disable-twolame --disable-vlm --disable-vlc --disable-nls --disable-chromecast --disable-dc1394 --disable-dv1394 --disable-aribb25
       VLC_PATH: /usr/local/bin
+      #don't import pkg from homebrew
+      PKG_CONFIG_LIBDIR: /usr/lib/pkgconfig
 
     steps:
       - name: Check out repository code
@@ -99,11 +110,60 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: Install build tools
+        run: |
+          brew install help2man automake autoconf-archive libtool bison@3.8 nasm ragel meson python python-setuptools
+          export BREW_PREFIX="$(brew --prefix)"
+          echo "${BREW_PREFIX}/opt/bison/bin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/libtool/libexec/gnubin" >> $GITHUB_PATH
+          echo "${BREW_PREFIX}/opt/m4/bin" >> $GITHUB_PATH
+          brew uninstall selenium-server composer kotlin geckodriver azure-cli aria2 gradle php aws-sam-cli maven
+          brew autoremove
+
       - name: Build
-        run: ./extras/package/macosx/build.sh -a aarch64 -i s -c
+        shell: bash
+        run: ./extras/package/macosx/build.sh -a ${{matrix.arch}} -i s -c
 
       - name: Publish
         uses: actions/upload-artifact@v4
         with:
-          name: libvlc4-macos-arm
+          name: libvlc4-macos-${{matrix.arch}}
+          #tarball is already compressed
+          compression-level: 0
           path: ./vlc-macos-sdk-4.0.0-dev.tar.gz
+
+  build_macos_universal:
+    name: Build for MacOS (universal)
+    runs-on: [ macos-13 ]
+    needs: [ build_macos ]
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Get Artifact (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-macos-aarch64
+          path: ./artifacts/aarch64
+
+      - name: Get Artifact (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-macos-x86_64
+          path: ./artifacts/x86_64
+
+      - name: Debug
+        shell: bash
+        run: find .
+
+      - name: Build
+        run: .github/workflows/osx_package.sh
+
+      - name: Publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc4-macos-universal
+          path: ./vlc-macos-sdk-4.0.0-universal-dev.tar.gz
