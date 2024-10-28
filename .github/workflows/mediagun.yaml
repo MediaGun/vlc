@@ -55,11 +55,14 @@ jobs:
       - name: Install
         run: make install
 
+      - name: 'Tar files (to preserve symlinks)'
+        run: tar -cvf vlc.tar -C ${{ env.install_prefix }} .
+
       - name: Publish
         uses: actions/upload-artifact@v4
         with:
           name: libvlc4-linux
-          path: ${{ env.install_prefix }}
+          path: vlc.tar
 
   build_windows:
     name: Build for Windows
