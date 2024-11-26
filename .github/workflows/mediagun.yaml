@@ -23,7 +23,7 @@ permissions:
 jobs:
   build_linux:
     name: Build for Linux
-    runs-on: [ ubuntu-24.04 ]
+    runs-on: [ ubuntu-22.04 ]
     container:
       image: 'registry.videolan.org/vlc-debian-unstable:20221213103803'
       options: '--user root'
