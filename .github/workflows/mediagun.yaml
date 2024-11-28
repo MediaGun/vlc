@@ -6,11 +6,14 @@ on:
     branches:
       - master
       - mg-ci
+      - mg-ci-22.04
+
   pull_request:
     types: [opened, reopened, synchronize]
     branches:
       - master
       - mg-ci
+
   workflow_dispatch:
 
 concurrency:
@@ -24,21 +27,43 @@ jobs:
   build_linux:
     name: Build for Linux
     runs-on: [ ubuntu-22.04 ]
-    container:
-      image: 'registry.videolan.org/vlc-debian-unstable:20221213103803'
-      options: '--user root'
 
     env:
-      install_prefix: '/vlc/install_dir_linux'
+      install_prefix: '${{ github.workspace }}/install_dir_linux'
 
     steps:
+      - name: Prepare dependencies
+        run: |
+          sudo apt-get update && \
+          sudo apt-get install -y --no-install-suggests --no-install-recommends \
+            ant autoconf automake autopoint bison cmake flex g++ gettext \
+            git git-core libasound2-dev libavahi-client-dev libcdio-dev libdbus-1-dev \
+            libdirectfb-dev libegl1-mesa-dev libfreetype6-dev libfribidi-dev \
+            libgles2-mesa-dev libgnutls28-dev libgtk2.0-dev libidn11-dev libjack-dev \
+            liblircclient-dev libltdl-dev liblua5.2-dev libmtp-dev libncursesw5-dev \
+            libpng-dev libpulse-dev librsvg2-dev \
+            libsecret-1-dev libtool libtool-bin libudev-dev libupnp-dev libv4l-dev \
+            libva-dev libvdpau-dev libx11-dev libxcb-composite0-dev libxcb-keysyms1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-xv0-dev libxcb1-dev \
+            libxext-dev libxi-dev libxinerama-dev libxml2-dev libxpm-dev libzvbi-dev \
+            locales lua5.2 make pkg-config p7zip-full wget \
+            vim xz-utils yasm zlib1g-dev libxkbcommon-x11-dev meson \
+            curl build-essential python3-venv python3-pip python3-setuptools python3-mako python3-wheel \
+            nasm clang libvulkan-dev \
+            gnupg1 ca-certificates lftp openjdk-11-jdk \
+            wayland-protocols libva-wayland2 \
+            ffmpeg libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libpostproc-dev libswresample-dev libswscale-dev \
+            rustc cargo \
+            curl jq squashfs-tools snapd libgcrypt20-dev libsystemd-dev libxcb-damage0-dev gperf \
+            && \
+          pip3 install meson ninja && \
+          sudo locale-gen en_US.UTF-8 && \
+          sudo /usr/sbin/update-locale LANG=en_US.UTF-8
+
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-
-      - name: Permissions
-        run: chown -R root:root .
 
       - name: Bootstrap
         run: ./bootstrap
@@ -67,6 +92,8 @@ jobs:
   build_windows:
     name: Build for Windows
     runs-on: [ ubuntu-24.04 ]
+    if: false
+
     container:
       image: 'registry.videolan.org/vlc-debian-llvm-msvcrt:20221214101739'
       options: '--user root'
@@ -93,6 +120,8 @@ jobs:
   build_macos:
     name: Build for MacOS
     runs-on: [ macos-13 ]
+    if: false
+
     strategy:
       matrix:
         arch: [x86_64, aarch64]
@@ -137,6 +166,7 @@ jobs:
     name: Build for MacOS (universal)
     runs-on: [ macos-13 ]
     needs: [ build_macos ]
+    if: false
 
     steps:
       - name: Check out repository code
