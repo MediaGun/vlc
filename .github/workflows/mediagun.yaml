@@ -7,6 +7,7 @@ on:
       - master
       - mg-ci
       - mg-ci-22.04
+      - mg-ci-24.04
 
   pull_request:
     types: [opened, reopened, synchronize]
@@ -26,7 +27,7 @@ permissions:
 jobs:
   build_linux:
     name: Build for Linux
-    runs-on: [ ubuntu-22.04 ]
+    runs-on: [ ubuntu-24.04 ]
 
     env:
       install_prefix: '${{ github.workspace }}/install_dir_linux'
@@ -40,7 +41,7 @@ jobs:
             git git-core libasound2-dev libavahi-client-dev libcdio-dev libdbus-1-dev \
             libdirectfb-dev libegl1-mesa-dev libfreetype6-dev libfribidi-dev \
             libgles2-mesa-dev libgnutls28-dev libgtk2.0-dev libidn11-dev libjack-dev \
-            liblircclient-dev libltdl-dev liblua5.2-dev libmtp-dev libncursesw5-dev \
+            liblirc-client0t64  liblirc-dev libltdl-dev liblua5.2-dev libmtp-dev libncursesw5-dev \
             libpng-dev libpulse-dev librsvg2-dev \
             libsecret-1-dev libtool libtool-bin libudev-dev libupnp-dev libv4l-dev \
             libva-dev libvdpau-dev libx11-dev libxcb-composite0-dev libxcb-keysyms1-dev \
