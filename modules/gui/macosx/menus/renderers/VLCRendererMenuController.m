@@ -25,8 +25,8 @@
 
 #import "main/VLCMain.h"
 #import "menus/renderers/VLCRendererItem.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #include <vlc_renderer_discovery.h>
 
@@ -188,7 +188,7 @@
     _selectedItem = sender;
 
     VLCRendererItem *item = [sender representedObject];
-    VLCPlayerController *playerController = VLCMain.sharedInstance.playlistController.playerController;
+    VLCPlayerController *playerController = VLCMain.sharedInstance.playQueueController.playerController;
 
     if (item) {
         [item setRendererForPlayerController:playerController];

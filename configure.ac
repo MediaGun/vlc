@@ -118,11 +118,11 @@ X86ASMFLAGS=""
 case "${host_cpu}" in
     i?86)
     X86ASMFLAGS="-f elf32"
-    X86ASMDEFS="-DARCH_X86_32=1 -DARCH_X86_64=0"
+    X86ASMDEFS="-DARCH_X86_64=0"
         ;;
     x86_64)
     X86ASMFLAGS="-f elf64"
-    X86ASMDEFS="-DARCH_X86_32=0 -DARCH_X86_64=1"
+    X86ASMDEFS="-DARCH_X86_64=1"
         ;;
 esac
 
@@ -379,11 +379,15 @@ int foo() { return my_array[0]; }
                 WINDOWS_ARCH="arm"
                 PROGRAMFILES="PROGRAMFILES"
             ;;
-            *)
+            i?86)
                 WINDOWS_ARCH="x86"
                 PROGRAMFILES="PROGRAMFILES"
                 X86ASMFLAGS="-f win32"
                 X86ASMDEFS="${X86ASMDEFS} -DPREFIX"
+                AX_APPEND_FLAG([-Wl,--large-address-aware], [LDFLAGS])
+            ;;
+            *)
+                AC_MSG_ERROR([Unsupported Windows architecture ${host_cpu}])
             ;;
         esac
         AC_SUBST([WINDOWS_ARCH])
@@ -407,7 +411,7 @@ int foo() { return my_array[0]; }
     AC_LIBOBJ([gai_strerror])
     AC_CHECK_FUNCS([if_nametoindex])
     X86ASMFLAGS="-f aout"
-    X86ASMDEFS="-DARCH_X86_32=1 -DARCH_X86_64=0 -DPREFIX"
+    X86ASMDEFS="-DARCH_X86_64=0 -DPREFIX"
     ;;
   *emscripten*)
     SYS=emscripten
@@ -713,13 +717,6 @@ dnl Check for broken versions of mingw-runtime compatability library
         CPPFLAGS="${CPPFLAGS} -D__USE_MINGW_ANSI_STDIO=0"
     ])
 
-    dnl Check for the need to include the mingwex lib for mingw32
-    VLC_SAVE_FLAGS
-    AC_CHECK_LIB([mingwex], [opendir],
-        AC_CHECK_LIB([mingw32], [opendir],,
-            [VLC_ADD_LIBS([libvlccore],[-lmingwex])])
-    )
-    VLC_RESTORE_FLAGS
     ], [
         AC_MSG_RESULT([Not compiling with mingw])
     ])
@@ -945,9 +942,7 @@ dnl __STDC_NO_THREADS__ can't be trusted on some platforms.
 dnl check for its availability explicitely
 AC_CHECK_HEADERS([threads.h])
 
-AC_CHECK_LIB([anl],[getaddrinfo_a],[
-  AC_DEFINE(HAVE_LIBANL, 1, [Define to 1 if you have the anl library])
-])
+AC_CHECK_LIB([anl],[getaddrinfo_a],[])
 
 dnl Check for dynamic plugins
 LIBDL=""
@@ -1071,7 +1066,7 @@ PKG_PROG_PKG_CONFIG()
 
 dnl On some OS we need static linking
 AS_IF([test -n "${PKG_CONFIG}" ],[
-    AS_IF([test "${SYS}" = "mingw32" -o "${SYS}" = "darwin" -o "${SYS}" = "os2" ],[
+    AS_IF([test "${SYS}" = "mingw32" -o "${SYS}" = "darwin" -o "${SYS}" = "os2" -o "${SYS}" = "emscripten" ],[
         PKG_CONFIG="${PKG_CONFIG} --static"
     ])
 ])
@@ -1199,7 +1194,7 @@ AC_ARG_ENABLE([extra_checks],
 AS_IF([test "${enable_extra_checks}" = "yes"], [
     AX_APPEND_COMPILE_FLAGS([-Werror=missing-field-initializers -Werror=format -Werror=incompatible-pointer-types -Werror=restrict -Werror=int-conversion -Werror=implicit-int -Werror=return-mismatch -Werror=declaration-missing-parameter-type], [CFLAGS])
     AC_LANG_PUSH(C++)
-    AX_APPEND_COMPILE_FLAGS([-Werror=missing-field-initializers -Werror=format -Werror=return-mismatch], [CXXFLAGS])
+    AX_APPEND_COMPILE_FLAGS([-Werror=missing-field-initializers -Werror=format], [CXXFLAGS])
     AC_LANG_POP(C++)
 ])
 
@@ -1951,8 +1946,6 @@ AS_IF([test "${enable_rust}" = "yes"],[
   AS_IF([test "$CARGO" = "no"],[
     AC_MSG_ERROR([cargo not found. cargo is required to build Rust modules])
   ])
-
-  AC_DEFINE(ENABLE_RUST, 1, [Define to 1 for building rust modules.])
 ])
 AM_CONDITIONAL([HAVE_RUST], [test "${enable_rust}" = "yes"])
 
@@ -2039,10 +2032,6 @@ dnl
 AC_ARG_ENABLE([addonmanagermodules],
   AS_HELP_STRING([--disable-addonmanagermodules],
     [disable the addons manager modules (default enabled)]))
-if test "${enable_addonmanagermodules}" != "no"
-then
-  AC_DEFINE(ENABLE_ADDONMANAGERMODULES, 1, [Define if you want the addons manager modules])
-fi
 AM_CONDITIONAL([ENABLE_ADDONMANAGERMODULES], [test "${enable_addonmanagermodules}" != "no"])
 
 
@@ -2772,7 +2761,7 @@ AM_CONDITIONAL([HAVE_AVCODEC_D3D11VA], [test "${have_avcodec_d3d11va}" = "yes"])
 dnl
 dnl DXGI debug
 dnl
-AC_CHECK_HEADERS([dxgidebug.h dxgi1_6.h d3d11_4.h])
+AC_CHECK_HEADERS([dxgidebug.h])
 
 dnl
 dnl IStorageFolder
@@ -2803,19 +2792,6 @@ __x_ABI_CWindows_CStorage_CIApplicationData2 *toto;
 ])
 
 AM_CONDITIONAL([HAVE_WINDOWS_STORAGE], [test "${have_iapplication_data2}" = "yes"])
-
-dnl
-dnl DirectComposition
-dnl
-AC_LANG_PUSH([C++])
-AC_CHECK_HEADERS([dcomp.h], [
-    have_dcomp="yes"
-], [], [
-  #include <windows.h>
-])
-AC_LANG_POP([C++])
-AM_CONDITIONAL([HAVE_DCOMP], [test "${have_dcomp}" = "yes"])
-
 
 dnl
 dnl  avformat demuxer/muxer plugin
@@ -3135,9 +3111,9 @@ fi
 
 
 dnl
-dnl Intel QuickSync (aka MediaSDK) H264/H262 encoder
+dnl Intel Video Processing Library
 dnl
-PKG_ENABLE_MODULES_VLC([MFX], [qsv], [libmfx], [Intel QuickSync MPEG4-Part10/MPEG2 (aka H.264/H.262) encoder], [auto])
+PKG_ENABLE_MODULES_VLC([VPL], [qsv], [vpl], [Intel Video Processing Library encoder], [auto])
 
 
 dnl
@@ -3321,9 +3297,6 @@ PKG_CHECK_MODULES([GL], [gl], [
   AC_MSG_RESULT([${have_gl}])
 ])
 AM_CONDITIONAL([HAVE_GL], [test "${have_gl}" = "yes"])
-AS_IF([test "${have_gl}" = "yes"], [
-  AC_DEFINE([HAVE_GL], 1, [Defined if having OpenGL])
-])
 
 dnl OpenGL ES 2: depends on EGL 1.1
 PKG_HAVE_WITH_MODULES([GLES2], [glesv2], [enable GLES2 support (default auto)])
@@ -3337,7 +3310,6 @@ AC_ARG_ENABLE(vulkan,
 
 AS_IF([test "$enable_vulkan" != "no"], [
   PKG_CHECK_MODULES([VULKAN], [vulkan >= 1.0.26], [
-    AC_DEFINE([HAVE_VULKAN], [1], [Define to 1 if vulkan is enabled.])
   ], [
     AS_IF([test -n "${enable_vulkan}"], [
       AC_MSG_ERROR([${VULKAN_PKG_ERRORS}.])
@@ -3742,6 +3714,28 @@ dnl
 EXTEND_HELP_STRING([Audio plugins:])
 
 dnl
+dnl  Pipewire module
+dnl
+AC_ARG_ENABLE([pipewire],
+  AS_HELP_STRING([--enable-pipewire],
+    [use the PipeWire client library (default auto)]))
+have_pipewire="no"
+AS_IF([test "${enable_pipewire}" != "no"], [
+  for v in "0.3 >= 0.3.64" # list of supported package versions
+  do
+    AS_IF([test "${have_pipewire}" = "no"], [
+      PKG_CHECK_MODULES([PIPEWIRE], [libpipewire-${v}], [
+        have_pipewire="yes"
+      ], [true])
+    ])
+  done
+  AS_IF([test "${enable_pipewire}" = "yes" -a "${have_pipewire}" = "no"], [
+    AC_MSG_ERROR([$PIPEWIRE_PKG_ERRORS. Pipewire required.])
+  ])
+])
+AM_CONDITIONAL([HAVE_PIPEWIRE], [test "${have_pipewire}" = "yes"])
+
+dnl
 dnl  Pulseaudio module
 dnl
 AC_ARG_ENABLE([pulse],
@@ -3940,10 +3934,20 @@ AS_IF([test -n "$PKG_CONFIG"],[
     AC_PATH_PROGS(PROTOC, [protoc], no, ["${CONTRIB_DIR}/../bin:$PATH"])
     AS_IF([test "${PROTOC}" != "no"], [
         dnl silently checks the protoc version matches the protobuf library
-        PROTOBUF_VERSION="$(eval ${PROTOC} --version 2>/dev/null | head -1 | sed s/'.* '// | cut -d '.' -f -2)"
-        protoc_ver_next="${PROTOBUF_VERSION%.*}.$((${PROTOBUF_VERSION##*.}+1))"
+        PROTOC_FULL_VERSION="$(eval ${PROTOC} --version 2>/dev/null | head -1 | sed s/'.* '//)"
+        PROTOC_MAJ_VERSION="$(echo ${PROTOC_FULL_VERSION} | cut -d '.' -f -1)"
+        AS_IF([test "${PROTOC_MAJ_VERSION}" -lt "22" ], [
+            dnl protoc x.y.z is compatible with protobuf x.y.z
+            PROTOBUF_VERSION="$(echo ${PROTOC_FULL_VERSION})"
+            PROTOBUF_TEST="protobuf-lite == ${PROTOBUF_VERSION}"
+        ],[
+            dnl protoc x.y is compatible with protobuf x.y.*
+            PROTOBUF_VERSION="$(echo ${PROTOC_FULL_VERSION} | cut -d '.' -f -2)"
+            PROTOBUF_MAX_VERSION="${PROTOBUF_VERSION%.*}.$((${PROTOBUF_VERSION##*.}+1))"
+            PROTOBUF_TEST="protobuf-lite >= ${PROTOBUF_VERSION} protobuf-lite < ${PROTOBUF_MAX_VERSION}"
+        ])
         AC_MSG_CHECKING([protobuf-lite matches ${PROTOC} version ${PROTOBUF_VERSION}])
-        ($PKG_CONFIG --exists --print-errors "protobuf-lite >= ${PROTOBUF_VERSION} protobuf-lite < ${protoc_ver_next}") 2>&AS_MESSAGE_FD
+        ($PKG_CONFIG --exists --print-errors "${PROTOBUF_TEST}") 2>&AS_MESSAGE_FD
         ac_status=$?
         AS_IF([test $ac_status = 0],[
             protoc_matching=yes
@@ -3986,13 +3990,17 @@ AC_ARG_ENABLE([qt],
   ])
 ])
 have_qt_gtk="no"
+have_qt_qtest="no"
 have_qt_quick_test="no"
 have_qt_declarative_private="no"
 have_qt_gui_private="no"
 have_qt_core_private="no"
+have_qt65="no"
+have_qt_zstd="no"
 have_fxc="no"
 AS_IF([test "${enable_qt}" != "no"], [
   have_qt="yes"
+  dnl use any qmake that is available, including from contrib tools
   AC_PATH_PROGS(QMAKE6, [qmake6], qmake6, ["$PATH:${CONTRIB_DIR}/../bin"])
 
   AC_ARG_WITH([qtconf],
@@ -4005,6 +4013,21 @@ AS_IF([test "${enable_qt}" != "no"], [
       AC_MSG_RESULT([yes])
     ],[
       AC_MSG_RESULT([no])
+    ])
+  ])
+
+  AS_IF([test -z "${QMAKE6}"], [
+    have_qt="no"
+  ],[
+    AS_IF([test -n "${with_qtconf}"], [
+      QT_BIN_DIRECTORY="$(${QMAKE6} -qtconf ${with_qtconf} -query QT_HOST_BINS 2>/dev/null)"
+      AC_MSG_CHECKING([if qmake6 is found with qtconf])
+      AS_IF([test -n "${QT_BIN_DIRECTORY}" -a -x "${QT_BIN_DIRECTORY}/qmake6"], [
+        QMAKE6="${QT_BIN_DIRECTORY}/qmake6"
+        AC_MSG_RESULT([yes])
+      ],[
+        AC_MSG_RESULT([no])
+      ])
     ])
   ])
 
@@ -4025,6 +4048,10 @@ AS_IF([test "${enable_qt}" != "no"], [
     have_qt="no"
   ],[
     AC_MSG_RESULT([(${QT_VERSION_CORE}) yes])
+
+  AS_IF([test "${QT_VERSION_MAJ:-0}" -gt "6" || (test "${QT_VERSION_MAJ:-0}" = "6" && test "${QT_VERSION_MIN:-0}" -ge "5")], [
+    have_qt65="yes"
+  ], [])
 
   QT_BIN_DIRECTORY="$(${QT_PATHS}         -query QT_HOST_BINS 2>/dev/null)"
   QMAKE="${QT_PATHS}"
@@ -4074,6 +4101,12 @@ AS_IF([test "${enable_qt}" != "no"], [
 
       AC_CHECK_PROGS(PYTHON3, [python3], [no])
       AC_MSG_CHECKING([if required Qt plugins are installed with ${QMAKE6} and conf ${with_qtconf}])
+
+      AS_IF([test "${have_qt65}" = "yes"], [
+        qt_qml_effects_module="QtQuick.Effects"
+      ], [
+        qt_qml_effects_module="Qt5Compat.GraphicalEffects"
+      ])
       AS_IF([test "$PYTHON3" != "no" && ${PYTHON3} ${srcdir}/buildsystem/check_qml_module.py \
             --qmake "${QMAKE6}" \
             --qtconf "${with_qtconf}" \
@@ -4083,7 +4116,7 @@ AS_IF([test "${enable_qt}" != "no"], [
             QtQuick.Layouts="" \
             QtQuick.Window="" \
             QtQuick.Controls="" \
-            Qt5Compat.GraphicalEffects="" \
+            ${qt_qml_effects_module}="" \
             >&AS_MESSAGE_FD ], [
         AC_MSG_RESULT([yes])
       ],[
@@ -4091,6 +4124,40 @@ AS_IF([test "${enable_qt}" != "no"], [
         AC_MSG_WARN([qt runtime dependencies are missing, disabling qt interface])
         have_qt="no"
       ])
+
+      AC_MSG_CHECKING([if Qt can decompress zstd])
+      VLC_SAVE_FLAGS
+      CPPFLAGS="${CPPFLAGS} ${QT_CFLAGS}"
+      AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([[#include <qconfig.h>]],[[
+        #if QT_FEATURE_zstd != 1
+        #error "Qt can not decompress zstd. Resources are going to be compressed using zlib."
+        #endif
+        ]])], [
+         have_qt_zstd="yes"
+         AC_MSG_RESULT([yes])
+        ],[
+         AC_MSG_RESULT([no])
+        ])
+      VLC_RESTORE_FLAGS
+
+      AC_MSG_CHECKING([for Qt QTest])
+      (${QMAKE} ${srcdir}/modules/gui/qt/qtest.pro -o ${ac_pwd}/modules/gui/qt/qmake-qtest) 2>/dev/null
+      ac_status=$?
+      AS_IF([test $ac_status = 0 && test -f ${ac_pwd}/modules/gui/qt/qmake-qtest],[
+        echo "include ${ac_pwd}/modules/gui/qt/qmake-common.mk"        >> ${ac_pwd}/modules/gui/qt/qmake-qtest
+        AC_MSG_RESULT([yes])
+        QT_QTEST_LIBS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-qtest get_libs)
+        QT_QTEST_CFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-qtest get_cflags)
+        QT_QTEST_LDFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-qtest get_cflags)
+        AC_SUBST([QT_QTEST_LIBS])
+        AC_SUBST([QT_QTEST_CFLAGS])
+        AC_SUBST([QT_QTEST_LDFLAGS])
+        have_qt_qtest="yes"
+      ],[
+        AC_MSG_RESULT([no])
+      ])
+      rm -f ${ac_pwd}/modules/gui/qt/qmake-qtest
 
       AC_MSG_CHECKING([for QuickTest])
       (${QMAKE} ${srcdir}/modules/gui/qt/quicktest.pro -o ${ac_pwd}/modules/gui/qt/qmake-quicktest) 2>/dev/null
@@ -4131,12 +4198,8 @@ AS_IF([test "${enable_qt}" != "no"], [
       AS_IF([test $ac_status = 0 && test -f ${ac_pwd}/modules/gui/qt/qmake-private-core],[
         echo "include ${ac_pwd}/modules/gui/qt/qmake-common.mk"        >> ${ac_pwd}/modules/gui/qt/qmake-private-core
         AC_MSG_RESULT([yes])
-        QT_CORE_PRIVATE_LIBS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-core get_libs)
         QT_CORE_PRIVATE_CFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-core get_cflags)
-        QT_CORE_PRIVATE_LDFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-core get_cflags)
-        AC_SUBST([QT_CORE_PRIVATE_LIBS])
         AC_SUBST([QT_CORE_PRIVATE_CFLAGS])
-        AC_SUBST([QT_CORE_PRIVATE_LDFLAGS])
         have_qt_core_private="yes"
       ],[
         AC_MSG_RESULT([no])
@@ -4150,12 +4213,8 @@ AS_IF([test "${enable_qt}" != "no"], [
         echo "include ${ac_pwd}/modules/gui/qt/qmake-common.mk"        >> ${ac_pwd}/modules/gui/qt/qmake-private-gui
 
         AC_MSG_RESULT([yes])
-        QT_GUI_PRIVATE_LIBS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-gui get_libs)
         QT_GUI_PRIVATE_CFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-gui get_cflags)
-        QT_GUI_PRIVATE_LDFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-gui get_ldflags)
-        AC_SUBST([QT_GUI_PRIVATE_LIBS])
         AC_SUBST([QT_GUI_PRIVATE_CFLAGS])
-        AC_SUBST([QT_GUI_PRIVATE_LDFLAGS])
         have_qt_gui_private="yes"
       ],[
         AC_MSG_RESULT([no])
@@ -4168,12 +4227,8 @@ AS_IF([test "${enable_qt}" != "no"], [
       AS_IF([test $ac_status = 0 && test -f ${ac_pwd}/modules/gui/qt/qmake-private-quick],[
         echo "include ${ac_pwd}/modules/gui/qt/qmake-common.mk"        >> ${ac_pwd}/modules/gui/qt/qmake-private-quick
         AC_MSG_RESULT([yes])
-        QT_QUICK_PRIVATE_LIBS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-quick get_libs)
         QT_QUICK_PRIVATE_CFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-quick get_cflags)
-        QT_QUICK_PRIVATE_LDFLAGS=$(cd ${ac_pwd}/modules/gui/qt && make -s -f qmake-private-quick get_ldflags)
-        AC_SUBST([QT_QUICK_PRIVATE_LIBS])
         AC_SUBST([QT_QUICK_PRIVATE_CFLAGS])
-        AC_SUBST([QT_QUICK_PRIVATE_LDFLAGS])
         have_qt_declarative_private="yes"
       ],[
         AC_MSG_RESULT([no])
@@ -4217,12 +4272,15 @@ AS_IF([test "${enable_qt}" != "no"], [
 AC_SUBST([QT_INDIRECT_LIBS])
 AM_CONDITIONAL([ENABLE_QT], [test "$enable_qt" != "no"])
 AM_CONDITIONAL([HAVE_QT_GTK], [test "${have_qt_gtk}" = "yes"])
+AM_CONDITIONAL([HAVE_QT_QTEST], [test "${have_qt_qtest}" = "yes"])
 AM_CONDITIONAL([HAVE_QT_QUICK_TEST], [test "${have_qt_quick_test}" = "yes"])
 AM_CONDITIONAL([HAVE_QT_DECLARATIVE_PRIVATE], [test "${have_qt_declarative_private}" = "yes"])
 AM_CONDITIONAL([HAVE_QT_GUI_PRIVATE], [test "${have_qt_gui_private}" = "yes"])
 AM_CONDITIONAL([HAVE_QT_CORE_PRIVATE], [test "${have_qt_core_private}" = "yes"])
 AM_CONDITIONAL([HAVE_FXC], [test "${have_fxc}" = "yes"])
 AM_CONDITIONAL([HAVE_QT67], [test "${QT_VERSION_MAJ:-0}" -gt "6" || (test "${QT_VERSION_MAJ:-0}" = "6" && test "${QT_VERSION_MIN:-0}" -ge "7")])
+AM_CONDITIONAL([HAVE_QT65], [test "${have_qt65}" = "yes"])
+AM_CONDITIONAL([HAVE_QT_ZSTD], [test "${have_qt_zstd}" = "yes"])
 
 dnl
 dnl detect kde4-config patch (used for kde solids).
@@ -4732,14 +4790,6 @@ AS_IF([test "${SYS}" = "mingw32"], [
 ])
 AM_CONDITIONAL([HAVE_MAKENSIS], [test "$MAKENSIS" != "no" && test "$nsis_version_ok" = "yes"])
 
-dnl
-dnl Check wether we have the PROCESS_MITIGATION_IMAGE_LOAD_POLICY
-dnl It should only be available when building for win10, but some SDKs define it unconditionnaly
-dnl
-if test "${SYS}" = "mingw32"; then
-    AC_CHECK_TYPES([PROCESS_MITIGATION_IMAGE_LOAD_POLICY],,,[#include <windows.h>])
-fi
-
 EXTEND_HELP_STRING([Components:])
 
 dnl
@@ -4747,7 +4797,7 @@ dnl  the VLC binary
 dnl
 AC_ARG_ENABLE([vlc],
   AS_HELP_STRING([--enable-vlc], [build the VLC media player (default enabled)]))
-AM_CONDITIONAL([BUILD_VLC], [test "${enable_vlc}" != "no"])
+AM_CONDITIONAL([BUILD_VLC], [test "${enable_vlc}" != "no" -a "$vlc_winstore_app" = "0"])
 
 dnl
 dnl Fuzzer (at the end not to mess dependencies FLAGS)
@@ -4845,7 +4895,7 @@ AC_CONFIG_FILES([
   lib/Makefile
   bin/Makefile
   test/Makefile
-  share/vlc.appdata.xml.in
+  share/org.videolan.vlc.appdata.xml.in
 ])
 
 AM_COND_IF([HAVE_WIN32], [

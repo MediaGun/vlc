@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQml.Models
@@ -125,15 +126,15 @@ FocusScope {
                 source: (root.model && root.model.cover && root.model.cover !== "")
                     ?  root.model.cover
                     : VLCStyle.noArtAlbumCover
-                sourceSize.width: width
-                sourceSize.height: height
+                sourceSize.width: width * Screen.devicePixelRatio
+                sourceSize.height: height * Screen.devicePixelRatio
 
                 Widgets.DefaultShadow {
                     anchors.centerIn: parent
 
                     sourceItem: parent
 
-                    visible: (parent.status === Widgets.RoundImage.Ready)
+                    visible: (parent.status === Image.Ready)
                 }
             }
         }

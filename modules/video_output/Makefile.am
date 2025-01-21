@@ -1,5 +1,9 @@
 voutdir = $(pluginsdir)/video_output
 vout_LTLIBRARIES =
+# Install the pkglib/pkglibexec first before relinking the modules.
+# This ensures libtool re-linking is not racy.
+installvoutLTLIBRARIES = install-voutLTLIBRARIES
+$(installvoutLTLIBRARIES): install-pkglibLTLIBRARIES
 
 EXTRA_DIST += video_output/README
 
@@ -58,13 +62,15 @@ libwindow_macosx_plugin_la_OBJCFLAGS = $(AM_OBJCFLAGS) \
 
 libvout_macosx_plugin_la_SOURCES = video_output/macosx.m \
 	$(OPENGL_VOUT_COMMONSOURCES)
-libvout_macosx_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DHAVE_GL_CORE_SYMBOLS
+libvout_macosx_plugin_la_OBJCFLAGS = $(AM_OBJCFLAGS) -fobjc-arc
+libvout_macosx_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DHAVE_GL_CORE_SYMBOLS -DGL_SILENCE_DEPRECATION
 libvout_macosx_plugin_la_LIBADD = libvlc_opengl.la
 libvout_macosx_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)' \
 	-Wl,-framework,OpenGL,-framework,Cocoa
 
 libcaopengllayer_plugin_la_SOURCES = video_output/caopengllayer.m \
 	$(OPENGL_VOUT_COMMONSOURCES)
+libcaopengllayer_plugin_la_OBJCFLAGS = $(AM_OBJCFLAGS) -fobjc-arc
 libcaopengllayer_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)  -DHAVE_GL_CORE_SYMBOLS -DGL_SILENCE_DEPRECATION
 libcaopengllayer_plugin_la_LIBADD = libvlc_opengl.la
 libcaopengllayer_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)' \

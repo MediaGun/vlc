@@ -17,7 +17,7 @@ PKGS_ALL += qt-tools
 
 DEPS_qt = qt-tools harfbuzz $(DEPS_harfbuzz) jpeg $(DEPS_jpeg) png $(DEPS_png) zlib $(DEPS_zlib) vulkan-headers $(DEPS_vulkan-headers)
 ifdef HAVE_WIN32
-DEPS_qt += d3d12 $(DEPS_d3d12) dcomp $(DEPS_dcomp)
+DEPS_qt += d3d12 $(DEPS_d3d12) dcomp $(DEPS_dcomp) uiautomationcore $(DEPS_uiautomationcore)
 else
 DEPS_qt += freetype2 $(DEPS_freetype2)
 endif
@@ -29,6 +29,10 @@ ifndef HAVE_CROSS_COMPILE
 PKGS_FOUND += qt-tools
 else ifdef QT_USES_SYSTEM_TOOLS
 PKGS_FOUND += qt-tools
+else
+PKGS.tools += qt-tools
+PKGS.tools.qt-tools.config-tool = qmake6
+PKGS.tools.qt-tools.path = $(PREFIX)/bin/qmake6
 endif
 
 $(TARBALLS)/qtbase-everywhere-src-$(QTBASE_VERSION_FULL).tar.xz:
@@ -41,14 +45,15 @@ $(TARBALLS)/qtbase-everywhere-src-$(QTBASE_VERSION_FULL).tar.xz:
 
 qt: qtbase-everywhere-src-$(QTBASE_VERSION_FULL).tar.xz .sum-qt
 	$(UNPACK)
-	$(APPLY) $(SRC)/qt/0001-Windows-Tray-Icon-Set-NOSOUND.patch
-	$(APPLY) $(SRC)/qt/0003-Revert-QMutex-remove-qmutex_win.cpp.patch
-	$(APPLY) $(SRC)/qt/0004-Expose-QRhiImplementation-in-QRhi.patch
-	$(APPLY) $(SRC)/qt/0005-Do-not-include-D3D12MemAlloc.h-in-header-file.patch
-	$(APPLY) $(SRC)/qt/0006-Try-DCompositionCreateDevice3-first-if-available.patch
-	$(APPLY) $(SRC)/qt/0007-Try-to-satisfy-Windows-7-compatibility.patch
+	$(APPLY) $(SRC)/qt/0001-Windows-QPA-Disable-systray-notification-sounds.patch
+	$(APPLY) $(SRC)/qt/0001-Revert-QMutex-remove-qmutex_win.cpp.patch
+	$(APPLY) $(SRC)/qt/0001-Expose-QRhiImplementation-in-QRhi.patch
+	$(APPLY) $(SRC)/qt/0001-Do-not-include-D3D12MemAlloc.h-in-header-file.patch
+	$(APPLY) $(SRC)/qt/0001-Try-DCompositionCreateDevice3-first-if-available.patch
+	$(APPLY) $(SRC)/qt/0002-Satisfy-Windows-7-compatibility.patch
 	$(APPLY) $(SRC)/qt/0001-disable-precompiled-headers-when-forcing-WINVER-inte.patch
-	$(APPLY) $(SRC)/qt/0001-Do-not-link-D3D9.patch
+	$(APPLY) $(SRC)/qt/0001-Use-DirectWrite-font-database-only-with-Windows-10-a.patch
+	$(APPLY) $(SRC)/qt/0003-Do-not-link-D3D9.patch
 	$(MOVE)
 
 ifdef HAVE_WIN32
@@ -64,6 +69,8 @@ endif
 
 ifdef HAVE_WIN32
 QTBASE_CONFIG += -DFEATURE_style_fusion=OFF
+# Enable direct2d, but do not build the direct2d platform plugin:
+QTBASE_CONFIG += -DFEATURE_direct2d=ON -DFEATURE_direct2d1_1=OFF
 endif
 
 ifdef ENABLE_PDB
@@ -79,6 +86,15 @@ QTBASE_COMMON_CONFIG := -DFEATURE_pkg_config=OFF -DINPUT_openssl=no \
 	-DFEATURE_pdf=OFF \
 	-DQT_BUILD_EXAMPLES=OFF
 
+ifdef HAVE_WIN32
+ifndef HAVE_CLANG
+# GCC 12.2 can not compile the Qt 6.8 bundled PCRE2 with the stack clash protection option.
+# Since stack clash protection option is said to be irrelevant for Windows, we can simply
+# disable it:
+QTBASE_COMMON_CONFIG += -DFEATURE_stack_clash_protection=OFF
+endif
+endif
+
 QTBASE_CONFIG += $(QTBASE_COMMON_CONFIG) \
     -DFEATURE_gif=OFF \
 	-DFEATURE_harfbuzz=ON -DFEATURE_system_harfbuzz=ON -DFEATURE_jpeg=ON -DFEATURE_system_jpeg=ON \
@@ -86,7 +102,7 @@ QTBASE_CONFIG += $(QTBASE_COMMON_CONFIG) \
 	-DFEATURE_movie=OFF -DFEATURE_whatsthis=OFF -DFEATURE_lcdnumber=OFF \
 	-DFEATURE_syntaxhighlighter=OFF -DFEATURE_undoview=OFF -DFEATURE_splashscreen=OFF \
 	-DFEATURE_dockwidget=OFF -DFEATURE_statusbar=OFF -DFEATURE_statustip=OFF \
-	-DFEATURE_keysequenceedit=OFF \
+	-DFEATURE_keysequenceedit=OFF -DFEATURE_mdiarea=OFF \
 	-DCMAKE_TOOLCHAIN_FILE=$(abspath toolchain.cmake) $(QT_HOST_PATH)
 
 QTBASE_NATIVE_CONFIG := $(QTBASE_COMMON_CONFIG) -DQT_BUILD_TESTS=FALSE \

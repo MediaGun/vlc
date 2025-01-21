@@ -1,5 +1,9 @@
 aoutdir = $(pluginsdir)/audio_output
 aout_LTLIBRARIES =
+# Install the pkglib/pkglibexec first before relinking the modules.
+# This ensures libtool re-linking is not racy.
+installaoutLTLIBRARIES = install-aoutLTLIBRARIES
+$(installaoutLTLIBRARIES): install-pkglibLTLIBRARIES
 
 libvlc_android_audioformat_jni_la_SOURCES = \
 	audio_output/android/audioformat_jni.c \
@@ -16,7 +20,7 @@ noinst_LTLIBRARIES += \
 endif
 
 libopensles_android_plugin_la_SOURCES = audio_output/android/opensles.c
-libopensles_android_plugin_la_LIBADD = libandroid_env.la $(LIBDL) $(LIBM)
+libopensles_android_plugin_la_LIBADD = $(LIBDL) $(LIBM)
 
 libandroid_audiotrack_plugin_la_SOURCES = audio_output/android/audiotrack.c audio_output/android/device.h
 libandroid_audiotrack_plugin_la_LIBADD = libandroid_env.la \
@@ -59,6 +63,21 @@ libalsa_plugin_la_CFLAGS = $(AM_CFLAGS) $(ALSA_CFLAGS)
 libalsa_plugin_la_LIBADD = $(ALSA_LIBS) $(LIBM)
 if HAVE_ALSA
 aout_LTLIBRARIES += libalsa_plugin.la
+endif
+
+libvlc_pipewire_la_SOURCES = audio_output/vlc_pipewire.c audio_output/vlc_pipewire.h
+libvlc_pipewire_la_CFLAGS = $(AM_CFLAGS) $(PIPEWIRE_CFLAGS)
+libvlc_pipewire_la_LIBADD = $(PIPEWIRE_LIBS) $(LTLIBVLCCORE)
+libvlc_pipewire_la_LDFLAGS = \
+	-no-undefined \
+	-export-symbols-regex ^vlc_pw_ \
+	-version-info 0:0:0
+libaout_pipewire_plugin_la_SOURCES = audio_output/pipewire.c
+libaout_pipewire_plugin_la_CFLAGS = $(AM_CFLAGS) $(PIPEWIRE_CFLAGS)
+libaout_pipewire_plugin_la_LIBADD = libvlc_pipewire.la $(PIPEWIRE_LIBS) $(LIBM)
+if HAVE_PIPEWIRE
+pkglib_LTLIBRARIES += libvlc_pipewire.la
+aout_LTLIBRARIES += libaout_pipewire_plugin.la
 endif
 
 libvlc_pulse_la_SOURCES = audio_output/vlcpulse.c audio_output/vlcpulse.h

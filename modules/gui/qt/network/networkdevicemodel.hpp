@@ -19,17 +19,10 @@
 #ifndef MLNETWORKDEVICEMODEL_HPP
 #define MLNETWORKDEVICEMODEL_HPP
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include <QAbstractListModel>
 #include <QUrl>
 
-#include <vlc_media_source.h>
-
 #include "networkbasemodel.hpp"
-#include "util/shared_input_item.hpp"
 
 #include <memory>
 
@@ -63,13 +56,6 @@ public: // Enums
     };
     Q_ENUM( SDCatType )
 
-public: // Declarations
-    using MediaSourcePtr = vlc_shared_data_ptr_type(vlc_media_source_t,
-                                    vlc_media_source_Hold, vlc_media_source_Release);
-
-    using MediaTreePtr = vlc_shared_data_ptr_type(vlc_media_tree_t,
-                                                  vlc_media_tree_Hold,
-                                                  vlc_media_tree_Release);
 public:
     NetworkDeviceModel( QObject* parent = nullptr );
     virtual ~NetworkDeviceModel() = default;
@@ -84,10 +70,10 @@ public:
     void setSdSource(SDCatType s);
     void setSourceName(const QString& sourceName);
 
-    inline MainCtx* getCtx() const { return m_ctx; }
-    inline SDCatType getSdSource() const { return m_sdSource; }
-    inline QString getName() const { return m_name; }
-    inline QString getSourceName() const { return m_sourceName; }
+    MainCtx* getCtx() const;
+    SDCatType getSdSource() const;
+    QString getName() const;
+    QString getSourceName() const;
 
     Q_INVOKABLE bool insertIntoPlaylist( const QModelIndexList& itemIdList, ssize_t playlistIndex );
     Q_INVOKABLE bool addToPlaylist(int row );
@@ -107,15 +93,6 @@ signals:
     void itemsUpdated();
 
 private:
-    void refreshDeviceList(MediaSourcePtr mediaSource, input_item_node_t* const children[], size_t count , bool clear);
-    bool initializeMediaSources();
-
-private:
-    MainCtx* m_ctx = nullptr;
-    SDCatType m_sdSource = CAT_UNDEFINED;
-    QString m_sourceName; // '*' -> all sources
-    QString m_name; // source long name
-
     Q_DECLARE_PRIVATE(NetworkDeviceModel)
 };
 

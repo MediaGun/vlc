@@ -19,23 +19,14 @@
 #ifndef MLNETWORKSOURCELISTENER_HPP
 #define MLNETWORKSOURCELISTENER_HPP
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
-#include <vlc_media_source.h>
-#include <vlc_cxx_helpers.hpp>
-
 #include <memory>
 #include <functional>
+
+#include "vlcmediasourcewrapper.hpp"
 
 class MediaTreeListener
 {
 public:
-    using MediaTreePtr = vlc_shared_data_ptr_type(vlc_media_tree_t,
-                                                  vlc_media_tree_Hold,
-                                                  vlc_media_tree_Release);
-
     using ListenerPtr = std::unique_ptr<vlc_media_tree_listener_id,
                                         std::function<void(vlc_media_tree_listener_id*)>>;
 
@@ -46,7 +37,7 @@ public:
         virtual void onItemCleared( MediaTreePtr tree, input_item_node_t* node ) = 0;
         virtual void onItemAdded( MediaTreePtr tree, input_item_node_t* parent, input_item_node_t *const children[], size_t count ) = 0;
         virtual void onItemRemoved( MediaTreePtr tree, input_item_node_t* node, input_item_node_t *const children[], size_t count ) = 0;
-        virtual void onItemPreparseEnded( MediaTreePtr tree, input_item_node_t* node, enum input_item_preparse_status status ) = 0;
+        virtual void onItemPreparseEnded( MediaTreePtr tree, input_item_node_t* node, int status ) = 0;
     };
 
 public:

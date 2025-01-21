@@ -117,103 +117,6 @@ HWND WinId( QWindow *windowHandle )
         return 0;
 }
 
-
-bool isWindowFixedSize(const QWindow *window)
-{
-    if (window->flags() & Qt::MSWindowsFixedSizeDialogHint)
-        return true;
-
-    const auto minSize = window->minimumSize();
-    const auto maxSize = window->maximumSize();
-
-    return minSize.isValid() && maxSize.isValid() && minSize == maxSize;
-}
-
-
-class WinSystemMenuButton : public SystemMenuButton
-{
-public:
-    WinSystemMenuButton(QWindow *window, QObject *parent)
-        : SystemMenuButton {parent}
-        , m_window {window}
-    {
-        connect(this, &CSDButton::clicked, this, &WinSystemMenuButton::handleClick);
-        connect(this, &CSDButton::doubleClicked, this, &WinSystemMenuButton::handleDoubleClick);
-    }
-
-    void showSystemMenu(const QPoint &windowpos) override
-    {
-        HWND hwnd = (HWND)m_window->winId();
-        HMENU hmenu = ::GetSystemMenu(hwnd, FALSE);
-        if (!hmenu)
-            return;
-
-        // Tweak the menu items according to the current window status.
-        const auto winState = m_window->windowStates();
-        const bool maxOrFull = (winState.testFlag(Qt::WindowMaximized) || winState.testFlag(Qt::WindowFullScreen));
-        const bool fixedSize = isWindowFixedSize(m_window);
-
-        EnableMenuItem(hmenu, SC_MOVE, (MF_BYCOMMAND | (!maxOrFull ? MFS_ENABLED : MFS_DISABLED)));
-        EnableMenuItem(hmenu, SC_SIZE, (MF_BYCOMMAND | ((!maxOrFull && !fixedSize) ? MFS_ENABLED : MFS_DISABLED)));
-
-        EnableMenuItem(hmenu, SC_RESTORE, (MF_BYCOMMAND | ((maxOrFull && !fixedSize) ? MFS_ENABLED : MFS_DISABLED)));
-        EnableMenuItem(hmenu, SC_MINIMIZE, (MF_BYCOMMAND | MFS_ENABLED));
-        EnableMenuItem(hmenu, SC_MAXIMIZE, (MF_BYCOMMAND | ((!maxOrFull && !fixedSize) ? MFS_ENABLED : MFS_DISABLED)));
-        EnableMenuItem(hmenu, SC_CLOSE, (MF_BYCOMMAND | MFS_ENABLED));
-
-        // map pos to screen points and convert according to device DPR, required on HI-DPI displays
-        const auto screenPoints = m_window->mapToGlobal(windowpos) * m_window->devicePixelRatio();
-
-        const auto alignment = (QGuiApplication::isRightToLeft() ? TPM_RIGHTALIGN : TPM_LEFTALIGN);
-
-        // show menu
-        emit systemMenuVisibilityChanged(true);
-
-        const int action = TrackPopupMenu(hmenu, (TPM_RETURNCMD | alignment)
-                                          , screenPoints.x(), screenPoints.y()
-                                          , 0, hwnd, nullptr);
-
-        // unlike native system menu which sends WM_SYSCOMMAND, TrackPopupMenu sends WM_COMMAND
-        // imitate native system menu by sending the action manually as WM_SYSCOMMAND
-        PostMessageW(hwnd, WM_SYSCOMMAND, action, 0);
-
-        emit systemMenuVisibilityChanged(false);
-    }
-
-private:
-    // target window
-    QWindow *m_window = {};
-
-    // used to reject click() incase a doubleClick() is followed
-    bool m_triggerSystemMenu = false;
-
-    void handleClick()
-    {
-        // delay the show of sytem menu to check if this 'click' is
-        // a double click, 'm_triggerSystemMenu' is used to reject the
-        // queued 'showSystemMenu' call in case this is a double click
-
-        m_triggerSystemMenu = true;
-        QTimer::singleShot(100, this, [this]()
-        {
-            if (!m_triggerSystemMenu)
-                return;
-
-            // show system menu 'margin' below the rect
-            constexpr QPoint margin {0, 4};
-            showSystemMenu(rect().bottomLeft() + margin);
-        });
-    }
-
-    void handleDoubleClick()
-    {
-        // reject any queued showSystemMenu call
-        m_triggerSystemMenu = false;
-
-        m_window->close();
-    }
-};
-
 class CSDWin32EventHandler : public QObject, public QAbstractNativeEventFilter
 {
 public:
@@ -319,15 +222,13 @@ public:
             // handle it to relay if mouse is on the CSD buttons
             // required for snap layouts menu (WINDOWS 11)
 
-            setAllUnhovered();
-
             // Get the point in screen coordinates.
             POINT point = { GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
 
             // Map the point to client coordinates.
             ::MapWindowPoints(nullptr, msg->hwnd, &point, 1);
 
-            // excluse resize handle area
+            // exclude resize handle area
             if ((m_window->windowState() != Qt::WindowFullScreen)
                 && (point.y < resizeBorderHeight(m_window)
                     || point.x > (m_window->width() * m_window->devicePixelRatio() - resizeBorderWidth(m_window))))
@@ -368,14 +269,16 @@ public:
             switch ( msg->wParam )
             {
             case HTCLOSE:
-                setHovered(CSDButton::Close);
+                hoverExclusive(CSDButton::Close);
                 break;
             case HTMINBUTTON:
-                setHovered(CSDButton::Minimize);
+                hoverExclusive(CSDButton::Minimize);
                 break;
             case HTMAXBUTTON:
-                setHovered(CSDButton::MaximizeRestore);
+                hoverExclusive(CSDButton::MaximizeRestore);
                 break;
+            default:
+                setAllUnhovered();
             }
 
             // If we haven't previously asked for mouse tracking, request mouse
@@ -402,21 +305,26 @@ public:
             break;
         }
 
+        case WM_NCLBUTTONUP:
         case WM_NCLBUTTONDOWN:
         {
+            const bool pressed = (msg->message == WM_NCLBUTTONDOWN);
 
             // manually trigger button here, UI will never get click
             // signal because we have captured the mouse in non client area
             switch ( msg->wParam )
             {
             case HTCLOSE:
-                trigger(CSDButton::Close);
+                handleButtonActionExclusive(CSDButton::Close, pressed);
                 break;
             case HTMINBUTTON:
-                trigger(CSDButton::Minimize);
+                handleButtonActionExclusive(CSDButton::Minimize, pressed);
                 break;
             case HTMAXBUTTON:
-                trigger(CSDButton::MaximizeRestore);
+                handleButtonActionExclusive(CSDButton::MaximizeRestore, pressed);
+                break;
+            default:
+                resetPressedState();
                 break;
             }
 
@@ -462,7 +370,7 @@ private:
         // that somehow breaks snaplayouts menu with WS_CAPTION style ^_____^
         //
         // warning2: if you set negative margin, the window will start painting
-        // default CSD button underneath the qml layer, you won't be able to see
+        // server-side buttons underneath the qml layer, you won't be able to see
         // it but those will capture all your CSD events.
         margin.cxLeftWidth = (m_useClientSideDecoration ? 1 : 0);
 
@@ -494,28 +402,36 @@ private:
         return nullptr;
     }
 
-    void setHovered(CSDButton::ButtonType type)
+    void hoverExclusive(CSDButton::ButtonType type)
     {
         for (auto button : m_buttonmodel->windowCSDButtons()) {
-            if (button->type() == type) {
-                button->setShowHovered(true);
-                return ;
-            }
+            button->setShowHovered(button->type() == type);
         }
-
-        vlc_assert_unreachable();
     }
 
-    void trigger(CSDButton::ButtonType type)
+    void handleButtonActionExclusive(CSDButton::ButtonType type, bool pressed)
     {
-        for (auto button : m_buttonmodel->windowCSDButtons()) {
-            if (button->type() == type) {
-                button->click();
-                return ;
+        for (auto button : m_buttonmodel->windowCSDButtons())
+        {
+            if (pressed)
+            {
+                if (button->type() == type)
+                    button->externalPress();
+            }
+            else
+            {
+                if (button->type() == type)
+                    button->externalRelease();
+                else
+                    button->unsetExternalPressed();
             }
         }
+    }
 
-        vlc_assert_unreachable();
+    void resetPressedState()
+    {
+        for (auto button : m_buttonmodel->windowCSDButtons())
+            button->unsetExternalPressed();
     }
 
     void setAllUnhovered()
@@ -782,14 +698,23 @@ void WinTaskbarWidget::changeThumbbarButtons( PlayerController::PlayingState i_s
 MainCtxWin32::MainCtxWin32(qt_intf_t * _p_intf )
     : MainCtx( _p_intf )
 {
-    /* Volume keys */
-    p_intf->disable_volume_keys = var_InheritBool( _p_intf, "qt-disable-volume-keys" );
+    m_disableVolumeKeys = var_InheritBool( _p_intf, "qt-disable-volume-keys" );
 }
 
 void MainCtxWin32::reloadPrefs()
 {
-    p_intf->disable_volume_keys = var_InheritBool( p_intf, "qt-disable-volume-keys" );
     MainCtx::reloadPrefs();
+    bool disableVolumeKeys = var_InheritBool( p_intf, "qt-disable-volume-keys" );
+    if (disableVolumeKeys != m_disableVolumeKeys)
+    {
+        m_disableVolumeKeys = disableVolumeKeys;
+        emit disableVolumeKeysChanged(disableVolumeKeys);
+    }
+}
+
+bool MainCtxWin32::getDisableVolumeKeys() const
+{
+    return m_disableVolumeKeys;
 }
 
 // InterfaceWindowHandlerWin32
@@ -798,8 +723,12 @@ InterfaceWindowHandlerWin32::InterfaceWindowHandlerWin32(qt_intf_t *_p_intf, Mai
     : InterfaceWindowHandler(_p_intf, mainCtx, window, parent)
     , m_CSDWindowEventHandler(new CSDWin32EventHandler(mainCtx, window, window))
 {
-    auto systemMenuButton = std::make_shared<WinSystemMenuButton>(mainCtx->intfMainWindow(), nullptr);
-    mainCtx->csdButtonModel()->setSystemMenuButton(systemMenuButton);
+    auto mainCtxWin32 = qobject_cast<MainCtxWin32*>(mainCtx);
+    assert(mainCtxWin32);
+    m_disableVolumeKeys = mainCtxWin32->getDisableVolumeKeys();
+    connect(mainCtxWin32, &MainCtxWin32::disableVolumeKeysChanged, this, [this](bool disable){
+        m_disableVolumeKeys = disable;
+    });
 
     QApplication::instance()->installNativeEventFilter(this);
 }
@@ -910,7 +839,7 @@ bool InterfaceWindowHandlerWin32::eventFilter(QObject* obj, QEvent* ev)
         case WM_APPCOMMAND:
             cmd = GET_APPCOMMAND_LPARAM(msg->lParam);
 
-            if( p_intf->disable_volume_keys &&
+            if( m_disableVolumeKeys &&
                     (   cmd == APPCOMMAND_VOLUME_DOWN   ||
                         cmd == APPCOMMAND_VOLUME_UP     ||
                         cmd == APPCOMMAND_VOLUME_MUTE ) )

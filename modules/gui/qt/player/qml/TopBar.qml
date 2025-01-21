@@ -64,6 +64,8 @@ FocusScope{
 
     property alias resumeVisible: resumeDialog.visible
 
+    property alias playlistVisible: playlistButton.checked
+
     // Signals
 
     signal togglePlaylistVisibility()
@@ -198,6 +200,14 @@ FocusScope{
         anchors.fill: parent
         active: root.showCSD
         source: "qrc:///qt/qml/VLC/Widgets/CSDTitlebarTapNDrapHandler.qml"
+
+        Connections {
+            target: tapNDrag.item
+            enabled: tapNDrag.status === Loader.Ready
+            function onCsdMenuVisibleChanged() {
+                root.requestLockUnlockAutoHide(tapNDrag.item.csdMenuVisible)
+            }
+        }
     }
 
     // Components -
@@ -276,13 +286,7 @@ FocusScope{
 
                 color: theme.accent
 
-                Connections {
-                    target: logo.button
-
-                    function onSystemMenuVisibilityChanged() {
-                        root.requestLockUnlockAutoHide(visible)
-                    }
-                }
+                onCsdMenuVisibleChanged: root.requestLockUnlockAutoHide(csdMenuVisible)
             }
         }
 
@@ -467,8 +471,6 @@ FocusScope{
             text: VLCIcons.playlist
             description: qsTr("Playlist")
             focus: root.showToolbar
-
-            checked: MainCtx.playlistVisible
 
             width: VLCStyle.bannerButton_width
             height: VLCStyle.bannerButton_height

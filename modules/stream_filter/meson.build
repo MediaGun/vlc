@@ -19,10 +19,10 @@ if z_dep.found()
   }
 endif
 
-# TODO: Add !HAVE_WINSTORE check
 vlc_modules += {
     'name' : 'prefetch',
-    'sources' : files('prefetch.c')
+    'sources' : files('prefetch.c'),
+    'enabled' : not have_win_store
 }
 
 vlc_modules += {
@@ -43,4 +43,12 @@ vlc_modules += {
 vlc_modules += {
     'name' : 'skiptags',
     'sources' : files('skiptags.c')
+}
+
+aribb25_dep = dependency('aribb25', version:'>= 0.2.6', required: get_option('aribb25'))
+vlc_modules += {
+    'name' : 'aribcam',
+    'sources' : files('aribcam.c'),
+    'dependencies' : [aribb25_dep],
+    'enabled': aribb25_dep.found(),
 }

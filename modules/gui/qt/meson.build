@@ -7,7 +7,7 @@ qt6 = import('qt6')
 qt_include_dir = include_directories('.')
 
 qt_extra_deps = []
-qt_extra_flags = ['-DQT_STRICT_ITERATORS']
+qt_extra_flags = ['-DQT_STRICT_ITERATORS','-DQT_USE_QSTRINGBUILDER','-DQT_NO_CAST_TO_ASCII','-DQT_NO_CAST_FROM_BYTEARRAY']
 qt_cppargs = []
 qt_link_args = []
 
@@ -17,7 +17,7 @@ qt6_dep = dependency('qt6',
     modules: [
         'Core', 'Gui', 'Widgets', 'Svg', 'Qml', 'QmlModels',
         'QuickLayouts', 'QuickTemplates2', 'QmlWorkerScript',
-        'Quick', 'QuickControls2', 'ShaderTools'
+        'Quick', 'QuickControls2'
         ],
     private_headers: true,
     required: get_option('qt'))
@@ -128,6 +128,7 @@ moc_headers = files(
     'util/color_svg_image_provider.hpp',
     'util/vlcaccess_image_provider.hpp',
     'util/csdbuttonmodel.hpp',
+    'util/csdmenu.hpp',
     'util/imageluminanceextractor.hpp',
     'util/keyhelper.hpp',
     'util/listcache.hpp',
@@ -149,8 +150,6 @@ moc_headers = files(
     'widgets/native/interface_widgets.hpp',
     'widgets/native/navigation_attached.hpp',
     'widgets/native/mlfolderseditor.hpp',
-    'widgets/native/roundimage.hpp',
-    'widgets/native/roundimage_p.hpp',
     'widgets/native/searchlineedit.hpp',
     'widgets/native/viewblockingrectangle.hpp',
 )
@@ -159,13 +158,9 @@ if host_system == 'windows'
     moc_headers += files(
         'maininterface/mainctx_win32.hpp',
         'maininterface/compositor_win7.hpp',
+        'maininterface/compositor_dcomp.hpp',
+        'maininterface/compositor_dcomp_acrylicsurface.hpp',
     )
-    if cdata.has('HAVE_DCOMP_H')
-        moc_headers += files(
-            'maininterface/compositor_dcomp.hpp',
-            'maininterface/compositor_dcomp_acrylicsurface.hpp',
-        )
-    endif
 endif
 
 if (x11_dep.found() and
@@ -384,6 +379,7 @@ some_sources = files(
     'network/servicesdiscoverymodel.hpp',
     'network/standardpathmodel.cpp',
     'network/standardpathmodel.hpp',
+    'network/vlcmediasourcewrapper.hpp',
     'style/qtthemeprovider.hpp',
     'style/colorcontext.cpp',
     'style/colorcontext.hpp',
@@ -431,6 +427,8 @@ some_sources = files(
     'util/covergenerator.hpp',
     'util/csdbuttonmodel.cpp',
     'util/csdbuttonmodel.hpp',
+    'util/csdmenu.cpp',
+    'util/csdmenu.hpp',
     'util/imageluminanceextractor.cpp',
     'util/imageluminanceextractor.hpp',
     'util/imagehelper.cpp',
@@ -476,6 +474,9 @@ some_sources = files(
     'util/dismiss_popup_event_filter.hpp',
     'util/list_selection_model.cpp',
     'util/list_selection_model.hpp',
+    'util/model_recovery_agent.hpp',
+    'util/vlcqtmessagehandler.cpp',
+    'util/vlcqtmessagehandler.hpp',
     'widgets/native/animators.cpp',
     'widgets/native/animators.hpp',
     'widgets/native/customwidgets.cpp',
@@ -490,8 +491,6 @@ some_sources = files(
     'widgets/native/mlfolderseditor.hpp',
     'widgets/native/qvlcframe.cpp',
     'widgets/native/qvlcframe.hpp',
-    'widgets/native/roundimage.cpp',
-    'widgets/native/roundimage.hpp',
     'widgets/native/searchlineedit.cpp',
     'widgets/native/searchlineedit.hpp',
     'widgets/native/viewblockingrectangle.cpp',
@@ -506,14 +505,11 @@ if host_system == 'windows'
         'maininterface/compositor_win7.cpp',
         'maininterface/compositor_win7.hpp',
         'style/windowsthemeprovider.cpp',
+        'util/csdmenu_win32.c',
+        'util/csdmenu_win32.h',
+        'maininterface/compositor_dcomp.cpp',
+        'maininterface/compositor_dcomp_acrylicsurface.cpp',
     )
-
-    if cdata.has('HAVE_DCOMP_H')
-        some_sources += files(
-            'maininterface/compositor_dcomp.cpp',
-            'maininterface/compositor_dcomp_acrylicsurface.cpp',
-        )
-    endif
 endif
 
 if (x11_dep.found() and
@@ -798,6 +794,14 @@ qml_modules += {
     ),
 }
 
+if qt6_dep.version().version_compare('>=6.5.0')
+    qml_dynamicshadow_file = 'widgets/qml/DynamicShadow.qml'
+    qml_blureffect_file = 'widgets/qml/BlurEffect.qml'
+else
+    qml_dynamicshadow_file = 'widgets/qml/compat/DynamicShadow.qml'
+    qml_blureffect_file = 'widgets/qml/compat/BlurEffect.qml'
+endif
+
 qml_modules += {
     'name' : 'VLC.Widgets',
     'target' : 'widgets',
@@ -849,6 +853,7 @@ qml_modules += {
         'widgets/qml/MenuCaption.qml',
         'widgets/qml/MenuLabel.qml',
         'widgets/qml/MLDragItem.qml',
+        'widgets/qml/MLTableColumns.qml',
         'widgets/qml/NavigableCol.qml',
         'widgets/qml/NavigableRow.qml',
         'widgets/qml/PlayCover.qml',
@@ -880,7 +885,11 @@ qml_modules += {
         'widgets/qml/PopupIconToolButton.qml',
         'widgets/qml/PartialEffect.qml',
         'widgets/qml/ViewHeader.qml',
-        'widgets/qml/ProgressIndicator.qml'
+        'widgets/qml/ProgressIndicator.qml',
+        'widgets/qml/RectangularGlow.qml',
+        qml_dynamicshadow_file,
+        qml_blureffect_file,
+        'widgets/qml/RoundImage.qml',
     ),
 }
 
@@ -891,6 +900,19 @@ qml_tests = {
 qmllibs = []
 
 if qt6_dep.found()
+    qt_rcc_extra_arguments = []
+    qt_zstd_check = '''
+    #include <qconfig.h>
+    #if QT_FEATURE_zstd != 1
+    #error "Qt can not decompress zstd. Resources are going to be compressed using zlib."
+    #endif
+    '''
+    if cpp.compiles(qt_zstd_check, dependencies: qt6_dep, name: 'Qt supports decompressing zstd')
+        qt_rcc_extra_arguments += '-compress-algo=zstd'
+    else
+        qt_rcc_extra_arguments += '-compress-algo=zlib'
+    endif
+
     prog_python = find_program('python3')
     modules_qrc = []
     foreach module : qml_modules
@@ -928,7 +950,8 @@ if qt6_dep.found()
                 meson.current_build_dir() / module['outdir'] / 'qmldir.qrc',
             ),
             include_directories: qt_include_dir,
-            dependencies: qt6_dep
+            dependencies: qt6_dep,
+            rcc_extra_arguments: qt_rcc_extra_arguments
         )
 
         #FIXME copy every files to the outdir module so they can be used by qt tooling
@@ -942,12 +965,8 @@ if qt6_dep.found()
     qt6pre_qrc = qt6.preprocess(
         qresources: qrc_files,
         include_directories: qt_include_dir,
-        dependencies: qt6_dep)
-
-    qt6pre_files = qt6.preprocess(ui_files: ui_sources,
-        moc_headers: moc_headers,
-        include_directories: qt_include_dir,
-        dependencies: qt6_dep)
+        dependencies: qt6_dep,
+        rcc_extra_arguments: qt_rcc_extra_arguments)
 
     qt_sources = files('qt.cpp')
 
@@ -1045,6 +1064,34 @@ if qt6_dep.found()
         endif
     endif
 
+    if get_option('update-check').allowed() and gcrypt_dep.found()
+        qt_extra_flags += '-DUPDATE_CHECK'
+    endif
+
+    if (xcb_dep.found() and xcb_render_dep.found() and xcb_xfixes_dep.found())
+
+        vlc_modules += {
+            'name' : 'qt_x11',
+            'include_directories' : qt_include_dir,
+            'sources' : files(
+                'maininterface/qt_x11_plugin.c',
+                'maininterface/compositor_x11_utils.hpp',
+                'maininterface/compositor_x11_utils.cpp',
+                'util/csdmenu_module.h',
+                'util/csdmenu_x11.cpp',
+                'util/csdmenu_x11.h'
+            ),
+            'dependencies' : [xcb_dep, xcb_render_dep, xcb_xfixes_dep]
+        }
+    endif
+
+    qt6pre_files = qt6.preprocess(ui_files: ui_sources,
+        moc_headers: moc_headers,
+        moc_extra_arguments: qt_extra_flags,
+        include_directories: qt_include_dir,
+        dependencies: qt6_dep,
+        rcc_extra_arguments: qt_rcc_extra_arguments)
+
     # TODO support qmlcachegen
 
     vlc_modules += {
@@ -1059,18 +1106,18 @@ if qt6_dep.found()
         'link_with' : qmllibs,
     }
 
-    test_qt6_dep = dependency('qt6', version: '=' + qt6_dep.version(), modules: ['QuickTest'], required: false)
-    if test_qt6_dep.found()
+    quicktest_qt6_dep = dependency('qt6', version: '=' + qt6_dep.version(), modules: ['QuickTest'], required: false)
+    if quicktest_qt6_dep.found()
         qml_test_moc = qt6.compile_moc(
             headers : files('tests/qml_test.hpp'),
-            dependencies : [test_qt6_dep, qt6_dep]
+            dependencies : [quicktest_qt6_dep, qt6_dep]
         )
         qml_test = executable(
           'qml_test',
           [files('tests/qml_test.cpp', 'tests/qml_test.hpp'), qml_test_moc],
           qt6pre_qrc,
           build_by_default: false,
-          dependencies: [test_qt6_dep, qt6_dep],
+          dependencies: [quicktest_qt6_dep, qt6_dep],
           link_with: qmllibs,
           cpp_args: ['-DQUICK_TEST_SOURCE_DIR="' + meson.current_source_dir() + '/tests"']
         )
@@ -1094,4 +1141,48 @@ if qt6_dep.found()
         'link_with': [libvlccore],
         'dependencies': [qt6_dep, qt_extra_deps],
     }
+
+    qtest_qt6_dep = dependency('qt6', version: '=' + qt6_dep.version(), modules: ['Test'], required: false)
+    if qtest_qt6_dep.found()
+        vlc_tests += {
+            'name': 'test_qt_renderer_manager',
+            'sources': files(
+                'tests/vlc_stub_modules.cpp',
+                'tests/test_renderer_manager_model.cpp',
+                'util/renderer_manager.hpp',
+                'util/renderer_manager.cpp'
+            ),
+            'moc_sources': files(
+                'tests/test_renderer_manager_model.cpp'
+            ),
+            'moc_headers': files(
+                'util/renderer_manager.hpp'
+            ),
+            'suite': ['qt'],
+            'include_directories' : qt_include_dir,
+            'link_with': [libvlccore, libvlc],
+            'dependencies': [qt6_dep, qt_extra_deps, qtest_qt6_dep]
+        }
+
+        vlc_tests += {
+            'name': 'test_qt_dialog_model',
+            'sources': files(
+                'tests/vlc_stub_modules.cpp',
+                'tests/test_vlc_dialog_model.cpp',
+                'dialogs/dialogs/dialogmodel.hpp',
+                'dialogs/dialogs/dialogmodel.cpp'
+            ),
+            'moc_sources': files(
+                'tests/test_vlc_dialog_model.cpp'
+            ),
+            'moc_headers': files(
+                'dialogs/dialogs/dialogmodel.hpp'
+            ),
+            'suite': ['qt'],
+            'include_directories' : qt_include_dir,
+            'link_with': [libvlccore, libvlc],
+            'dependencies': [qt6_dep, qt_extra_deps, qtest_qt6_dep],
+        }
+
+    endif
 endif

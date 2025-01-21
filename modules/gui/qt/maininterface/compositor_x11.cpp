@@ -209,7 +209,7 @@ bool CompositorX11::makeMainInterface(MainCtx* mainCtx)
 
     m_qmlView->show();
 
-    if (m_blurBehind)
+    if (m_mainCtx->hasAcrylicSurface())
         m_renderWindow->m_hasAcrylic = true;
 
     m_renderWindow->setInterfaceWindow(m_qmlView.get());
@@ -257,4 +257,37 @@ QWindow* CompositorX11::interfaceMainWindow() const { return m_renderWindow.get(
 QQuickItem * CompositorX11::activeFocusItem() const /* override */
 {
     return m_qmlView->activeFocusItem();
+}
+
+///////// DummyNativeWidget
+
+DummyNativeWidget::DummyNativeWidget(QWidget* parent, Qt::WindowFlags f)
+    : QWidget(parent, f)
+{
+    setAttribute(Qt::WA_NativeWindow, true);
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
+    setAttribute(Qt::WA_PaintOnScreen, true);
+    setAttribute(Qt::WA_MouseTracking, true);
+    setAttribute(Qt::WA_TranslucentBackground, false);
+    QWindow* w =  window()->windowHandle();
+    assert(w);
+    /*
+     * force the window not to have an alpha channel, the  parent window
+     * may have an alpha channel and child widget would inhertit the format
+     * even if we set Qt::WA_TranslucentBackground to false. having an alpha
+     * in this surface would lead to the video begin semi-tranparent.
+     */
+    QSurfaceFormat format = w->format();
+    format.setAlphaBufferSize(0);
+    w->setFormat(format);
+}
+
+DummyNativeWidget::~DummyNativeWidget()
+{
+
+}
+
+QPaintEngine* DummyNativeWidget::paintEngine() const
+{
+    return nullptr;
 }

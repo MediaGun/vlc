@@ -32,8 +32,8 @@
 #import "main/CompatibilityFixes.h"
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
 @interface VLCPlaybackProgressSliderCell ()
 {
@@ -123,7 +123,7 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef displayLink,
 - (void)updateAtoBLoopState
 {
     VLCPlayerController * const playerController =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
 
     _abLoopState = playerController.abLoopState;
     _aToBLoopAMarkPosition = playerController.aLoopPosition;

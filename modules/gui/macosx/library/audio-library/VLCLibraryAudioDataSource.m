@@ -48,10 +48,10 @@
 #import "extensions/NSString+Helpers.h"
 #import "extensions/NSPasteboardItem+VLCAdditions.h"
 
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlaylistItem.h"
-#import "playlist/VLCPlaylistModel.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayQueueItem.h"
+#import "playqueue/VLCPlayQueueModel.h"
 
 #import "views/VLCImageView.h"
 #import "views/VLCSubScrollView.h"
@@ -98,7 +98,7 @@ NSString * const VLCLibraryAudioDataSourceDisplayedCollectionChangedNotification
 
 - (void)currentlyPlayingItemChanged:(NSNotification *)aNotification
 {
-    VLCPlayerController * const playerController = VLCMain.sharedInstance.playlistController.playerController;
+    VLCPlayerController * const playerController = VLCMain.sharedInstance.playQueueController.playerController;
     VLCInputItem * const currentInputItem = playerController.currentMedia;
     if (!currentInputItem) {
         return;

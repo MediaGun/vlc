@@ -41,7 +41,6 @@ public:
         assert(p_intf);
         if (isWindow())
         {
-            ensurePolished();
             QVLCDialog::setWindowTransientParent(this, nullptr, p_intf);
         }
     }
@@ -105,10 +104,7 @@ public:
 
     static void VolumeEntries( qt_intf_t *p_intf, QMenu *current );
 
-    /* recentMRL menu */
     static RendererMenu *rendererMenu;
-
-    static void updateAudioDevice(qt_intf_t *, QMenu* );
 };
 
 #endif

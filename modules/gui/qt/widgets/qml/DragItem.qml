@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
+import QtQuick.Window
 import QtQuick.Templates as T
 import QtQml.Models
 
@@ -452,7 +453,7 @@ Item {
             Rectangle {
                 id: bg
 
-                radius: coverRepeater.count > 1 ? dragItem.coverSize : VLCStyle.dp(2, VLCStyle.scale)
+                radius: coverRepeater.count > 1 ? dragItem.coverSize : 0.0
                 anchors.fill: parent
                 color: theme.bg.primary
 
@@ -471,12 +472,12 @@ Item {
                 height: coverSize
                 radius: bg.radius
                 source: modelData.artwork ?? ""
-                sourceSize: dragItem.imageSourceSize ?? Qt.size(width, height)
+                sourceSize: dragItem.imageSourceSize ?? Qt.size(width * Screen.devicePixelRatio, height * Screen.devicePixelRatio)
 
                 onStatusChanged: {
-                    if (status === Widgets.RoundImage.Ready)
+                    if (status === Image.Ready)
                         coverRepeater.notReadyCount -= 1
-                    else if (status === Widgets.RoundImage.Error) {
+                    else if (status === Image.Error) {
                         const fallbackSource = modelData.fallback ?? defaultCover
                         if (source === fallbackSource)
                             coverRepeater.notReadyCount -= 1

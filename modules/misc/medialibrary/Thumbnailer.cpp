@@ -24,25 +24,31 @@
 
 #include "medialibrary.h"
 
-#include <vlc_thumbnailer.h>
 #include <vlc_fs.h>
 #include <vlc_block.h>
 #include <vlc_url.h>
 #include <vlc_cxx_helpers.hpp>
+#include <vlc_preparser.h>
 
 #include <stdexcept>
 
 Thumbnailer::Thumbnailer( vlc_medialibrary_module_t* ml )
     : m_ml( ml )
     , m_currentContext( nullptr )
-    , m_thumbnailer( nullptr, &vlc_thumbnailer_Release )
+    , m_thumbnailer( nullptr, &vlc_preparser_Delete )
 {
-    m_thumbnailer.reset( vlc_thumbnailer_Create( VLC_OBJECT( ml ) ) );
+    const struct vlc_preparser_cfg cfg = []{
+        struct vlc_preparser_cfg cfg{};
+        cfg.types = VLC_PREPARSER_TYPE_THUMBNAIL;
+        cfg.timeout = VLC_TICK_FROM_SEC( 3 );
+        return cfg;
+    }();
+    m_thumbnailer.reset( vlc_preparser_New( VLC_OBJECT( ml ), &cfg ) );
     if ( unlikely( m_thumbnailer == nullptr ) )
-        throw std::runtime_error( "Failed to instantiate a vlc_thumbnailer_t" );
+        throw std::runtime_error( "Failed to instantiate a vlc_preparser_t" );
 }
 
-void Thumbnailer::onThumbnailComplete( void* data, picture_t* thumbnail )
+void Thumbnailer::onThumbnailComplete( input_item_t *, int, picture_t* thumbnail, void *data )
 {
     ThumbnailerCtx* ctx = static_cast<ThumbnailerCtx*>( data );
 
@@ -64,23 +70,36 @@ bool Thumbnailer::generate( const medialibrary::IMedia&, const std::string& mrl,
     if ( unlikely( item == nullptr ) )
         return false;
 
-    input_item_AddOption( item.get(), "no-hwdec", VLC_INPUT_OPTION_TRUSTED );
     ctx.done = false;
     ctx.thumbnailer = this;
     {
         vlc::threads::mutex_locker lock( m_mutex );
         m_currentContext = &ctx;
-        ctx.request = vlc_thumbnailer_RequestByPos( m_thumbnailer.get(), position,
-                                      VLC_THUMBNAILER_SEEK_FAST, item.get(),
-                                      VLC_TICK_FROM_SEC( 3 ),
-                                      &onThumbnailComplete, &ctx );
+        struct vlc_thumbnailer_arg thumb_arg = {
+            .seek = {
+                .type = vlc_thumbnailer_arg::seek::VLC_THUMBNAILER_SEEK_POS,
+                .pos = position,
+                .speed = vlc_thumbnailer_arg::seek::VLC_THUMBNAILER_SEEK_FAST,
+            },
+            .hw_dec = false,
+        };
 
+        static const struct vlc_thumbnailer_cbs cbs = {
+            .on_ended = onThumbnailComplete,
+        };
+        vlc_preparser_req_id requestId =
+            vlc_preparser_GenerateThumbnail( m_thumbnailer.get(), item.get(),
+                                             &thumb_arg, &cbs, &ctx );
+
+        if (requestId == VLC_PREPARSER_REQ_ID_INVALID)
+        {
+            m_currentContext = nullptr;
+            return false;
+        }
         while ( ctx.done == false )
             m_cond.wait( m_mutex );
         m_currentContext = nullptr;
     }
-
-    vlc_thumbnailer_DestroyRequest(m_thumbnailer.get(), ctx.request);
 
     if ( ctx.thumbnail == nullptr )
         return false;

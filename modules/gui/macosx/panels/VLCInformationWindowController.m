@@ -34,8 +34,8 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "views/VLCImageView.h"
 #import "views/VLCSettingTextField.h"
@@ -134,10 +134,6 @@ actionCallback(encodedBy);
     [notificationCenter addObserver:self
                            selector:@selector(mediaItemWasParsed:)
                                name:VLCInputItemParsingSucceeded
-                             object:nil];
-    [notificationCenter addObserver:self
-                           selector:@selector(mediaItemWasParsed:)
-                               name:VLCInputItemPreparsingSucceeded
                              object:nil];
 
     [self initStrings];
@@ -305,7 +301,8 @@ _##field##TextField.delegate = self
     }
 
     NSParameterAssert(inputItems.count > 0);
-    _representedInputItems = inputItems.copy;
+    NSArray<VLCInputItem *> * const nonMutableInputItems = inputItems.copy;
+    _representedInputItems = nonMutableInputItems;
 
     NSMutableSet * const artworkMrlSet = NSMutableSet.set;
 
@@ -330,6 +327,10 @@ _##field##TextField.delegate = self
                     dispatch_group_enter(group);
                     [VLCLibraryImageCache thumbnailForLibraryItem:mediaItem
                                                    withCompletion:^(NSImage * const image) {
+                        if (nonMutableInputItems != self.representedInputItems) {
+                            dispatch_group_leave(group);
+                            return;
+                        }
                         if (image) {
                             [artworkImages addObject:image];
                         }
@@ -382,6 +383,10 @@ _##field##TextField.delegate = self
                 dispatch_group_enter(group);
                 [VLCLibraryImageCache thumbnailForInputItem:item
                                              withCompletion:^(NSImage * const image) {
+                    if (representedInputItems != self.representedInputItems) {
+                        dispatch_group_leave(group);
+                        return;
+                    }
                     if (image) {
                         [artworkImages addObject:image];
                     }
@@ -423,7 +428,7 @@ _##field##TextField.delegate = self
 {
     NSAssert(self.representedInputItems.count == 1, @"Should not be updating stats for many items");
     VLCPlayerController * const playerController =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     VLCInputItem * const currentPlayingItem = playerController.currentMedia;
     VLCInputItem * const firstItem = self.representedInputItems.firstObject;
     NSAssert([currentPlayingItem.MRL isEqualToString:firstItem.MRL],
@@ -462,7 +467,7 @@ _##field##TextField.delegate = self
 {
     NSParameterAssert(inputItem != nil);
     if (!inputItem.preparsed) {
-        [inputItem preparseInputItem];
+        [inputItem parseInputItem];
     }
 
 #define FILL_FIELD_FROM_INPUTITEM(field)                            \

@@ -145,32 +145,35 @@ static int Open (vout_display_t *vd,
     if (vd->cfg->window->type != VLC_WINDOW_TYPE_NSOBJECT)
         return VLC_EGENERIC;
 
-    vout_display_sys_t *sys = vlc_obj_calloc (vd, 1, sizeof(*sys));
+    vout_display_sys_t *sys = calloc(1, sizeof(*sys));
 
     if (!sys)
         return VLC_ENOMEM;
     sys->cfg = *vd->cfg;
+    sys->has_first_frame = false;
+    sys->current = NULL;
+    sys->vgl = NULL;
+    sys->gl = NULL;
 
     @autoreleasepool {
         if (!CGDisplayUsesOpenGLAcceleration (kCGDirectMainDisplay))
             msg_Err (vd, "no OpenGL hardware acceleration found. this can lead to slow output and unexpected results");
 
         vd->sys = sys;
-        sys->vgl = NULL;
-        sys->gl = NULL;
 
         /* Get the drawable object */
-        id container = vd->cfg->window->handle.nsobject;
+        id container = (__bridge id)vd->cfg->window->handle.nsobject;
         assert(container != nil);
 
         /* This will be released in Close(), on
          * main thread, after we are done using it. */
-        sys->container = [container retain];
+        sys->container = container;
 
         /* Get our main view*/
-        [VLCOpenGLVideoView performSelectorOnMainThread:@selector(getNewView:)
-                                             withObject:[NSValue valueWithPointer:&sys->glView]
-                                          waitUntilDone:YES];
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            sys->glView = [[VLCOpenGLVideoView alloc] init];
+        });
+
         if (!sys->glView) {
             msg_Err(vd, "Initialization of open gl view failed");
             goto error;
@@ -181,18 +184,17 @@ static int Open (vout_display_t *vd,
         /* We don't wait, that means that we'll have to be careful about releasing
          * container.
          * That's why we'll release on main thread in Close(). */
-        if ([(id)container respondsToSelector:@selector(addVoutSubview:)])
-            [(id)container performSelectorOnMainThread:@selector(addVoutSubview:)
-                                            withObject:sys->glView
-                                         waitUntilDone:NO];
+        if ([container respondsToSelector:@selector(addVoutSubview:)]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [container addVoutSubview: sys->glView];
+            });
+        }
         else if ([container isKindOfClass:[NSView class]]) {
-            NSView *parentView = container;
-            [parentView performSelectorOnMainThread:@selector(addSubview:)
-                                         withObject:sys->glView
-                                      waitUntilDone:NO];
-            [sys->glView performSelectorOnMainThread:@selector(setFrameToBoundsOfView:)
-                                          withObject:[NSValue valueWithPointer:parentView]
-                                       waitUntilDone:NO];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSView *parentView = container;
+                [parentView addSubview:sys->glView];
+                [sys->glView setFrame:[parentView bounds]];
+            });
         } else {
             msg_Err(vd, "Invalid drawable-nsobject object. drawable-nsobject must either be an NSView or comply to the @protocol VLCVideoViewEmbedding.");
             goto error;
@@ -274,18 +276,17 @@ static void Close(vout_display_t *vd)
             vlc_object_delete(sys->gl);
         }
 
-        VLCOpenGLVideoView *glView = sys->glView;
-        id<VLCVideoViewEmbedding> viewContainer = sys->container;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if ([viewContainer respondsToSelector:@selector(removeVoutSubview:)]) {
+            if ([sys->container respondsToSelector:@selector(removeVoutSubview:)]) {
                 /* This will retain sys->glView */
-                [viewContainer removeVoutSubview:sys->glView];
+                [sys->container removeVoutSubview:sys->glView];
             }
 
             /* release on main thread as explained in Open() */
-            [viewContainer release];
-            [glView removeFromSuperview];
-            [glView release];
+            sys->container = nil;
+            [sys->glView removeFromSuperview];
+            sys->glView = nil;
+            free(sys);
         });
     }
 }
@@ -320,11 +321,10 @@ static void PictureDisplay (vout_display_t *vd, picture_t *pic)
         {
             [sys->glView render];
             vlc_gl_ReleaseCurrent(sys->gl);
-            vlc_gl_Swap(sys->gl);
         }
         [sys->glView setVoutFlushing:NO];
+        sys->has_first_frame = true;
     }
-    sys->has_first_frame = true;
 }
 
 static void UpdatePlace (vout_display_t *vd, const vout_display_cfg_t *cfg)
@@ -417,13 +417,6 @@ static void OpenglSwap (vlc_gl_t *gl)
 
 #define VLCAssertMainThread() assert([[NSThread currentThread] isMainThread])
 
-
-+ (void)getNewView:(NSValue *)value
-{
-    id *ret = [value pointerValue];
-    *ret = [[self alloc] init];
-}
-
 /**
  * Gets called by the Open() method.
  */
@@ -451,7 +444,6 @@ static void OpenglSwap (vlc_gl_t *gl)
         return nil;
 
     self = [super initWithFrame:NSMakeRect(0,0,10,10) pixelFormat:fmt];
-    [fmt release];
 
     if (!self)
         return nil;
@@ -489,16 +481,6 @@ static void OpenglSwap (vlc_gl_t *gl)
 - (void)dealloc
 {
     [NSNotificationCenter.defaultCenter removeObserver:self];
-    [super dealloc];
-}
-
-/**
- * Gets called by the Open() method.
- */
-- (void)setFrameToBoundsOfView:(NSValue *)value
-{
-    NSView *parentView = [value pointerValue];
-    [self setFrame:[parentView bounds]];
 }
 
 /**

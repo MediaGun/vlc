@@ -520,6 +520,11 @@ void SystemPalette::makeLightPalette()
         setColor(CS, C::Fg, C::Primary, C::Hovered, Qt::black);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::black, 0.2));
         setColor(CS, C::Fg, C::Secondary, C::Normal, Qt::black);
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //menubar
@@ -560,6 +565,11 @@ void SystemPalette::makeLightPalette()
 
         setColor(CS, C::Fg, C::Primary, C::Normal, Qt::white);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::black, 0.3));
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //Standard Buttons
@@ -571,6 +581,11 @@ void SystemPalette::makeLightPalette()
         setColor(CS, C::Fg, C::Primary, C::Focused, Qt::black);
         setColor(CS, C::Fg, C::Primary, C::Hovered, Qt::black);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::black, 0.3));
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //tooltip
@@ -718,6 +733,11 @@ void SystemPalette::makeDarkPalette()
         setColor(CS, C::Fg, C::Primary, C::Hovered, Qt::white);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::white, 0.2));
         setColor(CS, C::Fg, C::Secondary, C::Normal, Qt::white);
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //menubar
@@ -757,6 +777,11 @@ void SystemPalette::makeDarkPalette()
 
         setColor(CS, C::Fg, C::Primary, C::Normal, Qt::white);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::white, 0.3));
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //Standard Buttons
@@ -768,6 +793,11 @@ void SystemPalette::makeDarkPalette()
         setColor(CS, C::Fg, C::Primary, C::Focused, Qt::white);
         setColor(CS, C::Fg, C::Primary, C::Hovered, Qt::white);
         setColor(CS, C::Fg, C::Primary, C::Disabled, setColorAlpha(Qt::white, 0.3));
+
+        setColor(CS, C::Decoration, C::Border, C::Normal, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Focused, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Hovered, Qt::transparent);
+        setColor(CS, C::Decoration, C::Border, C::Disabled, Qt::transparent);
     }
 
     //tooltip

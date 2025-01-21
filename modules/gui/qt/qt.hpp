@@ -36,11 +36,7 @@
 
 #include <qconfig.h>
 
-#define QT_NO_CAST_TO_ASCII
 #include <QString>
-
-static_assert (QT_VERSION >= QT_VERSION_CHECK(6, 2, 0),
-               "Update your Qt version to at least 6.2.0");
 
 enum {
     IMEventTypeOffset     = 0,
@@ -97,10 +93,6 @@ struct qt_intf_t
     vlc::playlist::PlaylistController* p_mainPlaylistController;
     PlayerController* p_mainPlayerController;
     std::unique_ptr<vlc::Compositor>  p_compositor;
-
-#ifdef _WIN32
-    bool disable_volume_keys;
-#endif
 
     int refCount;
     bool isShuttingDown;

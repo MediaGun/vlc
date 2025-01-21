@@ -37,7 +37,7 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
 #import "views/VLCImageView.h"
 #import "views/VLCTrackingView.h"
@@ -72,6 +72,8 @@ NSString * const VLCLibraryTableCellViewIdentifier = @"VLCLibraryTableCellViewId
 - (void)setRepresentedItem:(VLCLibraryRepresentedItem *)representedItem
 {
     _representedItem = representedItem;
+    _representedInputItem = nil; // Reset and ensure the change is obvious
+
     id<VLCMediaLibraryItemProtocol> const actualItem = representedItem.item;
     NSAssert(actualItem != nil, @"Should not update nil represented item!");
 
@@ -80,6 +82,9 @@ NSString * const VLCLibraryTableCellViewIdentifier = @"VLCLibraryTableCellViewId
     self.playInstantlyButton.target = self;
 
     [VLCLibraryImageCache thumbnailForLibraryItem:actualItem withCompletion:^(NSImage * const thumbnail) {
+        if (self.representedItem.item != actualItem) {
+            return;
+        }
         self.representedImageView.image = thumbnail;
     }];
 
@@ -97,11 +102,15 @@ NSString * const VLCLibraryTableCellViewIdentifier = @"VLCLibraryTableCellViewId
 - (void)setRepresentedInputItem:(VLCInputItem *)representedInputItem
 {
     _representedInputItem = representedInputItem;
+    _representedItem = nil; // Reset and ensure the change is obvious
 
     self.singlePrimaryTitleTextField.hidden = NO;
     self.singlePrimaryTitleTextField.stringValue = _representedInputItem.name;
 
     [VLCLibraryImageCache thumbnailForInputItem:self->_representedInputItem withCompletion:^(NSImage * const thumbnail) {
+        if (representedInputItem != self->_representedInputItem) {
+            return;
+        }
         self->_representedImageView.image = thumbnail;
     }];
 
@@ -144,7 +153,7 @@ NSString * const VLCLibraryTableCellViewIdentifier = @"VLCLibraryTableCellViewId
 
 - (void)playInputItemInstantly:(id)sender
 {
-    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
+    [VLCMain.sharedInstance.playQueueController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
 }
 
 @end

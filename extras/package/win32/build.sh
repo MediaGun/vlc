@@ -182,9 +182,9 @@ make -j$JOBS
 
 # avoid installing wine on WSL
 # wine is needed to build Qt with shaders
-if test -z "`command -v wine`"
+if test -z "$(command -v wine)"
 then
-    if test -n "`command -v wsl.exe`"
+    if test -n "$(command -v wsl.exe)"
     then
         echo "Using wsl.exe to replace wine"
         echo "#!/bin/sh" > build/bin/wine
@@ -192,18 +192,23 @@ then
         chmod +x build/bin/wine
     fi
 fi
+HOST="$(cc -dumpmachine)"
+HOST_ARCH="${HOST%%-*}"
+if [ "$HOST_ARCH" = "$ARCH" ]; then
+    VLC_EXE_WRAPPER="wine"
+fi
 
 cd ../../
 
 CONTRIB_PREFIX=$TRIPLET
-if [ ! -z "$BUILD_UCRT" ]; then
+if [ -n "$BUILD_UCRT" ]; then
 
     if [ ! "$COMPILING_WITH_UCRT" -gt 0 ]; then
         echo "UCRT builds need a UCRT toolchain"
         exit 1
     fi
 
-    if [ ! -z "$WINSTORE" ]; then
+    if [ -n "$WINSTORE" ]; then
         CONTRIBFLAGS="$CONTRIBFLAGS --disable-disc --disable-srt --disable-sdl --disable-SDL_image"
         # FIXME enable discs ?
         # modplug uses GlobalAlloc/Free and lstrcpyA/wsprintfA/lstrcpynA
@@ -222,7 +227,7 @@ if [ ! -z "$BUILD_UCRT" ]; then
     fi
 fi
 
-if [ ! -z "$WIXPATH" ]; then
+if [ -n "$WIXPATH" ]; then
     # the CI didn't provide its own WIX, make sure we use our own
     CONTRIBFLAGS="$CONTRIBFLAGS --enable-wix"
 fi
@@ -255,45 +260,60 @@ else
 fi
 fi
 
-if [ ! -z "$BUILD_UCRT" ]; then
-    WIDL=${TRIPLET}-widl
-    CPPFLAGS="$CPPFLAGS -D__MSVCRT_VERSION__=0xE00 -D_UCRT"
+VLC_CFLAGS="$CFLAGS"
+unset CFLAGS
+VLC_CXXFLAGS="$CXXFLAGS"
+unset CXXFLAGS
+VLC_CPPFLAGS="$CPPFLAGS"
+unset CPPFLAGS
+VLC_LDFLAGS="$LDFLAGS"
+unset LDFLAGS
 
-    if [ ! -z "$WINSTORE" ]; then
+if [ -n "$BUILD_UCRT" ]; then
+    WIDL=${TRIPLET}-widl
+    VLC_CPPFLAGS="$VLC_CPPFLAGS -D__MSVCRT_VERSION__=0xE00 -D_UCRT"
+
+    if [ -n "$WINSTORE" ]; then
         SHORTARCH="$SHORTARCH-uwp"
         TRIPLET=${TRIPLET}uwp
-        CPPFLAGS="$CPPFLAGS -DWINAPI_FAMILY=WINAPI_FAMILY_APP -D_UNICODE -DUNICODE"
+        VLC_CPPFLAGS="$VLC_CPPFLAGS -DWINAPI_FAMILY=WINAPI_FAMILY_APP -D_UNICODE -DUNICODE"
 
         if [ -z "$NTDDI" ]; then
             WINVER=0x0A00
         else
-            WINVER=`echo ${NTDDI} |cut -c 1-6`
+            WINVER=$(echo ${NTDDI} |cut -c 1-6)
             if [ "$WINVER" != "0x0A00" ]; then
                 echo "Unsupported SDK/NTDDI version ${NTDDI} for Winstore"
             fi
         fi
 
-        LDFLAGS="$LDFLAGS -lwindowsapp"
-        CFLAGS="$CFLAGS -Wl,-lwindowsapp"
-        CXXFLAGS="$CXXFLAGS -Wl,-lwindowsapp"
         if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
-            CFLAGS="$CFLAGS -Wno-unused-command-line-argument"
-            CXXFLAGS="$CXXFLAGS -Wno-unused-command-line-argument"
+            VLC_LDFLAGS="$VLC_LDFLAGS --start-no-unused-arguments"
+            VLC_CFLAGS="$VLC_CFLAGS --start-no-unused-arguments"
+            VLC_CXXFLAGS="$VLC_CXXFLAGS --start-no-unused-arguments"
+        fi
+        VLC_LDFLAGS="$VLC_LDFLAGS -Wl,-lwindowsapp"
+        VLC_CFLAGS="$VLC_CFLAGS -Wl,-lwindowsapp"
+        VLC_CXXFLAGS="$VLC_CXXFLAGS -Wl,-lwindowsapp"
+        if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
+            VLC_LDFLAGS="$VLC_LDFLAGS --end-no-unused-arguments"
+            VLC_CFLAGS="$VLC_CFLAGS --end-no-unused-arguments"
+            VLC_CXXFLAGS="$VLC_CXXFLAGS --end-no-unused-arguments"
         fi
     else
         SHORTARCH="$SHORTARCH-ucrt"
     fi
 
-    LDFLAGS="$LDFLAGS -lucrt"
+    VLC_LDFLAGS="$VLC_LDFLAGS -lucrt"
     if [ ! "$COMPILING_WITH_CLANG" -gt 0 ]; then
         # assume gcc
-        NEWSPECFILE="`pwd`/specfile-$SHORTARCH"
+        NEWSPECFILE="$(pwd)/specfile-$SHORTARCH"
         # tell gcc to replace msvcrt with ucrtbase+ucrt
         $CC -dumpspecs | sed -e "s/-lmsvcrt/-lucrt/" > $NEWSPECFILE
-        CFLAGS="$CFLAGS -specs=$NEWSPECFILE"
-        CXXFLAGS="$CXXFLAGS -specs=$NEWSPECFILE"
+        VLC_CFLAGS="$VLC_CFLAGS -specs=$NEWSPECFILE"
+        VLC_CXXFLAGS="$VLC_CXXFLAGS -specs=$NEWSPECFILE"
 
-        if [ ! -z "$WINSTORE" ]; then
+        if [ -n "$WINSTORE" ]; then
             # trick to provide these libraries instead of -ladvapi32 -lshell32 -luser32 -lkernel32
             sed -i -e "s/-ladvapi32/-lwindowsapp -lwindowsappcompat/" $NEWSPECFILE
             sed -i -e "s/-lshell32//" $NEWSPECFILE
@@ -301,66 +321,105 @@ if [ ! -z "$BUILD_UCRT" ]; then
             sed -i -e "s/-lkernel32//" $NEWSPECFILE
         fi
     fi
-
-    # the values are not passed to the makefiles/configures
-    export LDFLAGS
 else
     # use the regular msvcrt
-    CPPFLAGS="$CPPFLAGS -D__MSVCRT_VERSION__=0x700"
+    VLC_CPPFLAGS="$VLC_CPPFLAGS -D__MSVCRT_VERSION__=0x700"
 fi
 
 if [ -n "$NTDDI" ]; then
-    WINVER=`echo ${NTDDI} |cut -c 1-6`
-    CPPFLAGS="$CPPFLAGS -DNTDDI_VERSION=$NTDDI"
+    WINVER=$(echo ${NTDDI} |cut -c 1-6)
+    VLC_CPPFLAGS="$VLC_CPPFLAGS -DNTDDI_VERSION=$NTDDI"
 fi
 if [ -z "$WINVER" ]; then
     # The current minimum for VLC is Windows 7
     WINVER=0x0601
 fi
-CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=${WINVER} -DWINVER=${WINVER}"
+VLC_CPPFLAGS="$VLC_CPPFLAGS -D_WIN32_WINNT=${WINVER} -DWINVER=${WINVER}"
 
-# the values are not passed to the makefiles/configures
-export CPPFLAGS
-
-CFLAGS="$CPPFLAGS $CFLAGS"
-CXXFLAGS="$CPPFLAGS $CXXFLAGS"
+VLC_CFLAGS="$VLC_CPPFLAGS $VLC_CFLAGS"
+VLC_CXXFLAGS="$VLC_CPPFLAGS $VLC_CXXFLAGS"
 
 info "Building contribs"
 echo $PATH
 
 mkdir -p contrib/contrib-$SHORTARCH && cd contrib/contrib-$SHORTARCH
-if [ ! -z "$WITH_PDB" ]; then
+if [ -n "$WITH_PDB" ]; then
     CONTRIBFLAGS="$CONTRIBFLAGS --enable-pdb"
-    if [ ! -z "$PDB_MAP" ]; then
-        CFLAGS="$CFLAGS -fdebug-prefix-map='$VLC_ROOT_PATH'='$PDB_MAP'"
-        CXXFLAGS="$CXXFLAGS -fdebug-prefix-map='$VLC_ROOT_PATH'='$PDB_MAP'"
+    VLC_CFLAGS="$VLC_CFLAGS --start-no-unused-arguments -g -gcodeview --end-no-unused-arguments"
+    VLC_CXXFLAGS="$VLC_CXXFLAGS --start-no-unused-arguments -g -gcodeview --end-no-unused-arguments"
+    VLC_LDFLAGS="$VLC_LDFLAGS --start-no-unused-arguments -Wl,-pdb= --end-no-unused-arguments"
+    if [ -n "$PDB_MAP" ]; then
+        VLC_CFLAGS="$VLC_CFLAGS -fdebug-prefix-map='$VLC_ROOT_PATH'='$PDB_MAP'"
+        VLC_CXXFLAGS="$VLC_CXXFLAGS -fdebug-prefix-map='$VLC_ROOT_PATH'='$PDB_MAP'"
     fi
 fi
-if [ ! -z "$BREAKPAD" ]; then
+if [ -n "$BREAKPAD" ]; then
      CONTRIBFLAGS="$CONTRIBFLAGS --enable-breakpad"
 fi
 if [ "$RELEASE" != "yes" ]; then
      CONTRIBFLAGS="$CONTRIBFLAGS --disable-optim"
 fi
-if [ ! -z "$DISABLEGUI" ]; then
-    CONTRIBFLAGS="$CONTRIBFLAGS --disable-qt --disable-qtsvg --disable-qtdeclarative --disable-qt5compat --disable-qtshadertools --disable-qtwayland"
-fi
-if [ ! -z "$WINSTORE" ]; then
-    # we don't use a special toolchain to trigger the detection in contribs so force it manually
-    export HAVE_WINSTORE=1
+if [ -n "$DISABLEGUI" ]; then
+    CONTRIBFLAGS="$CONTRIBFLAGS --disable-qt --disable-qtsvg --disable-qtdeclarative --disable-qtshadertools --disable-qtwayland"
 fi
 
 if [ "$COMPILING_WITH_CLANG" -gt 0 ]; then
     # avoid using gcc-ar with the clang toolchain, if both are installed
-    AR="$TRIPLET-ar"
-    export AR
+    VLC_AR="$TRIPLET-ar"
     # avoid using gcc-ranlib with the clang toolchain, if both are installed
-    RANLIB="$TRIPLET-ranlib"
-    export RANLIB
+    VLC_RANLIB="$TRIPLET-ranlib"
+    # force linking with the static C++ runtime of LLVM
+    VLC_LDFLAGS="$VLC_LDFLAGS --start-no-unused-arguments -Wl,-l:libunwind.a -static-libstdc++ --end-no-unused-arguments"
+    VLC_CXXFLAGS="$VLC_CXXFLAGS --start-no-unused-arguments -Wl,-l:libunwind.a --end-no-unused-arguments"
 fi
 
-export CFLAGS
-export CXXFLAGS
+if [ -z "$PKG_CONFIG" ]; then
+    if [ "$(unset PKG_CONFIG_LIBDIR; $TRIPLET-pkg-config --version 1>/dev/null 2>/dev/null || echo FAIL)" = "FAIL" ]; then
+        # $TRIPLET-pkg-config DOESNT WORK
+        # on Debian it pretends it works to autoconf
+        VLC_PKG_CONFIG="pkg-config"
+        if [ -z "$PKG_CONFIG_LIBDIR" ]; then
+            VLC_PKG_CONFIG_LIBDIR="/usr/$TRIPLET/lib/pkgconfig:/usr/lib/$TRIPLET/pkgconfig"
+        else
+            VLC_PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR:/usr/$TRIPLET/lib/pkgconfig:/usr/lib/$TRIPLET/pkgconfig"
+        fi
+    else
+        VLC_PKG_CONFIG="$TRIPLET-pkg-config"
+    fi
+else
+    VLC_PKG_CONFIG="$PKG_CONFIG"
+fi
+
+# generate the config.mak for contribs
+test -e config.mak && unlink config.mak
+exec 3>config.mak || return $?
+
+printf '# This file was automatically generated!\n\n' >&3
+if [ -n "$VLC_CPPFLAGS" ]; then
+    printf '%s := %s\n' "CPPFLAGS" "${VLC_CPPFLAGS}" >&3
+fi
+if [ -n "$VLC_CFLAGS" ]; then
+    printf '%s := %s\n' "CFLAGS" "${VLC_CFLAGS}" >&3
+fi
+if [ -n "$VLC_CXXFLAGS" ]; then
+    printf '%s := %s\n' "CXXFLAGS" "${VLC_CXXFLAGS}" >&3
+fi
+if [ -n "$VLC_LDFLAGS" ]; then
+    printf '%s := %s\n' "LDFLAGS" "${VLC_LDFLAGS}" >&3
+fi
+if [ -n "$VLC_AR" ]; then
+    printf '%s := %s\n' "AR" "${VLC_AR}" >&3
+fi
+if [ -n "$VLC_RANLIB" ]; then
+    printf '%s := %s\n' "RANLIB" "${VLC_RANLIB}" >&3
+fi
+if [ -n "$VLC_PKG_CONFIG" ]; then
+    printf '%s := %s\n' "PKG_CONFIG" "${VLC_PKG_CONFIG}" >&3
+fi
+if [ -n "$VLC_PKG_CONFIG_LIBDIR" ]; then
+    printf '%s := %s\n' "PKG_CONFIG_LIBDIR" "${VLC_PKG_CONFIG_LIBDIR}" >&3
+fi
+
 
 ${VLC_ROOT_PATH}/contrib/bootstrap --host=$TRIPLET --prefix=../$CONTRIB_PREFIX $CONTRIBFLAGS
 
@@ -386,22 +445,13 @@ else
 fi
 cd ../..
 
-if [ -z "$PKG_CONFIG" ]; then
-    if [ "$(unset PKG_CONFIG_LIBDIR; $TRIPLET-pkg-config --version 1>/dev/null 2>/dev/null || echo FAIL)" = "FAIL" ]; then
-        # $TRIPLET-pkg-config DOESNT WORK
-        # on Debian it pretends it works to autoconf
-        export PKG_CONFIG="pkg-config"
-        if [ -z "$PKG_CONFIG_LIBDIR" ]; then
-            export PKG_CONFIG_LIBDIR="/usr/$TRIPLET/lib/pkgconfig:/usr/lib/$TRIPLET/pkgconfig"
-        else
-            export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR:/usr/$TRIPLET/lib/pkgconfig:/usr/lib/$TRIPLET/pkgconfig"
-        fi
-    else
-        # $TRIPLET-pkg-config WORKs
-        export PKG_CONFIG="$TRIPLET-pkg-config"
-    fi
-fi
+# configuration matching configure.sh (goom is called goom2, theora is theoradec+theoraenc)
+MCONFIGFLAGS="-Dlua=enabled -Dflac=enabled -Dtheoradec=enabled -Dtheoraenc=enabled \
+    -Davcodec=enabled -Dmerge-ffmpeg=true \
+    -Dlibass=enabled -Dschroedinger=enabled -Dshout=enabled -Dgoom2=enabled \
+    -Dsse=enabled -Dlibcddb=enabled -Dzvbi=enabled -Dtelx=disabled $MCONFIGFLAGS"
 
+MCONFIGFLAGS="$MCONFIGFLAGS --prefer-static"
 if [ "$RELEASE" != "yes" ]; then
      CONFIGFLAGS="$CONFIGFLAGS --enable-debug"
      MCONFIGFLAGS="$MCONFIGFLAGS --buildtype debugoptimized"
@@ -412,26 +462,28 @@ fi
 if [ "$I18N" != "yes" ]; then
      CONFIGFLAGS="$CONFIGFLAGS --disable-nls"
      MCONFIGFLAGS="$MCONFIGFLAGS -Dnls=disabled"
+else
+     CONFIGFLAGS="$CONFIGFLAGS --enable-nls"
+     MCONFIGFLAGS="$MCONFIGFLAGS -Dnls=enabled"
 fi
-if [ ! -z "$BREAKPAD" ]; then
+if [ -n "$BREAKPAD" ]; then
      CONFIGFLAGS="$CONFIGFLAGS --with-breakpad=$BREAKPAD"
 fi
-if [ ! -z "$WITH_PDB" ]; then
+if [ -n "$WITH_PDB" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --enable-pdb"
 fi
-if [ ! -z "$EXTRA_CHECKS" ]; then
+if [ -n "$EXTRA_CHECKS" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --enable-extra-checks"
+    MCONFIGFLAGS="$MCONFIGFLAGS -Dextra_checks=true"
 fi
-if [ ! -z "$DISABLEGUI" ]; then
-    CONFIGFLAGS="$CONFIGFLAGS --disable-vlc --disable-qt --disable-skins2"
-    MCONFIGFLAGS="$MCONFIGFLAGS -Dvlc=false -Dqt=disabled"
-    # MCONFIGFLAGS="$MCONFIGFLAGS -Dskins2=disabled"
+if [ -n "$DISABLEGUI" ]; then
+    CONFIGFLAGS="$CONFIGFLAGS --disable-qt --disable-skins2"
+    MCONFIGFLAGS="$MCONFIGFLAGS -Dqt=disabled -Dskins2=disabled"
 else
-    CONFIGFLAGS="$CONFIGFLAGS --enable-qt --enable-skins2"
-    MCONFIGFLAGS="$MCONFIGFLAGS -Dqt=enabled"
-    # MCONFIGFLAGS="$MCONFIGFLAGS -Dskins2=enabled"
+    CONFIGFLAGS="$CONFIGFLAGS --enable-qt --enable-skins2 --enable-update-check"
+    MCONFIGFLAGS="$MCONFIGFLAGS -Dqt=enabled -Dskins2=enabled -Dupdate-check=enabled"
 fi
-if [ ! -z "$WINSTORE" ]; then
+if [ -n "$WINSTORE" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --enable-winstore-app"
     MCONFIGFLAGS="$MCONFIGFLAGS -Dwinstore_app=true"
     # uses CreateFile to access files/drives outside of the app
@@ -439,52 +491,125 @@ if [ ! -z "$WINSTORE" ]; then
     MCONFIGFLAGS="$MCONFIGFLAGS -Dvcd_module=false"
     # other modules that were disabled in the old UWP builds
     CONFIGFLAGS="$CONFIGFLAGS --disable-dxva2"
-    # MCONFIGFLAGS="$MCONFIGFLAGS -Ddxva2=disabled"
+    MCONFIGFLAGS="$MCONFIGFLAGS -Ddxva2=disabled"
 
 else
     CONFIGFLAGS="$CONFIGFLAGS --enable-caca"
     MCONFIGFLAGS="$MCONFIGFLAGS -Dcaca=enabled"
 fi
-if [ ! -z "$INSTALL_PATH" ]; then
+if [ -n "$INSTALL_PATH" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --with-packagedir=$INSTALL_PATH"
 fi
 
 if [ -n "$BUILD_MESON" ]; then
+    # disable alarm() calls in tests. The timeout is handled by meson
+    VLC_CFLAGS="$VLC_CFLAGS -Dalarm="
+    VLC_CXXFLAGS="$VLC_CXXFLAGS -Dalarm="
+
     mkdir -p $SHORTARCH-meson
     rm -rf $SHORTARCH-meson/meson-private
 
-    info "Configuring VLC"
+    if [ -n "$WITH_PDB" ]; then
+        VLC_LDFLAGS="$VLC_LDFLAGS -Wl,-pdb="
+    fi
+
     BUILD_PATH="$( pwd -P )"
+    # generate the crossfile.meson
+    test -e $SHORTARCH-meson/crossfile.meson && unlink $SHORTARCH-meson/crossfile.meson
+    exec 3>$SHORTARCH-meson/crossfile.meson || return $?
+
+    printf '# This file was automatically generated!\n\n' >&3
+    printf '[binaries]\n' >&3
+    printf 'c = '"'"'%s'"'"'\n' "$(command -v ${CC})" >&3
+    printf 'cpp = '"'"'%s'"'"'\n' "$(command -v ${CXX:-$TRIPLET-g++})" >&3
+    if [ -n "$VLC_AR" ]; then
+        printf 'ar = '"'"'%s'"'"'\n' "$(command -v ${VLC_AR})" >&3
+    fi
+    if [ -n "$VLC_RANLIB" ]; then
+        printf 'ranlib = '"'"'%s'"'"'\n' "$(command -v ${VLC_RANLIB})" >&3
+    fi
+    printf 'strip = '"'"'%s'"'"'\n' "$(command -v ${TRIPLET}-strip)" >&3
+    if [ -n "$VLC_PKG_CONFIG" ]; then
+        printf 'pkg-config = '"'"'%s'"'"'\n' "$(command -v ${VLC_PKG_CONFIG})" >&3
+    fi
+    printf 'windres = '"'"'%s'"'"'\n' "$(command -v ${TRIPLET}-windres)" >&3
+    if [ -n "$VLC_EXE_WRAPPER" ]; then
+        printf 'exe_wrapper = '"'"'%s'"'"'\n' "$(command -v ${VLC_EXE_WRAPPER})" >&3
+    fi
+    printf 'cmake = '"'"'%s'"'"'\n' "$(command -v cmake)" >&3
+    if [ -z "$DISABLEGUI" ]; then
+        printf 'qmake6 = '"'"'%s'"'"'\n' "${BUILD_PATH}/contrib/${CONTRIB_PREFIX}/bin/qmake6" >&3
+    fi
+
+    printf '\n[host_machine]\n' >&3
+    printf 'system = '"'"'windows'"'"'\n' >&3
+    printf 'cpu_family = '"'"'%s'"'"'\n' "${ARCH}" >&3
+    printf 'endian = '"'"'little'"'"'\n' >&3
+    printf 'cpu = '"'"'%s'"'"'\n' "${ARCH}" >&3
+
+
+    info "Configuring VLC"
     cd ${VLC_ROOT_PATH}
-    meson setup ${BUILD_PATH}/$SHORTARCH-meson $MCONFIGFLAGS --cross-file ${BUILD_PATH}/contrib/contrib-$SHORTARCH/crossfile.meson --cross-file ${BUILD_PATH}/contrib/$CONTRIB_PREFIX/share/meson/cross/contrib.ini
+    meson setup ${BUILD_PATH}/$SHORTARCH-meson \
+        -Dc_args="${VLC_CFLAGS}" -Dc_link_args="${VLC_LDFLAGS}" -Dcpp_args="${VLC_CXXFLAGS}" -Dcpp_link_args="${VLC_LDFLAGS}" \
+        -Dcmake_prefix_path="${BUILD_PATH}/contrib/$CONTRIB_PREFIX" \
+        $MCONFIGFLAGS \
+        --cross-file ${BUILD_PATH}/$SHORTARCH-meson/crossfile.meson \
+        --cross-file ${BUILD_PATH}/contrib/$CONTRIB_PREFIX/share/meson/cross/contrib.ini
 
     info "Compiling"
     cd ${BUILD_PATH}/$SHORTARCH-meson
     meson compile -j $JOBS
 else
-info "Bootstrapping"
-${VLC_ROOT_PATH}/bootstrap
+    info "Bootstrapping"
+    ${VLC_ROOT_PATH}/bootstrap
 
-mkdir -p $SHORTARCH
-cd $SHORTARCH
+    mkdir -p $SHORTARCH
+    cd $SHORTARCH
 
-info "Configuring VLC"
-${SCRIPT_PATH}/configure.sh --host=$TRIPLET --with-contrib=../contrib/$CONTRIB_PREFIX "$WIXPATH" $CONFIGFLAGS
+    # set environment that will be kept in config.status
+    if [ -n "$VLC_CPPFLAGS" ]; then
+        export CPPFLAGS="$VLC_CPPFLAGS"
+    fi
+    if [ -n "$VLC_CFLAGS" ]; then
+        export CFLAGS="$VLC_CFLAGS"
+    fi
+    if [ -n "$VLC_CXXFLAGS" ]; then
+        export CXXFLAGS="$VLC_CXXFLAGS"
+    fi
+    if [ -n "$VLC_LDFLAGS" ]; then
+        export LDFLAGS="$VLC_LDFLAGS"
+    fi
+    if [ -n "$VLC_AR" ]; then
+        export AR="$VLC_AR"
+    fi
+    if [ -n "$VLC_RANLIB" ]; then
+        export RANLIB="$VLC_RANLIB"
+    fi
+    if [ -n "$VLC_PKG_CONFIG" ]; then
+        export PKG_CONFIG="$VLC_PKG_CONFIG"
+    fi
+    if [ -n "$VLC_PKG_CONFIG_LIBDIR" ]; then
+        export PKG_CONFIG_LIBDIR="$VLC_PKG_CONFIG_LIBDIR"
+    fi
 
-info "Compiling"
-make -j$JOBS
+    info "Configuring VLC"
+    ${SCRIPT_PATH}/configure.sh --host=$TRIPLET --with-contrib=../contrib/$CONTRIB_PREFIX "$WIXPATH" $CONFIGFLAGS
 
-if [ "$INSTALLER" = "n" ]; then
-make package-win32-debug-7zip
-make -j$JOBS package-win32 package-msi
-elif [ "$INSTALLER" = "r" ]; then
-make package-win32
-elif [ "$INSTALLER" = "u" ]; then
-make package-win32-release
-sha512sum vlc-*-release.7z
-elif [ "$INSTALLER" = "m" ]; then
-make package-msi
-elif [ ! -z "$INSTALL_PATH" ]; then
-make package-win-common
-fi
+    info "Compiling"
+    make -j$JOBS
+
+    if [ "$INSTALLER" = "n" ]; then
+        make package-win32-debug-7zip
+        make -j$JOBS package-win32 package-msi
+    elif [ "$INSTALLER" = "r" ]; then
+        make package-win32
+    elif [ "$INSTALLER" = "u" ]; then
+        make package-win32-release
+        sha512sum vlc-*-release.7z
+    elif [ "$INSTALLER" = "m" ]; then
+        make package-msi
+    elif [ -n "$INSTALL_PATH" ]; then
+        make package-win-common
+    fi
 fi

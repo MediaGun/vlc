@@ -36,6 +36,7 @@
 
 // Menus includes
 #include "menus/menus.hpp"
+#include "player/player_controller.hpp"
 
 // Qt includes
 #include <QMenu>
@@ -49,260 +50,117 @@
 #include <QMetaProperty>
 #include <QMetaMethod>
 
-RendererAction::RendererAction( vlc_renderer_item_t *p_item_ )
-    : QAction()
-{
-    p_item = p_item_;
-    vlc_renderer_item_hold( p_item );
-    if( vlc_renderer_item_flags( p_item ) & VLC_RENDERER_CAN_VIDEO )
-        setIcon( QIcon( ":/menu/movie.svg" ) );
-    else
-        setIcon( QIcon( ":/menu/music.svg" ) );
-    setText( vlc_renderer_item_name( p_item ) );
-    setCheckable(true);
-}
+#include "util/vlcaccess_image_provider.hpp"
 
-RendererAction::~RendererAction()
-{
-    vlc_renderer_item_release( p_item );
-}
-
-vlc_renderer_item_t * RendererAction::getItem()
-{
-    return p_item;
-}
-
-RendererMenu::RendererMenu( QMenu *parent, qt_intf_t *p_intf_ )
-    : QMenu( parent ), p_intf( p_intf_ )
+RendererMenu::RendererMenu( QMenu* parent, qt_intf_t* intf, PlayerController* player )
+    : QMenu( parent)
+    , p_intf( intf )
+    , m_renderManager(player->getRendererManager())
 {
     setTitle( qtr("&Renderer") );
 
-    group = new QActionGroup( this );
-
     QAction *action = new QAction( qtr("<Local>"), this );
     action->setCheckable(true);
+    action->setChecked(!m_renderManager->useRenderer());
+    connect(action, &QAction::triggered, this, [this](bool checked){
+        if (checked) {
+            m_renderManager->disableRenderer();
+        }
+    });
     addAction( action );
-    group->addAction(action);
+    connect(m_renderManager,  &RendererManager::useRendererChanged, action,
+            [action, this](){
+                action->setChecked(!m_renderManager->useRenderer());
+    });
 
-    vlc_player_Lock( p_intf_->p_player );
-    if ( vlc_player_GetRenderer( p_intf->p_player ) == nullptr )
-        action->setChecked( true );
-    vlc_player_Unlock( p_intf_->p_player );
+    QAction* separator = addSeparator();
 
-    addSeparator();
+    ListMenuHelper* helper = new ListMenuHelper(this, m_renderManager, separator, this);
+    connect(helper, &ListMenuHelper::select, this, [this](int row, bool checked){
+        m_renderManager->setData(m_renderManager->index(row), checked, Qt::CheckStateRole);
+    });
+
+    QActionGroup* actionGroup = helper->getActionGroup();
+    actionGroup->setExclusionPolicy(QActionGroup::ExclusionPolicy::Exclusive);
+    //the <Local> node is part of the group
+    actionGroup->addAction(action);
 
     QWidget *statusWidget = new QWidget();
     statusWidget->setLayout( new QVBoxLayout );
-    QLabel *label = new QLabel();
-    label->setObjectName( "statuslabel" );
-    statusWidget->layout()->addWidget( label );
-    QProgressBar *pb = new QProgressBar();
-    pb->setObjectName( "statusprogressbar" );
-    pb->setMaximumHeight( 10 );
-    pb->setStyleSheet( QString("\
-        QProgressBar:horizontal {\
-            border: none;\
-            background: transparent;\
-            padding: 1px;\
-        }\
-        QProgressBar::chunk:horizontal {\
-            background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, \
-                        stop: 0 white, stop: 0.4 orange, stop: 0.6 orange, stop: 1 white);\
-        }") );
-    pb->setRange( 0, 0 );
-    pb->setSizePolicy( QSizePolicy::MinimumExpanding, QSizePolicy::Maximum );
-    statusWidget->layout()->addWidget( pb );
+    m_statusLabel = new QLabel();
+    statusWidget->layout()->addWidget( m_statusLabel );
+    m_statusProgressBar = new QProgressBar();
+    m_statusProgressBar->setMaximumHeight( 10 );
+    m_statusProgressBar->setStyleSheet( QString(R"RAW(
+        QProgressBar:horizontal {
+            border: none;
+            background: transparent;
+            padding: 1px;
+        }
+        QProgressBar::chunk:horizontal {
+            background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5,
+                        stop: 0 white, stop: 0.4 orange, stop: 0.6 orange, stop: 1 white);
+        })RAW") );
+    m_statusProgressBar->setRange( 0, 0 );
+    m_statusProgressBar->setSizePolicy( QSizePolicy::MinimumExpanding, QSizePolicy::Maximum );
+    statusWidget->layout()->addWidget( m_statusProgressBar );
+
     QWidgetAction *qwa = new QWidgetAction( this );
     qwa->setDefaultWidget( statusWidget );
     qwa->setDisabled( true );
     addAction( qwa );
-    status = qwa;
+    m_statusAction = qwa;
 
-    RendererManager *manager = RendererManager::getInstance( p_intf );
-    connect( this, &RendererMenu::aboutToShow, manager, &RendererManager::StartScan );
-    connect( group, &QActionGroup::triggered, this, &RendererMenu::RendererSelected );
-    connect( manager, SIGNAL(rendererItemAdded( vlc_renderer_item_t * )),
-             this, SLOT(addRendererItem( vlc_renderer_item_t * )), Qt::DirectConnection );
-    connect( manager, SIGNAL(rendererItemRemoved( vlc_renderer_item_t * )),
-             this, SLOT(removeRendererItem( vlc_renderer_item_t * )), Qt::DirectConnection );
-    connect( manager, &RendererManager::statusUpdated, this, &RendererMenu::updateStatus );
+    connect( this, &RendererMenu::aboutToShow, m_renderManager, &RendererManager::StartScan );
+    connect( m_renderManager, &RendererManager::statusChanged, this, &RendererMenu::updateStatus );
+    connect( m_renderManager, &RendererManager::scanRemainChanged, this, &RendererMenu::updateStatus );
+    updateStatus();
 }
 
 RendererMenu::~RendererMenu()
-{
-    reset();
-}
+{}
 
-void RendererMenu::updateStatus( int val )
+void RendererMenu::updateStatus()
 {
-    QProgressBar *pb = findChild<QProgressBar *>("statusprogressbar");
-    QLabel *label = findChild<QLabel *>("statuslabel");
-    if( val >= RendererManager::RendererStatus::RUNNING )
+
+    switch (m_renderManager->getStatus())
     {
-        label->setText( qtr("Scanning...").
-               append( QString(" (%1s)").arg( val ) ) );
-        pb->setVisible( true );
-        status->setVisible( true );
+    case RendererManager::RendererStatus::RUNNING:
+    {
+        int scanRemain = m_renderManager->getScanRemain();
+        m_statusLabel->setText( qtr("Scanning...").
+               append( QString(" (%1s)").arg( scanRemain ) ) );
+        m_statusProgressBar->setVisible( true );
+        m_statusAction->setVisible( true );
+        break;
     }
-    else if( val == RendererManager::RendererStatus::FAILED )
+    case RendererManager::RendererStatus::FAILED:
     {
-        label->setText( "Failed (no discovery module available)" );
-        pb->setVisible( false );
-        status->setVisible( true );
+        m_statusLabel->setText( "Failed (no discovery module available)" );
+        m_statusProgressBar->setVisible( false );
+        m_statusAction->setVisible( true );
+        break;
     }
-    else status->setVisible( false );
-}
-
-void RendererMenu::addRendererItem( vlc_renderer_item_t *p_item )
-{
-    QAction *action = new RendererAction( p_item );
-    insertAction( status, action );
-    group->addAction( action );
-}
-
-void RendererMenu::removeRendererItem( vlc_renderer_item_t *p_item )
-{
-    foreach (QAction* action, group->actions())
-    {
-        RendererAction *ra = qobject_cast<RendererAction *>( action );
-        if( !ra || ra->getItem() != p_item )
-            continue;
-        removeRendererAction( ra );
-        delete ra;
+    case RendererManager::RendererStatus::IDLE:
+        m_statusAction->setVisible( false );
         break;
     }
 }
 
-void RendererMenu::addRendererAction(QAction *action)
-{
-    insertAction( status, action );
-    group->addAction( action );
-}
-
-void RendererMenu::removeRendererAction(QAction *action)
-{
-    removeAction( action );
-    group->removeAction( action );
-}
-
-void RendererMenu::reset()
-{
-    /* reset the list of renderers */
-    foreach (QAction* action, group->actions())
-    {
-        RendererAction *ra = qobject_cast<RendererAction *>( action );
-        if( ra )
-        {
-            removeRendererAction( ra );
-            delete ra;
-        }
-    }
-}
-
-void RendererMenu::RendererSelected(QAction *action)
-{
-    RendererAction *ra = qobject_cast<RendererAction *>( action );
-    if( ra )
-        RendererManager::getInstance( p_intf )->SelectRenderer( ra->getItem() );
-    else
-        RendererManager::getInstance( p_intf )->SelectRenderer( NULL );
-}
 
 /*   CheckableListMenu   */
 
-CheckableListMenu::CheckableListMenu(QString title, QAbstractListModel* model , GroupingMode grouping,  QWidget *parent)
+CheckableListMenu::CheckableListMenu(QString title, QAbstractListModel* model , QActionGroup::ExclusionPolicy grouping,  QWidget *parent)
     : QMenu(parent)
     , m_model(model)
-    , m_grouping(grouping)
 {
     this->setTitle(title);
-    if (m_grouping != UNGROUPED)
-    {
-        m_actionGroup = new QActionGroup(this);
-        if (m_grouping == GROUPED_OPTIONAL)
-        {
-            m_actionGroup->setExclusionPolicy(QActionGroup::ExclusionPolicy::ExclusiveOptional);
-        }
-    }
 
-    connect(m_model, &QAbstractListModel::rowsAboutToBeRemoved, this, &CheckableListMenu::onRowsAboutToBeRemoved);
-    connect(m_model, &QAbstractListModel::rowsInserted, this, &CheckableListMenu::onRowInserted);
-    connect(m_model, &QAbstractListModel::dataChanged, this, &CheckableListMenu::onDataChanged);
-    connect(m_model, &QAbstractListModel::modelAboutToBeReset, this, &CheckableListMenu::onModelAboutToBeReset);
-    connect(m_model, &QAbstractListModel::modelReset, this, &CheckableListMenu::onModelReset);
-    onModelReset();
-}
-
-void CheckableListMenu::onRowsAboutToBeRemoved(const QModelIndex &, int first, int last)
-{
-    for (int i = last; i >= first; i--)
-    {
-        QAction* action = actions()[i];
-        if (m_actionGroup)
-            m_actionGroup->removeAction(action);
-        delete action;
-    }
-    if (actions().count() == 0)
-        setEnabled(false);
-}
-
-void CheckableListMenu::onRowInserted(const QModelIndex &, int first, int last)
-{
-    for (int i = first; i <= last; i++)
-    {
-        QModelIndex index = m_model->index(i);
-        QString title = m_model->data(index, Qt::DisplayRole).toString();
-        bool checked = m_model->data(index, Qt::CheckStateRole).toBool();
-
-        QAction *choiceAction = new QAction(title, this);
-        addAction(choiceAction);
-        if (m_actionGroup)
-            m_actionGroup->addAction(choiceAction);
-        connect(choiceAction, &QAction::triggered, [this, i](bool checked){
-            QModelIndex dataIndex = m_model->index(i);
-            m_model->setData(dataIndex, QVariant::fromValue<bool>(checked), Qt::CheckStateRole);
-        });
-        choiceAction->setCheckable(true);
-        choiceAction->setChecked(checked);
-        setEnabled(true);
-    }
-}
-
-void CheckableListMenu::onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> & )
-{
-    for (int i = topLeft.row(); i <= bottomRight.row(); i++)
-    {
-        if (i >= actions().size())
-            break;
-        QAction *choiceAction = actions()[i];
-
-        QModelIndex index = m_model->index(i);
-        QString title = m_model->data(index, Qt::DisplayRole).toString();
-        bool checked = m_model->data(index, Qt::CheckStateRole).toBool();
-
-        choiceAction->setText(title);
-        choiceAction->setChecked(checked);
-    }
-}
-
-void CheckableListMenu::onModelAboutToBeReset()
-{
-    for (QAction* action  :actions())
-    {
-        if (m_actionGroup)
-            m_actionGroup->removeAction(action);
-        delete action;
-    }
-    setEnabled(false);
-}
-
-void CheckableListMenu::onModelReset()
-{
-    int nb_rows = m_model->rowCount();
-    if (nb_rows == 0)
-        setEnabled(false);
-    else
-        onRowInserted({}, 0, nb_rows - 1);
+    ListMenuHelper* helper = new ListMenuHelper(this, model, nullptr, this);
+    helper->getActionGroup()->setExclusionPolicy(grouping);
+    connect(helper, &ListMenuHelper::select, this, [this](int row, bool checked){
+        m_model->setData(m_model->index(row), checked, Qt::CheckStateRole);
+    });
 }
 
 // ListMenuHelper
@@ -323,12 +181,49 @@ ListMenuHelper::ListMenuHelper(QMenu * menu, QAbstractListModel * model, QAction
     connect(m_model, &QAbstractListModel::modelReset, this, &ListMenuHelper::onModelReset);
 }
 
+
+ListMenuHelper::~ListMenuHelper()
+{}
 // Interface
 
 int ListMenuHelper::count() const
 {
     return m_actions.count();
 }
+
+QActionGroup* ListMenuHelper::getActionGroup() const
+{
+    return m_group;
+}
+
+
+void ListMenuHelper::setIcon(QAction* action,  const QUrl& iconUrl)
+{
+
+    if (!iconUrl.isValid())
+    {
+        action->setIcon({});
+        return;
+    }
+
+    if (m_iconLoader)
+    {
+        disconnect(m_iconLoader.get(), nullptr, this, nullptr);
+        m_iconLoader->cancel();
+    }
+    m_iconLoader.reset(VLCAccessImageProvider::requestImageResponseUnWrapped(iconUrl, {64,64}));
+    connect(m_iconLoader.get(), &QQuickImageResponse::finished, this, [this, action] {
+        std::unique_ptr<QQuickTextureFactory> factory(m_iconLoader->textureFactory());
+        if (!factory)
+        {
+            action->setIcon({});
+            return;
+        }
+        QImage img = factory->image();
+        action->setIcon(QIcon(QPixmap::fromImage(img)));
+    });
+}
+
 
 // Private slots
 
@@ -349,11 +244,24 @@ void ListMenuHelper::onRowsInserted(const QModelIndex &, int first, int last)
 
         QAction * action = new QAction(name, this);
 
-        action->setCheckable(true);
+        QVariant checked = m_model->data(index, Qt::CheckStateRole);
+        if (checked.isValid() && checked.canConvert<bool>())
+        {
+            action->setCheckable(true);
+            action->setChecked(checked.toBool());
+        }
 
-        bool checked = m_model->data(index, Qt::CheckStateRole).toBool();
+        QVariant iconPath = m_model->data(index, Qt::DecorationRole);
+        if (iconPath.isValid())
+        {
+            QUrl iconUrl;
+            if (iconPath.canConvert<QUrl>())
+                iconUrl = iconPath.toUrl();
+            else if (iconPath.canConvert<QString>())
+                iconUrl = QUrl::fromEncoded(iconPath.toString().toUtf8());
 
-        action->setChecked(checked);
+            setIcon(action, iconUrl);
+        }
 
         // NOTE: We are adding sequentially *before* the next action in the list.
         m_menu->insertAction(before, action);
@@ -387,21 +295,44 @@ void ListMenuHelper::onRowsRemoved(const QModelIndex &, int first, int last)
 }
 
 void ListMenuHelper::onDataChanged(const QModelIndex & topLeft,
-                                   const QModelIndex & bottomRight, const QVector<int> &)
+                                   const QModelIndex & bottomRight, const QVector<int> & roles)
 {
+    const bool updateDisplay = roles.contains(Qt::DisplayRole);
+    const bool updateChecked = roles.contains(Qt::CheckStateRole);
+    const bool udpateIcon = roles.contains(Qt::DecorationRole);
+
     for (int i = topLeft.row(); i <= bottomRight.row(); i++)
     {
         QAction * action = m_actions.at(i);
-
         QModelIndex index = m_model->index(i, 0);
 
-        QString name = m_model->data(index, Qt::DisplayRole).toString();
+        if (updateDisplay)
+        {
+            QString name = m_model->data(index, Qt::DisplayRole).toString();
+            action->setText(name);
+        }
 
-        action->setText(name);
+        if (updateChecked)
+        {
+            QVariant checked = m_model->data(index, Qt::CheckStateRole);
+            if (checked.isValid() && checked.canConvert<bool>())
+                action->setChecked(checked.toBool());
+        }
 
-        bool checked = m_model->data(index, Qt::CheckStateRole).toBool();
+        if (udpateIcon)
+        {
+            QVariant iconPath = m_model->data(index, Qt::DecorationRole);
+            if (iconPath.isValid())
+            {
+                QUrl iconUrl;
+                if (iconPath.canConvert<QUrl>())
+                    iconUrl = iconPath.toUrl();
+                else if (iconPath.canConvert<QString>())
+                    iconUrl = QUrl::fromEncoded(iconPath.toString().toUtf8());
 
-        action->setChecked(checked);
+                setIcon(action, iconUrl);
+            }
+        }
     }
 }
 
@@ -422,11 +353,11 @@ void ListMenuHelper::onModelReset()
         onRowsInserted(QModelIndex(), 0, count - 1);
 }
 
-void ListMenuHelper::onTriggered(bool)
+void ListMenuHelper::onTriggered(bool checked)
 {
     QAction * action = static_cast<QAction *> (sender());
 
-    emit select(m_actions.indexOf(action));
+    emit select(m_actions.indexOf(action), checked);
 }
 
 /*     BooleanPropertyAction    */
@@ -465,83 +396,17 @@ RecentMenu::RecentMenu(MLRecentsModel* model, MediaLib* ml,  QWidget* parent)
     , m_model(model)
     , m_ml(ml)
 {
-    connect(m_model, &MLRecentsModel::rowsRemoved, this, &RecentMenu::onRowsRemoved);
-    connect(m_model, &MLRecentsModel::rowsInserted, this, &RecentMenu::onRowInserted);
-    connect(m_model, &MLRecentsModel::dataChanged, this, &RecentMenu::onDataChanged);
-    connect(m_model, &MLRecentsModel::modelReset, this, &RecentMenu::onModelReset);
-    m_separator = addSeparator();
-    addAction( qtr("&Clear"), m_model, &MLRecentsModel::clearHistory );
-    onModelReset();
-}
+    QAction* separator = addSeparator();
 
-void RecentMenu::onRowsRemoved(const QModelIndex&, int first, int last)
-{
-    for (int i = first; i <= last; i++)
-    {
-        delete m_actions.at(i);
-    }
+    ListMenuHelper* helper = new ListMenuHelper(this, model, separator, this);
+    connect(helper, &ListMenuHelper::select, this, [this](int row, bool){
+        QModelIndex index = m_model->index(row);
 
-    QList<QAction *>::iterator begin = m_actions.begin();
+        MLItemId id = m_model->data(index, MLRecentsModel::RECENT_MEDIA_ID).value<MLItemId>();
+        m_ml->addAndPlay(id);
+    });
 
-    m_actions.erase(begin + first, begin + last + 1);
-
-    if (m_actions.isEmpty())
-        setEnabled(false);
-}
-
-void RecentMenu::onRowInserted(const QModelIndex&, int first, int last)
-{
-    QAction * before;
-
-    if (first < m_actions.count())
-        before = m_actions.at(first);
-    else
-        // NOTE: In that case we insert *before* the 'Clear' separator.
-        before = m_separator;
-
-    for (int i = first; i <= last; i++)
-    {
-        QModelIndex index = m_model->index(i);
-        QString url = m_model->data(index, MLRecentsModel::RECENT_MEDIA_URL).toString();
-
-        QAction *choiceAction = new QAction(url, this);
-
-        // NOTE: We are adding sequentially *before* the next action in the list.
-        insertAction(before, choiceAction);
-
-        m_actions.insert(i, choiceAction);
-
-        connect(choiceAction, &QAction::triggered, [this, choiceAction](){
-            QModelIndex index = m_model->index(m_actions.indexOf(choiceAction));
-
-            MLItemId id = m_model->data(index, MLRecentsModel::RECENT_MEDIA_ID).value<MLItemId>();
-            m_ml->addAndPlay(id);
-        });
-        setEnabled(true);
-    }
-}
-
-void RecentMenu::onDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QVector<int>& )
-{
-    for (int i = topLeft.row(); i <= bottomRight.row(); i++)
-    {
-        QModelIndex index = m_model->index(i);
-        QString title = m_model->data(index, MLRecentsModel::RECENT_MEDIA_URL).toString();
-
-        m_actions.at(i)->setText(title);
-    }
-}
-
-void RecentMenu::onModelReset()
-{
-    qDeleteAll(m_actions);
-    m_actions.clear();
-
-    int nb_rows = m_model->rowCount();
-    if (nb_rows == 0 || nb_rows == -1)
-        setEnabled(false);
-    else
-        onRowInserted({}, 0, nb_rows - 1);
+    addAction( qtr("&Clear"), model, &MLRecentsModel::clearHistory );
 }
 
 // BookmarkMenu
@@ -560,7 +425,7 @@ BookmarkMenu::BookmarkMenu(MediaLib * mediaLib, vlc_player_t * player, QWidget *
 
     ListMenuHelper * helper = new ListMenuHelper(this, model, nullptr, this);
 
-    connect(helper, &ListMenuHelper::select, [model](int index)
+    connect(helper, &ListMenuHelper::select, [model](int index, bool )
     {
         model->select(model->index(index, 0));
     });

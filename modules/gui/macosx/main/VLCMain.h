@@ -36,7 +36,10 @@
  * Local prototypes.
  *****************************************************************************/
 
+typedef struct vlc_preparser_t vlc_preparser_t;
+
 intf_thread_t *getIntf(void);
+vlc_preparser_t *getNetworkPreparser();
 
 extern NSString *VLCConfigurationChangedNotification;
 
@@ -58,7 +61,7 @@ extern NSString *VLCConfigurationChangedNotification;
 @class VLCVideoEffectsWindowController;
 @class VLCConvertAndSaveWindowController;
 @class VLCLibraryController;
-@class VLCPlaylistController;
+@class VLCPlayQueueController;
 @class VLCVideoOutputProvider;
 @class VLCDetachedAudioWindow;
 
@@ -80,7 +83,7 @@ extern NSString *VLCConfigurationChangedNotification;
 @property (readwrite) VLCLibraryWindowController *libraryWindowController;
 @property (readonly) VLCMainMenu *mainMenu;
 @property (readonly) VLCOpenWindowController *open;
-@property (readonly) VLCPlaylistController *playlistController;
+@property (readonly) VLCPlayQueueController *playQueueController;
 @property (readonly) VLCPrefs *preferences;
 @property (readonly) VLCSimplePrefsController *simplePreferences;
 @property (readonly) VLCTrackSynchronizationWindowController *trackSyncPanel;

@@ -195,12 +195,14 @@ struct entry_meta_s
     vlc_tick_t i_duration;
     const char**ppsz_options;
     int   i_options;
+    vlc_meta_priority_t priority;
 };
 
 static void entry_meta_Init( struct entry_meta_s *e )
 {
     memset(e, 0, sizeof(*e));
     e->i_duration = INPUT_DURATION_INDEFINITE;
+    e->priority = VLC_META_PRIORITY_BASIC;
 }
 
 static void entry_meta_Clean( struct entry_meta_s *e )
@@ -233,15 +235,15 @@ static int CreateEntry( input_item_node_t *p_node, const struct entry_meta_s *me
 
     vlc_mutex_lock( &p_input->lock );
     if( meta->psz_artist )
-        vlc_meta_SetWithPlaylistPriority( p_input->p_meta, vlc_meta_Artist, meta->psz_artist );
+        vlc_meta_SetWithPriority( p_input->p_meta, vlc_meta_Artist, meta->psz_artist, meta->priority );
     if( meta->psz_name )
-        vlc_meta_SetWithPlaylistPriority( p_input->p_meta, vlc_meta_Title, meta->psz_name );
+        vlc_meta_SetWithPriority( p_input->p_meta, vlc_meta_Title, meta->psz_name, meta->priority );
     if( meta->psz_album_art )
-        vlc_meta_SetWithPlaylistPriority( p_input->p_meta, vlc_meta_ArtworkURL, meta->psz_album_art );
+        vlc_meta_SetWithPriority( p_input->p_meta, vlc_meta_ArtworkURL, meta->psz_album_art, meta->priority );
     if( meta->psz_language )
-        vlc_meta_SetWithPlaylistPriority( p_input->p_meta, vlc_meta_Language, meta->psz_language );
+        vlc_meta_SetWithPriority( p_input->p_meta, vlc_meta_Language, meta->psz_language, meta->priority );
     if( meta->psz_grouptitle )
-        vlc_meta_SetWithPlaylistPriority( p_input->p_meta, vlc_meta_Publisher, meta->psz_grouptitle );
+        vlc_meta_SetWithPriority( p_input->p_meta, vlc_meta_Publisher, meta->psz_grouptitle, meta->priority );
     vlc_mutex_unlock( &p_input->lock );
     if( meta->psz_tvgid )
         input_item_AddInfo( p_input, "XMLTV", "tvg-id", "%s", meta->psz_tvgid );
@@ -286,6 +288,7 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
                 psz_parse += sizeof("EXTINF:") - 1;
                 meta.i_duration = INPUT_DURATION_INDEFINITE;
                 parseEXTINF( psz_parse, pf_dup, &meta );
+                meta.priority = VLC_META_PRIORITY_PLAYLIST;
             }
             else if( !strncasecmp( psz_parse, "EXTGRP:", sizeof("EXTGRP:") -1 ) )
             {
@@ -317,6 +320,7 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
                 {
                     free( meta.psz_album_art );
                     meta.psz_album_art = pf_dup( psz_parse );
+                    meta.priority = VLC_META_PRIORITY_PLAYLIST;
                 }
             }
             else if ( !strncasecmp( psz_parse, "PLAYLIST:",

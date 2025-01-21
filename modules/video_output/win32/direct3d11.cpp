@@ -53,9 +53,7 @@
 #include "common.h"
 #include "../../video_chroma/copy.h"
 
-#ifdef HAVE_DXGI1_6_H
-# include <dxgi1_6.h>
-#endif
+#include <dxgi1_6.h>
 
 using Microsoft::WRL::ComPtr;
 
@@ -131,9 +129,7 @@ typedef struct vout_display_sys_t
     d3d_shader_compiler_t    *shaders = nullptr;
     d3d11_quad_t             picQuad = {};
 
-#ifdef HAVE_D3D11_4_H
     d3d11_gpu_fence          fence = {};
-#endif
 
     bool                     use_staging_texture = false;
     picture_sys_d3d11_t      stagingSys = {};
@@ -452,7 +448,6 @@ static void InitTonemapProcessor(vout_display_t *vd, const video_format_t *fmt_i
     if (sys->hdrMode != hdr_Fake)
         return;
 
-#ifdef HAVE_DXGI1_6_H
     { // check the main display is in HDR mode
     HRESULT hr;
 
@@ -485,7 +480,6 @@ static void InitTonemapProcessor(vout_display_t *vd, const video_format_t *fmt_i
         goto error;
     }
     }
-#endif
 
     sys->tonemapProc = D3D11_TonemapperCreate(VLC_OBJECT(vd), sys->d3d_dev, fmt_in);
     if (sys->tonemapProc != NULL)
@@ -566,13 +560,11 @@ static int Open(vout_display_t *vd,
 
         /* use our internal swapchain callbacks */
         dxgi_swapchain *swap = nullptr;
-#if defined(HAVE_DCOMP_H)
         if (vd->cfg->window->type == VLC_WINDOW_TYPE_DCOMP)
             swap = DXGI_CreateLocalSwapchainHandleDComp(VLC_OBJECT(vd),
                                                         vd->cfg->window->display.dcomp_device,
                                                         vd->cfg->window->handle.dcomp_visual);
         else
-#endif //HAVE_DCOMP_H
             swap = DXGI_CreateLocalSwapchainHandleHwnd(VLC_OBJECT(vd), CommonVideoHWND(&sys->area));
         if (unlikely(swap == NULL))
             goto error;
@@ -913,7 +905,6 @@ static void PreparePicture(vout_display_t *vd, picture_t *picture,
         }
     }
 
-#ifdef HAVE_D3D11_4_H
     if (sys->log_level >= 4)
     {
         vlc_tick_t render_start = vlc_tick_now();
@@ -924,7 +915,6 @@ static void PreparePicture(vout_display_t *vd, picture_t *picture,
     {
         D3D11_WaitFence(sys->fence);
     }
-#endif
 }
 
 static void Prepare(vout_display_t *vd, picture_t *picture,
@@ -1470,13 +1460,11 @@ static int Direct3D11CreateGenericResources(vout_display_t *vd)
     vout_display_sys_t *sys = static_cast<vout_display_sys_t *>(vd->sys);
     HRESULT hr;
 
-#ifdef HAVE_D3D11_4_H
     hr = D3D11_InitFence(*sys->d3d_dev, sys->fence);
     if (SUCCEEDED(hr))
     {
         msg_Dbg(vd, "using GPU render fence");
     }
-#endif
 
     ComPtr<ID3D11BlendState> pSpuBlendState;
     D3D11_BLEND_DESC spuBlendDesc = { };
@@ -1593,9 +1581,7 @@ static void Direct3D11DestroyResources(vout_display_t *vd)
     D3D11_ReleaseVertexShader(&sys->flatVShader);
     D3D11_ReleaseVertexShader(&sys->projectionVShader);
 
-#ifdef HAVE_D3D11_4_H
     D3D11_ReleaseFence(sys->fence);
-#endif
 
     msg_Dbg(vd, "Direct3D11 resources destroyed");
 }
@@ -1662,7 +1648,12 @@ static int Direct3D11MapSubpicture(vout_display_t *vd, int *subpicture_region_co
         picture_t *quad_picture = (*region)[i];
         d3d11_quad_t *quad;
         if (quad_picture != NULL)
+        {
             quad = static_cast<d3d11_quad_t*>(quad_picture->p_sys);
+
+            video_format_Clean(&quad->quad_fmt);
+            video_format_Copy(&quad->quad_fmt, &r->p_picture->format);
+        }
         else
         {
             d3d11_quad_t *d3dquad = new (std::nothrow) d3d11_quad_t;

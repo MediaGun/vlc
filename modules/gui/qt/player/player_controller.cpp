@@ -62,6 +62,8 @@ PlayerControllerPrivate::~PlayerControllerPrivate()
     vlc_player_aout_RemoveListener( m_player, m_player_aout_listener );
     vlc_player_RemoveListener( m_player, m_player_listener );
     vlc_player_RemoveTimer( m_player, m_player_timer );
+    if (m_preparser != nullptr)
+        vlc_preparser_Delete(m_preparser);
 }
 
 bool PlayerControllerPrivate::isCurrentItemSynced()
@@ -1019,11 +1021,11 @@ static void on_player_timer_smpte_update(const struct vlc_player_timer_smpte_tim
 }
 
 
-static void on_art_fetch_ended_callback(input_item_t *p_item, bool fetched,
-                                     void *userdata)
+static void on_preparse_ended_callback(input_item_t *p_item,
+                                       int, void *userdata)
 {
     PlayerControllerPrivate *me = reinterpret_cast<PlayerControllerPrivate *>(userdata);
-    me->onArtFetchEnded(p_item, fetched);
+    me->onArtFetchEnded(p_item, input_item_IsArtFetched(p_item));
 }
 
 
@@ -1095,9 +1097,9 @@ static const struct vlc_player_timer_smpte_cbs player_timer_smpte_cbs = {
 
 // art fetcher callbacks
 
-static const struct vlc_metadata_cbs art_fetcher_cbs  = []{
-    struct vlc_metadata_cbs cbs{};
-    cbs.on_art_fetch_ended = on_art_fetch_ended_callback;
+static const input_item_parser_cbs_t art_fetcher_cbs  = []{
+    input_item_parser_cbs_t cbs{};
+    cbs.on_ended = on_preparse_ended_callback;
     return cbs;
 }();
 
@@ -1123,6 +1125,7 @@ PlayerControllerPrivate::PlayerControllerPrivate(PlayerController *playercontrol
     , m_audioMixMode((audio_output_t*)nullptr, "mix-mode")
     , m_audioDeviceList(m_player)
     , m_audioVisualization((audio_output_t*)nullptr, "visual")
+    , m_rendererManager(p_intf, m_player)
 {
     {
         vlc_player_locker locker{m_player};
@@ -1166,10 +1169,6 @@ PlayerController::PlayerController( qt_intf_t *_p_intf )
     : QObject(NULL)
     , d_ptr( new PlayerControllerPrivate(this, _p_intf) )
 {
-    /* Audio Menu */
-    menusAudioMapper = new QSignalMapper(this);
-    connect( menusAudioMapper, &QSignalMapper::mappedString,
-             this, &PlayerController::menusUpdateAudio );
     connect( &d_ptr->m_position_timer, &QTimer::timeout, this, &PlayerController::updatePositionFromTimer );
     connect( &d_ptr->m_time_timer, &QTimer::timeout, this, &PlayerController::updateTimeFromTimer );
 }
@@ -1741,14 +1740,6 @@ bool PlayerController::hasAudioVisualization() const
     return d->m_audioVisualization.hasCurrent();
 }
 
-
-void PlayerController::menusUpdateAudio( const QString& data )
-{
-    SharedAOut aout = getAout();
-    if( aout )
-        aout_DeviceSet( aout.get(), qtu(data) );
-}
-
 void PlayerController::updatePosition()
 {
     Q_D(PlayerController);
@@ -1953,35 +1944,35 @@ void PlayerController::snapshot()
 
 /* Playlist Control functions */
 
-void PlayerController::requestArtUpdate( input_item_t *p_item, bool b_forced )
+void PlayerController::requestArtUpdate( input_item_t *p_item )
 {
     Q_D(PlayerController);
 
-    if ( !p_item )
+    if (d->m_preparser == nullptr)
     {
-        /* default to current item */
-        vlc_player_locker lock{ d->m_player };
-        if ( vlc_player_IsStarted( d->m_player ) )
-            p_item = vlc_player_GetCurrentMedia( d->m_player );
+        vlc_tick_t default_timeout =
+            VLC_TICK_FROM_MS(var_InheritInteger(d->p_intf, "preparse-timeout"));
+        if (default_timeout < 0)
+            default_timeout = 0;
+
+        const struct vlc_preparser_cfg cfg = [default_timeout]{
+            struct vlc_preparser_cfg cfg{};
+            cfg.types = VLC_PREPARSER_TYPE_FETCHMETA_ALL;
+            cfg.max_parser_threads = 1;
+            cfg.timeout = default_timeout;
+            return cfg;
+        }();
+        d->m_preparser = vlc_preparser_New(VLC_OBJECT(d->p_intf), &cfg);
+        if (unlikely(d->m_preparser == nullptr))
+            return;
     }
 
-    if ( p_item )
-    {
-        /* check if it has already been enqueued */
-        if ( p_item->p_meta && !b_forced )
-        {
-            int status = vlc_meta_GetStatus( p_item->p_meta );
-            if ( status & ( ITEM_ART_NOTFOUND|ITEM_ART_FETCHED ) )
-                return;
-        }
-        vlc_preparser_t *parser = libvlc_GetMainPreparser( vlc_object_instance(d->p_intf) );
-        if (unlikely(parser == NULL))
-            return;
-        vlc_preparser_Push( parser, p_item,
-                            (b_forced) ? META_REQUEST_OPTION_FETCH_ANY
-                                       : META_REQUEST_OPTION_FETCH_LOCAL,
-                            &art_fetcher_cbs, d, 0, NULL );
-    }
+    int fetch_options = var_InheritBool( d->p_intf, "metadata-network-access" ) ?
+            VLC_PREPARSER_TYPE_FETCHMETA_ALL :
+            VLC_PREPARSER_TYPE_FETCHMETA_LOCAL;
+
+    vlc_preparser_Push( d->m_preparser, p_item, fetch_options,
+                        &art_fetcher_cbs, d  );
 }
 
 void PlayerControllerPrivate::onArtFetchEnded(input_item_t *p_item, bool)
@@ -2075,7 +2066,7 @@ QABSTRACTLIST_GETTER( VLCVarChoiceModel, getDeinterlaceMode, m_deinterlaceMode)
 QABSTRACTLIST_GETTER( VLCVarChoiceModel, getAudioStereoMode, m_audioStereoMode)
 QABSTRACTLIST_GETTER( VLCVarChoiceModel, getAudioMixMode, m_audioMixMode)
 QABSTRACTLIST_GETTER( VLCVarChoiceModel, getAudioVisualizations, m_audioVisualization)
-
+QABSTRACTLIST_GETTER( RendererManager, getRendererManager, m_rendererManager)
 
 #undef QABSTRACTLIST_GETTER
 

@@ -170,9 +170,7 @@ media_subtree_changed(input_item_t *media, input_item_node_t *node,
 }
 
 static void
-media_subtree_preparse_ended(input_item_t *media,
-                             enum input_item_preparse_status status,
-                             void *user_data)
+media_subtree_preparse_ended(input_item_t *media, int status, void *user_data)
 {
     vlc_media_tree_t *tree = user_data;
 
@@ -335,25 +333,25 @@ vlc_media_tree_Remove(vlc_media_tree_t *tree, input_item_t *media)
     return true;
 }
 
-static const struct vlc_metadata_cbs preparser_callbacks = {
+static const input_item_parser_cbs_t preparser_callbacks = {
+    .on_ended = media_subtree_preparse_ended,
     .on_subtree_added = media_subtree_changed,
-    .on_preparse_ended = media_subtree_preparse_ended
 };
 
-void
+vlc_preparser_req_id
 vlc_media_tree_Preparse(vlc_media_tree_t *tree, vlc_preparser_t *parser,
-                        input_item_t *media, void* id)
+                        input_item_t *media)
 {
 #ifdef TEST_MEDIA_SOURCE
     VLC_UNUSED(tree);
     VLC_UNUSED(parser);
     VLC_UNUSED(media);
-    VLC_UNUSED(id);
     VLC_UNUSED(preparser_callbacks);
+    return VLC_PREPARSER_REQ_ID_INVALID;
 #else
-    vlc_preparser_Push(parser, media, META_REQUEST_OPTION_SCOPE_ANY |
-                       META_REQUEST_OPTION_DO_INTERACT |
-                       META_REQUEST_OPTION_PARSE_SUBITEMS,
-                       &preparser_callbacks, tree, 0, id);
+    return vlc_preparser_Push(parser, media, VLC_PREPARSER_TYPE_PARSE |
+                              VLC_PREPARSER_OPTION_INTERACT |
+                              VLC_PREPARSER_OPTION_SUBITEMS,
+                              &preparser_callbacks, tree);
 #endif
 }

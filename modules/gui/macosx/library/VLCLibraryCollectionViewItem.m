@@ -221,6 +221,9 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
 
     [VLCLibraryImageCache thumbnailForLibraryItem:actualItem
                                    withCompletion:^(NSImage * const thumbnail) {
+        if (self.representedItem.item != actualItem) {
+            return;
+        }
         self.mediaImageView.image = thumbnail;
     }];
 
@@ -283,7 +286,7 @@ const CGFloat VLCLibraryCollectionViewItemMaximumDisplayedProgress = 0.95;
     [self.representedItem play];
 }
 
-- (IBAction)addToPlaylist:(id)sender
+- (IBAction)addToPlayQueue:(id)sender
 {
     [self.representedItem queue];
 }

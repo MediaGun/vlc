@@ -30,6 +30,7 @@
 #import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryUIUnits.h"
 
+#import "library/home-library/VLCLibraryHomeViewActionsView.h"
 #import "library/home-library/VLCLibraryHomeViewAudioCarouselContainerView.h"
 #import "library/home-library/VLCLibraryHomeViewContainerView.h"
 #import "library/home-library/VLCLibraryHomeViewVideoCarouselContainerView.h"
@@ -61,6 +62,11 @@
     return self;
 }
 
+- (void)dealloc
+{
+    self.collectionsStackView.subviews = @[];
+}
+
 - (void)setup
 {
     NSNotificationCenter * const notificationCenter = NSNotificationCenter.defaultCenter;
@@ -89,13 +95,20 @@
 
 - (void)generateCustomContainers
 {
+    _actionsView = [VLCLibraryHomeViewActionsView fromNibWithOwner:self];
     _heroView = [VLCLibraryHeroView fromNibWithOwner:self];
-    _leadingContainerCount += 1;
-    [self addView:self.heroView toStackView:self.collectionsStackView];
-    [self.heroView setOptimalRepresentedItem];
+    _leadingContainerCount += 2;
 
+    [self addCustomContainerViews];
     [self audioRecentsChanged:nil];
     [self recentsChanged:nil];
+}
+
+- (void)addCustomContainerViews
+{
+    [self addView:self.actionsView toStackView:self.collectionsStackView];
+    [self addView:self.heroView toStackView:self.collectionsStackView];
+    [self.heroView setOptimalRepresentedItem];
 }
 
 - (BOOL)recentMediaPresent
@@ -180,9 +193,9 @@
 - (void)reloadData
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        for (NSView<VLCLibraryHomeViewContainerView> * const containerView in self->_containers) {
-            [self.heroView setOptimalRepresentedItem];
+        [self.heroView setOptimalRepresentedItem];
 
+        for (NSView<VLCLibraryHomeViewContainerView> * const containerView in self->_containers) {
             if ([containerView isKindOfClass:VLCLibraryHomeViewBaseCarouselContainerView.class]) {
                 VLCLibraryHomeViewBaseCarouselContainerView * const baseContainerView = (VLCLibraryHomeViewBaseCarouselContainerView *)containerView;
                 [baseContainerView.dataSource reloadData];
@@ -290,9 +303,7 @@
     [_collectionsStackView setHuggingPriority:NSLayoutPriorityDefaultHigh
                                forOrientation:NSLayoutConstraintOrientationVertical];
 
-
-    [self addView:self.heroView toStackView:_collectionsStackView];
-    [self.heroView setOptimalRepresentedItem];
+    [self addCustomContainerViews];
 
     for (NSView<VLCLibraryHomeViewContainerView> * const containerView in _containers) {
         [self addContainerView:containerView toStackView:_collectionsStackView];

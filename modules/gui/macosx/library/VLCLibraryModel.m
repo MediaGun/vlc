@@ -62,6 +62,11 @@ NSString * const VLCLibraryModelGenreUpdated = @"VLCLibraryModelGenreUpdated";
 NSString * const VLCLibraryModelGroupUpdated = @"VLCLibraryModelGroupUpdated";
 NSString * const VLCLibraryModelPlaylistUpdated = @"VLCLibraryModelPlaylistUpdated";
 
+NSString * const VLCLibraryModelDiscoveryStarted = @"VLCLibraryModelDiscoveryStarted";
+NSString * const VLCLibraryModelDiscoveryProgress = @"VLCLibraryModelDiscoveryProgress";
+NSString * const VLCLibraryModelDiscoveryCompleted = @"VLCLibraryModelDiscoveryCompleted";
+NSString * const VLCLibraryModelDiscoveryFailed = @"VLCLibraryModelDiscoveryFailed";
+
 @interface VLCLibraryModel ()
 {
     vlc_medialibrary_t *_p_mediaLibrary;
@@ -208,6 +213,36 @@ static void libraryCallback(void *p_data, const vlc_ml_event_t *p_event)
         case VLC_ML_EVENT_HISTORY_CHANGED:
             [libraryModel resetCachedListOfRecentMedia];
             [libraryModel resetCachedListOfRecentAudioMedia];
+            break;
+        case VLC_ML_EVENT_DISCOVERY_STARTED:
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
+                [defaultCenter postNotificationName:VLCLibraryModelDiscoveryStarted object:nil];
+            });
+            break;
+        case VLC_ML_EVENT_DISCOVERY_PROGRESS:
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString * const entryPoint = toNSStr(p_event->discovery_progress.psz_entry_point);
+                NSDictionary<NSString *, NSString *> * const info = entryPoint == nil
+                    ? nil
+                    : @{@"entryPoint": entryPoint};
+                NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
+                [defaultCenter postNotificationName:VLCLibraryModelDiscoveryProgress
+                                             object:nil
+                                           userInfo:info];
+            });
+            break;
+        case VLC_ML_EVENT_DISCOVERY_COMPLETED:
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
+                [defaultCenter postNotificationName:VLCLibraryModelDiscoveryCompleted object:nil];
+            });
+            break;
+        case VLC_ML_EVENT_DISCOVERY_FAILED:
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
+                [defaultCenter postNotificationName:VLCLibraryModelDiscoveryFailed object:nil];
+            });
             break;
         default:
             break;

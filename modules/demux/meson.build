@@ -20,21 +20,30 @@ vlc_modules += {
 
 # OGG demux
 ogg_dep = dependency('ogg', version: '>= 1.0', required: get_option('ogg'))
+ogg_deps = [ogg_dep]
+ogg_c_args = []
+if vorbis_dep.found()
+    ogg_c_args += ['-DHAVE_LIBVORBIS']
+    ogg_deps += vorbis_dep
+endif
 if ogg_dep.found()
     vlc_modules += {
         'name' : 'ogg',
         'sources' : files('ogg.c', 'oggseek.c', 'ogg_granule.c'),
         'link_with' : [xiph_meta_lib],
-        'dependencies' : [ogg_dep]
+        'dependencies' : ogg_deps,
+        'c_args' : ogg_c_args,
     }
 endif
 
-# Xiph test
-xiph_test = executable('xiph_test',
-    files('xiph_test.c'),
-    include_directories: [vlc_include_dirs])
+if (get_option('tests').allowed())
+    # Xiph test
+    xiph_test = executable('xiph_test',
+        files('xiph_test.c'),
+        include_directories: [vlc_include_dirs])
 
-test('xiph_test', xiph_test, suite: 'demux')
+    test('xiph_test', xiph_test, suite: 'demux')
+endif
 
 # Demux dump
 vlc_modules += {
@@ -82,6 +91,12 @@ vlc_modules += {
 vlc_modules += {
     'name' : 'hx',
     'sources' : files('hx.c'),
+}
+
+# G64 RTP dumps demuxer
+vlc_modules += {
+    'name' : 'g64rtp',
+    'sources' : files('g64rtp.c'),
 }
 
 # MPEG PS demux
@@ -233,7 +248,8 @@ if avformat_dep.found()
         ),
         'dependencies' : [avformat_dep, avutil_dep],
         'link_with' : [libavcodec_common],
-        'link_args' : symbolic_linkargs
+        'link_args' : symbolic_linkargs,
+        'enabled' : not get_option('merge-ffmpeg'),
     }
 endif
 
@@ -256,8 +272,8 @@ vlc_modules += {
 }
 
 # MKV demux
-libebml_dep = dependency('libebml', required: get_option('matroska'))
-libmatroska_dep = dependency('libmatroska', required: get_option('matroska'))
+libebml_dep = dependency('libebml', 'EBML', required: get_option('matroska'))
+libmatroska_dep = dependency('libmatroska', 'Matroska', required: get_option('matroska'))
 if libebml_dep.found() and libmatroska_dep.found()
     vlc_modules += {
         'name' : 'mkv',
@@ -338,12 +354,17 @@ vlc_modules += {
 # TS demux
 aribb24_dep = dependency('aribb24', version: '>= 1.0.1', required: get_option('aribb24'))
 libdvbpsi_dep = dependency('libdvbpsi', version: '>= 1.2.0', required: get_option('libdvbpsi'))
-if libdvbpsi_dep.found()
-    arrib24_define = []
-    if aribb24_dep.found()
-        arrib24_define += '-DHAVE_ARIBB24=1'
-    endif
 
+libdvbpsi_c_args = []
+libdvbcsa_dep = dependency('dvbcsa', required: get_option('dvbcsa'))
+if libdvbcsa_dep.found()
+    if cc.has_function('dvbcsa_decrypt', dependencies: [libdvbcsa_dep]) and \
+       cc.check_header('dvbcsa/dvbcsa.h', dependencies: [libdvbcsa_dep])
+        libdvbpsi_c_args += ['-DHAVE_DVBCSA']
+    endif
+endif
+
+if libdvbpsi_dep.found()
     vlc_modules += {
         'name' : 'ts',
         'sources' : files(
@@ -369,10 +390,53 @@ if libdvbpsi_dep.found()
             '../codec/atsc_a65.c',
             '../codec/opus_header.c',
         ),
-        'dependencies' : [libdvbpsi_dep, aribb24_dep],
-        'c_args' : arrib24_define
+        'dependencies' : [libdvbpsi_dep, aribb24_dep, libdvbcsa_dep],
+        'c_args' : libdvbpsi_c_args,
     }
 endif
+
+# GME
+gme_dep = dependency('libgme', required: get_option('gme'))
+vlc_modules += {
+    'name' : 'gme',
+    'sources' : files('gme.c'),
+    'dependencies' : [gme_dep],
+    'enabled': gme_dep.found(),
+}
+
+# mpc
+if get_option('mpc').allowed()
+mpc_dep = disabler()
+if cc.check_header('mpc/mpcdec.h')
+    mpc_dep = cc.find_library('mpcdec')
+    cdata.set('HAVE_MPC_MPCDEC_H', 1)
+elif cc.check_header('mpc/mpcdec.h', dependencies: contrib_dep )
+    if cc.find_library('mpcdec', dirs: contrib_libdir).found()
+        mpc_dep = declare_dependency(
+            dependencies: [cc.find_library('mpcdec', dirs: contrib_libdir), contrib_dep])
+        cdata.set('HAVE_MPC_MPCDEC_H', 1)
+    endif
+endif
+endif
+vlc_modules += {
+    'name' : 'mpc',
+    'sources' : files('mpc.c'),
+    'dependencies' : [mpc_dep, m_lib],
+    'enabled' : mpc_dep.found(),
+}
+
+# sid
+sid_dep = dependency('libsidplay2', required: get_option('sid'))
+if cpp.check_header('sidplay/builders/resid.h', dependencies: sid_dep)
+resid_dep = cpp.find_library('resid-builder', dirs: contrib_libdir)
+vlc_modules += {
+    'name' : 'sid',
+    'sources' : files('sid.cpp'),
+    'dependencies' : [sid_dep, resid_dep],
+    'enabled': sid_dep.found() and resid_dep.found()
+}
+endif
+
 
 # Adaptive streams demuxer
 
@@ -585,9 +649,8 @@ vlc_modules += {
 
     ),
     'include_directories' : include_directories('adaptive', './'),
-    'dependencies' : [socket_libs, m_lib, z_dep],
+    'dependencies' : [socket_libs, m_lib, z_dep, gcrypt_dep],
     'link_with' : vlc_http_lib,
-    # TODO: Add optional GCRYPT dependency!
 }
 
 # noseek demux

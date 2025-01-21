@@ -135,8 +135,7 @@ vlc_modules += {
         'rtcp.c',
         'rtsp.c',
     ),
-    'dependencies' : [socket_libs]
-    # TODO: Add optional GCrypt dependency
+    'dependencies' : [socket_libs, srtp_dep]
 }
 
 # Chromaprint module
@@ -148,5 +147,38 @@ vlc_modules += {
     'enabled' : libchromaprint_dep.found(),
 }
 
+
+vlc_modules += {
+    'name' : 'stream_out_sdi',
+    'sources' : files(
+        'sdi/sdiout.cpp',
+        'sdi/sdiout.hpp',
+        'sdi/Ancillary.cpp',
+        'sdi/Ancillary.hpp',
+        'sdi/AES3Audio.cpp',
+        'sdi/AES3Audio.hpp',
+        'sdi/DBMHelper.cpp',
+        'sdi/DBMHelper.hpp',
+        'sdi/DBMSDIOutput.cpp',
+        'sdi/DBMSDIOutput.hpp',
+        'sdi/SDIAudioMultiplex.cpp',
+        'sdi/SDIAudioMultiplex.hpp',
+        'sdi/SDIGenerator.cpp',
+        'sdi/SDIGenerator.hpp',
+        'sdi/SDIOutput.cpp',
+        'sdi/SDIOutput.hpp',
+        'sdi/SDIStream.cpp',
+        'sdi/SDIStream.hpp',
+        'sdi/V210.cpp',
+        'sdi/V210.hpp'
+    ),
+    'dependencies' : [dl_lib, decklink_dep],
+    'cpp_args' : decklink_cpp_args,
+    'enabled' : decklink_dep.found(),
+}
+
 # Chromecast module
 subdir('chromecast')
+
+# HLS module
+subdir('hls')

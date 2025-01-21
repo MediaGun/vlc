@@ -118,13 +118,8 @@ int hxxx_helper_get_current_picture_size(const struct hxxx_helper *hh,
 
 int hxxx_helper_get_current_sar(const struct hxxx_helper *hh, int *p_num, int *p_den);
 
-int h264_helper_get_current_dpb_values(const struct hxxx_helper *hh,
-                                       uint8_t *p_depth, unsigned *pi_delay);
-
 int hxxx_helper_get_current_profile_level(const struct hxxx_helper *hh,
                                           uint8_t *p_profile, uint8_t *p_level);
-int h264_helper_get_constraint_flag(const struct hxxx_helper *hh,
-                                    uint8_t *pi_constraints);
 
 int
 hxxx_helper_get_chroma_chroma(const struct hxxx_helper *hh, uint8_t *pi_chroma_format,

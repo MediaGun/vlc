@@ -26,10 +26,8 @@
 
 #ifdef _WIN32
 #include "mainctx_win32.hpp"
-#ifdef HAVE_DCOMP_H
-#  include "compositor_dcomp.hpp"
-#endif
-#  include "compositor_win7.hpp"
+#include "compositor_dcomp.hpp"
+#include "compositor_win7.hpp"
 #endif
 
 #ifdef QT_HAS_WAYLAND_COMPOSITOR
@@ -59,7 +57,7 @@ struct {
     const char* name;
     Compositor* (*instantiate)(qt_intf_t *p_intf);
 } static compositorList[] = {
-#if defined(_WIN32) && defined(HAVE_DCOMP_H)
+#if defined(_WIN32)
     {"dcomp", &instanciateCompositor<CompositorDirectComposition> },
 #endif
 #if defined(_WIN32) || defined(__APPLE__)
@@ -272,7 +270,16 @@ bool CompositorVideo::commonGUICreateImpl(QWindow* window, CompositorVideo::Flag
     }
     if (!backendIsOpenVg && (flags & CompositorVideo::HAS_ACRYLIC))
     {
-        setBlurBehind(window, true);
+        if (Q_LIKELY(!window->isActive()))
+        {
+            connect(window, &QWindow::activeChanged, this, [this, window = QPointer(window)]() {
+               setBlurBehind(window, true);
+            }, Qt::SingleShotConnection);
+        }
+        else
+        {
+            setBlurBehind(window, true);
+        }
     }
     m_videoWindowHandler = std::make_unique<VideoWindowHandler>(m_intf);
     m_videoWindowHandler->setWindow( window );
@@ -282,7 +289,6 @@ bool CompositorVideo::commonGUICreateImpl(QWindow* window, CompositorVideo::Flag
 #else
     m_interfaceWindowHandler = std::make_unique<InterfaceWindowHandler>(m_intf, m_mainCtx, window);
 #endif
-    m_mainCtx->setHasAcrylicSurface(m_blurBehind);
     m_mainCtx->setWindowSuportExtendedFrame(flags & CompositorVideo::HAS_EXTENDED_FRAME);
 
 #ifdef _WIN32
@@ -325,6 +331,7 @@ void CompositorVideo::commonGUIDestroy()
     m_taskbarWidget.reset();
 #endif
     m_interfaceWindowHandler.reset();
+    m_mainCtx = nullptr;
 }
 
 void CompositorVideo::commonIntfDestroy()
@@ -372,10 +379,10 @@ bool CompositorVideo::setBlurBehind(QWindow *window, const bool enable)
         }
     }
 
-    if (!m_windowEffectsModule->isEffectAvailable(WindowEffectsModule::BlurBehind))
+    if (!m_windowEffectsModule->isEffectAvailable(window, WindowEffectsModule::BlurBehind))
         return false;
 
     m_windowEffectsModule->setBlurBehind(window, enable);
-    m_blurBehind = enable;
+    m_mainCtx->setHasAcrylicSurface(enable);
     return true;
 }

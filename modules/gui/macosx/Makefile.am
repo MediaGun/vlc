@@ -105,6 +105,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryAbstractSegmentViewController.m \
 	gui/macosx/library/VLCLibraryCarouselViewItemView.h \
 	gui/macosx/library/VLCLibraryCarouselViewItemView.m \
+	gui/macosx/library/VLCLibraryCollectionView.h \
+	gui/macosx/library/VLCLibraryCollectionView.m \
 	gui/macosx/library/VLCLibraryCollectionViewDataSource.h \
 	gui/macosx/library/VLCLibraryCollectionViewDelegate.h \
 	gui/macosx/library/VLCLibraryCollectionViewDelegate.m \
@@ -178,18 +180,25 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryWindowNavigationSidebarViewController.m \
 	gui/macosx/library/VLCLibraryWindowPersistentPreferences.h \
 	gui/macosx/library/VLCLibraryWindowPersistentPreferences.m \
-	gui/macosx/library/VLCLibraryWindowPlaylistSidebarViewController.h \
-	gui/macosx/library/VLCLibraryWindowPlaylistSidebarViewController.m \
+	gui/macosx/library/VLCLibraryWindowPlayQueueSidebarViewController.h \
+	gui/macosx/library/VLCLibraryWindowPlayQueueSidebarViewController.m \
+	gui/macosx/library/VLCLibraryWindowSidebarChildViewController.h \
 	gui/macosx/library/VLCLibraryWindowSidebarRootViewController.h \
 	gui/macosx/library/VLCLibraryWindowSidebarRootViewController.m \
 	gui/macosx/library/VLCLibraryWindowSplitViewController.h \
 	gui/macosx/library/VLCLibraryWindowSplitViewController.m \
+	gui/macosx/library/VLCLibraryWindowTitlesSidebarViewController.h \
+	gui/macosx/library/VLCLibraryWindowTitlesSidebarViewController.m \
 	gui/macosx/library/VLCLibraryWindowToolbarDelegate.h \
 	gui/macosx/library/VLCLibraryWindowToolbarDelegate.m \
 	gui/macosx/library/groups-library/VLCLibraryGroupsDataSource.h \
 	gui/macosx/library/groups-library/VLCLibraryGroupsDataSource.m \
 	gui/macosx/library/groups-library/VLCLibraryGroupsViewController.h \
 	gui/macosx/library/groups-library/VLCLibraryGroupsViewController.m \
+	gui/macosx/library/home-library/VLCLibraryHomeViewActionButtonCell.h \
+	gui/macosx/library/home-library/VLCLibraryHomeViewActionButtonCell.m \
+	gui/macosx/library/home-library/VLCLibraryHomeViewActionsView.h \
+	gui/macosx/library/home-library/VLCLibraryHomeViewActionsView.m \
 	gui/macosx/library/home-library/VLCLibraryHomeViewAudioCarouselContainerView.h \
 	gui/macosx/library/home-library/VLCLibraryHomeViewAudioCarouselContainerView.m \
 	gui/macosx/library/home-library/VLCLibraryHomeViewBaseCarouselContainerView.h \
@@ -317,28 +326,30 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/panels/dialogs/VLCResumeDialogController.m \
 	gui/macosx/panels/dialogs/VLCTextfieldPanelController.h \
 	gui/macosx/panels/dialogs/VLCTextfieldPanelController.m \
-	gui/macosx/playlist/VLCPlaybackContinuityController.h \
-	gui/macosx/playlist/VLCPlaybackContinuityController.m \
-	gui/macosx/playlist/VLCPlayerChapter.h \
-	gui/macosx/playlist/VLCPlayerChapter.m \
-	gui/macosx/playlist/VLCPlayerController.h \
-	gui/macosx/playlist/VLCPlayerController.m \
-	gui/macosx/playlist/VLCPlaylistController.h \
-	gui/macosx/playlist/VLCPlaylistController.m \
-	gui/macosx/playlist/VLCPlaylistDataSource.h \
-	gui/macosx/playlist/VLCPlaylistDataSource.m \
-	gui/macosx/playlist/VLCPlaylistItem.h \
-	gui/macosx/playlist/VLCPlaylistItem.m \
-	gui/macosx/playlist/VLCPlaylistMenuController.h \
-	gui/macosx/playlist/VLCPlaylistMenuController.m \
-	gui/macosx/playlist/VLCPlaylistModel.h \
-	gui/macosx/playlist/VLCPlaylistModel.m \
-	gui/macosx/playlist/VLCPlaylistSortingMenuController.h \
-	gui/macosx/playlist/VLCPlaylistSortingMenuController.m \
-	gui/macosx/playlist/VLCPlaylistTableCellView.h \
-	gui/macosx/playlist/VLCPlaylistTableCellView.m \
-	gui/macosx/playlist/VLCPlaylistTableView.h \
-	gui/macosx/playlist/VLCPlaylistTableView.m \
+	gui/macosx/playqueue/VLCPlaybackContinuityController.h \
+	gui/macosx/playqueue/VLCPlaybackContinuityController.m \
+	gui/macosx/playqueue/VLCPlayerChapter.h \
+	gui/macosx/playqueue/VLCPlayerChapter.m \
+	gui/macosx/playqueue/VLCPlayerController.h \
+	gui/macosx/playqueue/VLCPlayerController.m \
+	gui/macosx/playqueue/VLCPlayerTitle.h \
+	gui/macosx/playqueue/VLCPlayerTitle.m \
+	gui/macosx/playqueue/VLCPlayQueueController.h \
+	gui/macosx/playqueue/VLCPlayQueueController.m \
+	gui/macosx/playqueue/VLCPlayQueueDataSource.h \
+	gui/macosx/playqueue/VLCPlayQueueDataSource.m \
+	gui/macosx/playqueue/VLCPlayQueueItem.h \
+	gui/macosx/playqueue/VLCPlayQueueItem.m \
+	gui/macosx/playqueue/VLCPlayQueueMenuController.h \
+	gui/macosx/playqueue/VLCPlayQueueMenuController.m \
+	gui/macosx/playqueue/VLCPlayQueueModel.h \
+	gui/macosx/playqueue/VLCPlayQueueModel.m \
+	gui/macosx/playqueue/VLCPlayQueueSortingMenuController.h \
+	gui/macosx/playqueue/VLCPlayQueueSortingMenuController.m \
+	gui/macosx/playqueue/VLCPlayQueueTableCellView.h \
+	gui/macosx/playqueue/VLCPlayQueueTableCellView.m \
+	gui/macosx/playqueue/VLCPlayQueueTableView.h \
+	gui/macosx/playqueue/VLCPlayQueueTableView.m \
 	gui/macosx/preferences/VLCHotkeyChangeWindow.h \
 	gui/macosx/preferences/VLCHotkeyChangeWindow.m \
 	gui/macosx/preferences/VLCSimplePrefsController.h \
@@ -363,12 +374,6 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCDefaultValueSliderCell.m \
 	gui/macosx/views/VLCDragDropView.h \
 	gui/macosx/views/VLCDragDropView.m \
-	gui/macosx/views/VLCHUDOutlineView.h \
-	gui/macosx/views/VLCHUDOutlineView.m \
-	gui/macosx/views/VLCHUDTableCornerView.h \
-	gui/macosx/views/VLCHUDTableCornerView.m \
-	gui/macosx/views/VLCHUDTableView.h \
-	gui/macosx/views/VLCHUDTableView.m \
 	gui/macosx/views/VLCImageButton.h \
 	gui/macosx/views/VLCImageButton.m \
 	gui/macosx/views/VLCImageView.h \
@@ -389,10 +394,14 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/views/VLCScrollingClipView.m \
 	gui/macosx/views/VLCSettingTextField.h \
 	gui/macosx/views/VLCSettingTextField.m \
+	gui/macosx/views/VLCStatusNotifierView.h \
+	gui/macosx/views/VLCStatusNotifierView.m \
 	gui/macosx/views/VLCSubScrollView.h \
 	gui/macosx/views/VLCSubScrollView.m \
 	gui/macosx/views/VLCTimeField.h \
 	gui/macosx/views/VLCTimeField.m \
+	gui/macosx/views/VLCTimeFormatter.h \
+	gui/macosx/views/VLCTimeFormatter.m \
 	gui/macosx/views/VLCTrackingView.h \
 	gui/macosx/views/VLCTrackingView.m \
 	gui/macosx/views/VLCVolumeSlider.h \
@@ -477,15 +486,17 @@ libmacosx_plugin_la_XIB_SOURCES = \
 	gui/macosx/UI/VLCLibraryWindow.xib \
 	gui/macosx/UI/VLCLibraryWindowChaptersView.xib \
 	gui/macosx/UI/VLCLibraryWindowNavigationSidebarView.xib \
-	gui/macosx/UI/VLCLibraryWindowPlaylistView.xib \
+	gui/macosx/UI/VLCLibraryWindowPlayQueueView.xib \
 	gui/macosx/UI/VLCLibraryWindowSidebarRootView.xib \
+	gui/macosx/UI/VLCLibraryWindowTitlesView.xib \
 	gui/macosx/UI/VLCLibraryTableCellView.xib \
-	gui/macosx/UI/VLCPlaylistTableCellView.xib \
+	gui/macosx/UI/VLCPlayQueueTableCellView.xib \
 	gui/macosx/UI/VLCLibraryCarouselViewItemView.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewItem.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewMediaItemListSupplementaryDetailView.xib \
 	gui/macosx/UI/VLCLibraryCollectionViewMediaItemSupplementaryDetailView.xib \
 	gui/macosx/UI/VLCLibraryHeroView.xib \
+	gui/macosx/UI/VLCLibraryHomeViewActionsView.xib \
 	gui/macosx/UI/VLCLibrarySongTableCellView.xib \
 	gui/macosx/UI/VLCMainVideoView.xib \
 	gui/macosx/UI/VLCMainVideoViewAudioMediaDecorativeView.xib \

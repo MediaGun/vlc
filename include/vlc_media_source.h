@@ -123,8 +123,7 @@ struct vlc_media_tree_callbacks
      */
     void
     (*on_preparse_end)(vlc_media_tree_t *tree, input_item_node_t * node,
-                       enum input_item_preparse_status status,
-                       void *userdata);
+                       int status, void *userdata);
 };
 
 /**
@@ -237,12 +236,12 @@ vlc_media_tree_Find(vlc_media_tree_t *tree, const input_item_t *media,
  * \param tree   the media tree (not necessarily locked)
  * \param parser a valid preparser
  * \param media  the media to preparse
- * \param id     a task identifier, cancel it via vlc_preparser_Cancel()
+ * \returns VLC_PREPARSER_REQ_ID_INVALID in case of error, or a valid id if the
+ * item was scheduled for preparsing. Cancel it vlc_preparser_Cancel().
  */
-VLC_API void
+VLC_API vlc_preparser_req_id
 vlc_media_tree_Preparse(vlc_media_tree_t *tree, vlc_preparser_t *parser,
-                        input_item_t *media, void *id);
-
+                        input_item_t *media);
 
 /**
  * Media source.

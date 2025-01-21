@@ -17,8 +17,8 @@ DATE := $(shell date +%Y%m%d)
 VPATH := $(TARBALLS)
 
 # Default Qt version
-QTBASE_VERSION_MAJOR := 6.7
-QTBASE_VERSION := $(QTBASE_VERSION_MAJOR).1
+QTBASE_VERSION_MAJOR := 6.8
+QTBASE_VERSION := $(QTBASE_VERSION_MAJOR).0
 
 # Common download locations
 GNU ?= http://ftp.gnu.org/gnu
@@ -347,8 +347,6 @@ HOSTTOOLS := \
 	AR="$(AR)" CCAS="$(CCAS)" RANLIB="$(RANLIB)" STRIP="$(STRIP)" \
 	PKG_CONFIG="$(PKG_CONFIG)"
 
-HOSTVARS_MESON := $(HOSTTOOLS)
-
 ifdef HAVE_BITCODE_ENABLED
 CFLAGS := $(CFLAGS) -fembed-bitcode
 CXXFLAGS := $(CXXFLAGS) -fembed-bitcode
@@ -356,7 +354,7 @@ endif
 
 # Add these flags after CMake consumed the CFLAGS/CXXFLAGS
 # CMake handles the optimization level with CMAKE_BUILD_TYPE
-HOSTVARS_CMAKE := $(HOSTTOOLS) \
+HOSTVARS_CMAKE := \
 	CPPFLAGS="$(CPPFLAGS)" \
 	CFLAGS="$(CFLAGS)" \
 	CXXFLAGS="$(CXXFLAGS)" \
@@ -517,7 +515,7 @@ CMAKE += -DCMAKE_LINK_LIBRARY_SUFFIX:STRING=.a
 endif
 
 MESONFLAGS = $(BUILD_DIR) $< --default-library static --prefix "$(PREFIX)" \
-	--backend ninja -Dlibdir=lib
+	--backend ninja -Dlibdir=lib -Dcmake_prefix_path="$(PREFIX)"
 ifndef WITH_OPTIMIZATION
 MESONFLAGS += --buildtype debug
 else
@@ -544,14 +542,11 @@ ifdef HAVE_CROSS_COMPILE
 # expected.
 MESONFLAGS += --cross-file $(abspath crossfile.meson)
 MESON = env -i PATH="$(PATH)" \
-	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
-	CMAKE="$(shell command -v cmake)" \
-	CMAKE_PREFIX_PATH="$(PREFIX)" \
 	meson setup -Dpkg_config_path="$(PKG_CONFIG_PATH)" \
 	$(MESONFLAGS)
 
 else
-MESON = meson setup $(MESONFLAGS)
+MESON = $(HOSTTOOLS) meson setup $(MESONFLAGS)
 endif
 MESONCLEAN = rm -rf $(BUILD_DIR)/meson-private
 MESONBUILD = meson compile -C $(BUILD_DIR) $(MESON_BUILD) && meson install -C $(BUILD_DIR)
@@ -777,10 +772,6 @@ ifdef HAVE_ANDROID
 	CMAKE_TOOLCHAIN_ENV += ANDROID_NDK=$(ANDROID_NDK)
 	CMAKE_TOOLCHAIN_ENV += ANDROID_ABI=$(ANDROID_ABI)
 	CMAKE_TOOLCHAIN_ENV += ANDROID_API=$(ANDROID_API)
-# cmake will overwrite our --sysroot with a native (host) one on Darwin
-# Set it to "" right away to short-circuit this behaviour
-	CMAKE_TOOLCHAIN_ENV += CXX_SYSROOT_FLAG=
-	CMAKE_TOOLCHAIN_ENV += C_SYSROOT_FLAG=
 endif
 ifdef MSYS_BUILD
 	CMAKE_TOOLCHAIN_ENV += FIND_ROOT_PATH="$(shell cygpath -m $(PREFIX))"
@@ -820,7 +811,8 @@ endif
 endif
 
 crossfile.meson: $(SRC)/gen-meson-machinefile.py
-	$(HOSTVARS_MESON) \
+	$(HOSTTOOLS) \
+	CMAKE="$(shell command -v cmake)" \
 	WINDRES="$(WINDRES)" \
 	PKG_CONFIG="$(PKG_CONFIG)" \
 	HOST_SYSTEM="$(MESON_SYSTEM_NAME)" \

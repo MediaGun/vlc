@@ -34,12 +34,14 @@
 #include "util/varchoicemodel.hpp"
 #include "util/vlctick.hpp"
 
+Q_MOC_INCLUDE("util/renderer_manager.hpp")
 
 using vlc_player_locker = vlc_locker<vlc_player_t, vlc_player_Lock, vlc_player_Unlock>;
 
 using SharedVOutThread = vlc_shared_data_ptr_type(vout_thread_t, vout_Hold, vout_Release);
 using SharedAOut = vlc_shared_data_ptr_type(audio_output_t, aout_Hold, aout_Release);
 
+class RendererManager;
 class QSignalMapper;
 
 class IMEvent : public QEvent
@@ -75,7 +77,6 @@ class PlayerControllerPrivate;
 class PlayerController : public QObject
 {
     Q_OBJECT
-    friend class VLCMenuBar;
 
 public:
     enum ABLoopState {
@@ -191,6 +192,7 @@ public:
     Q_PROPERTY(VLCTick ABLoopA READ getABLoopA NOTIFY ABLoopAChanged FINAL)
     Q_PROPERTY(VLCTick ABLoopB READ getABLoopB NOTIFY ABLoopBChanged FINAL)
     Q_PROPERTY(bool recording READ isRecording WRITE setRecording NOTIFY recordingChanged FINAL)
+    Q_PROPERTY(RendererManager* rendererManager READ getRendererManager CONSTANT FINAL)
 
     // High resolution time fed by SMPTE Timer
     Q_PROPERTY(QString highResolutionTime READ highResolutionTime NOTIFY highResolutionTimeChanged FINAL)
@@ -266,7 +268,7 @@ public:
     SharedAOut getAout();
     int AddAssociatedMedia(enum es_format_category_e cat, const QString& uri, bool select, bool notify, bool check_ext);
 
-    void requestArtUpdate( input_item_t *p_item, bool b_forced );
+    void requestArtUpdate( input_item_t *p_item );
     void setArt( input_item_t *p_item, QString fileUrl );
     static const QString decodeArtURL( input_item_t *p_item );
     void updatePosition();
@@ -394,6 +396,9 @@ public slots:
     QString getAlbum() const;
     QUrl getArtwork() const;
 
+    //Renderer
+    RendererManager* getRendererManager();
+
 signals:
     //playback
     void playingStateChanged( PlayingState state );
@@ -477,13 +482,9 @@ signals:
     // Program Event changes
     void epgChanged();
 
-private slots:
-    void menusUpdateAudio( const QString& );
-
 private:
     Q_DECLARE_PRIVATE(PlayerController)
     QScopedPointer<PlayerControllerPrivate> d_ptr;
-    QSignalMapper *menusAudioMapper; //used by VLCMenuBar
 };
 
 #endif

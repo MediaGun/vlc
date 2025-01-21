@@ -33,10 +33,10 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlaylistItem.h"
-#import "playlist/VLCPlaylistModel.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayQueueItem.h"
+#import "playqueue/VLCPlayQueueModel.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "views/VLCTimeField.h"
 #import "views/VLCTrackingView.h"
@@ -53,7 +53,7 @@
 {
     NSImage *_alwaysMuteImage;
 
-    VLCPlaylistController *_playlistController;
+    VLCPlayQueueController *_playQueueController;
     VLCPlayerController *_playerController;
 }
 @end
@@ -63,8 +63,8 @@
 - (void)awakeFromNib
 {
     [super awakeFromNib];
-    _playlistController = VLCMain.sharedInstance.playlistController;
-    _playerController = _playlistController.playerController;
+    _playQueueController = VLCMain.sharedInstance.playQueueController;
+    _playerController = _playQueueController.playerController;
 
     NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter addObserver:self
@@ -114,18 +114,18 @@
 
 - (IBAction)stop:(id)sender
 {
-    [_playlistController stopPlayback];
+    [_playQueueController stopPlayback];
 }
 
 // dynamically created next / prev buttons
 - (IBAction)prev:(id)sender
 {
-    [_playlistController playPreviousItem];
+    [_playQueueController playPreviousItem];
 }
 
 - (IBAction)next:(id)sender
 {
-    [_playlistController playNextItem];
+    [_playQueueController playNextItem];
 }
 
 - (IBAction)volumeAction:(id)sender
@@ -139,7 +139,7 @@
 
 - (IBAction)artworkButtonAction:(id)sender
 {
-    [VLCMain.sharedInstance.libraryWindow reopenVideoView];
+    [VLCMain.sharedInstance.libraryWindow enableVideoPlaybackAppearance];
 }
 
 #pragma mark -
@@ -202,8 +202,8 @@
     // FIXME: re-add chapter navigation as needed
     bool b_chapters = false;
 
-    [self.prevButton setEnabled: (b_seekable || _playlistController.hasPreviousPlaylistItem || b_chapters)];
-    [self.nextButton setEnabled: (b_seekable || _playlistController.hasNextPlaylistItem || b_chapters)];
+    [self.prevButton setEnabled: (b_seekable || _playQueueController.hasPreviousPlayQueueItem || b_chapters)];
+    [self.nextButton setEnabled: (b_seekable || _playQueueController.hasNextPlayQueueItem || b_chapters)];
     [self updateCurrentItemDisplayControls:aNotification];
 }
 

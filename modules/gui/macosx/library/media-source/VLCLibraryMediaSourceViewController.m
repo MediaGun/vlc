@@ -29,6 +29,7 @@
 #import "extensions/NSString+Helpers.h"
 #import "extensions/NSWindow+VLCAdditions.h"
 
+#import "library/VLCLibraryCollectionView.h"
 #import "library/VLCLibraryCollectionViewFlowLayout.h"
 #import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryController.h"
@@ -94,8 +95,10 @@
 
 - (void)setupCollectionView
 {
+    self.collectionView.allowsMultipleSelection = YES;
+
     VLCLibraryCollectionViewFlowLayout * const mediaSourceCollectionViewLayout = VLCLibraryCollectionViewFlowLayout.standardLayout;
-    _collectionView.collectionViewLayout = mediaSourceCollectionViewLayout;
+    self.collectionView.collectionViewLayout = mediaSourceCollectionViewLayout;
     mediaSourceCollectionViewLayout.itemSize = VLCLibraryCollectionViewItem.defaultSize;
 }
 

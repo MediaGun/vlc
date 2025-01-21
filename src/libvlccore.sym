@@ -125,6 +125,7 @@ filter_chain_DeleteFilter
 filter_chain_GetFmtOut
 filter_chain_GetVideoCtxOut
 filter_chain_IsEmpty
+filter_chain_HasMouseFilter
 filter_chain_MouseFilter
 filter_chain_NewVideo
 filter_chain_Reset
@@ -830,11 +831,6 @@ vlc_es_id_GetCat
 vlc_es_id_GetStrId
 vlc_es_id_IsStrIdStable
 vlc_encoder_Destroy
-vlc_thumbnailer_Create
-vlc_thumbnailer_RequestByTime
-vlc_thumbnailer_RequestByPos
-vlc_thumbnailer_DestroyRequest
-vlc_thumbnailer_Release
 vlc_player_AddAssociatedMedia
 vlc_player_AddListener
 vlc_player_AddMetadataListener
@@ -926,6 +922,7 @@ vlc_player_SelectTitleIdx
 vlc_player_SelectTracksByStringIds
 vlc_player_SetAssociatedSubsFPS
 vlc_player_SetAtoBLoop
+vlc_player_GetAtoBLoop
 vlc_player_SetCategoryDelay
 vlc_player_SetCurrentMedia
 vlc_player_SetNextMedia
@@ -1001,11 +998,9 @@ vlc_playlist_Start
 vlc_playlist_Stop
 vlc_playlist_Pause
 vlc_playlist_Resume
-vlc_playlist_Preparse
 vlc_playlist_Export
 vlc_playlist_SetMediaStoppedAction
 vlc_intf_GetMainPlaylist
-libvlc_GetMainPreparser
 vlc_media_source_Hold
 vlc_media_source_Release
 vlc_media_source_provider_Get
@@ -1043,6 +1038,10 @@ vlc_input_attachment_New
 vlc_input_attachment_Hold
 vlc_preparser_New
 vlc_preparser_Push
+vlc_preparser_CheckThumbnailerFormat
+vlc_preparser_GetBestThumbnailerFormat
+vlc_preparser_GenerateThumbnail
+vlc_preparser_GenerateThumbnailToFiles
 vlc_preparser_Cancel
 vlc_preparser_Delete
-vlc_preparser_Deactivate
+vlc_preparser_SetTimeout

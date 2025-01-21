@@ -27,8 +27,8 @@
 #import "main/VLCMain.h"
 #import "panels/dialogs/VLCPopupPanelController.h"
 #import "panels/dialogs/VLCTextfieldPanelController.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlaylistModel.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayQueueModel.h"
 #import "views/VLCDragDropView.h"
 #import "windows/VLCOpenInputMetadata.h"
 
@@ -166,7 +166,7 @@ NSString *VLCConvertAndSaveProfileNamesKey = @"CASProfileNames";
     [_okButton setEnabled: NO];
 
     // setup drop view
-    [_dropBox enablePlaylistItems];
+    [_dropBox enablePlayQueueItems];
     [_dropBox setDropTarget:self];
 
     [self resetCustomizationSheetBasedOnProfile:[self.profileValueList firstObject]];
@@ -316,9 +316,9 @@ NSString *VLCConvertAndSaveProfileNamesKey = @"CASProfileNames";
     }
     inputMetaItem.playbackOptions = options;
 
-    VLCPlaylistController *playlistController = VLCMain.sharedInstance.playlistController;
-    [playlistController addPlaylistItems:@[inputMetaItem]];
-    [playlistController playItemAtIndex:(playlistController.playlistModel.numberOfPlaylistItems -1)];
+    VLCPlayQueueController * const playQueueController = VLCMain.sharedInstance.playQueueController;
+    [playQueueController addPlayQueueItems:@[inputMetaItem]];
+    [playQueueController playItemAtIndex:(playQueueController.playQueueModel.numberOfPlayQueueItems -1)];
 
     [self.window performClose:sender];
 }

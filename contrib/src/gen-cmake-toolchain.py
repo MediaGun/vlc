@@ -37,21 +37,18 @@ _add_environ_val('CMAKE_CXX_COMPILER_RANLIB', 'RANLIB')
 _add_environ_val('CMAKE_AR', 'AR')
 _add_environ_val('CMAKE_C_COMPILER_AR', 'AR')
 _add_environ_val('CMAKE_CXX_COMPILER_AR', 'AR')
+_add_environ_val('CMAKE_LINKER', 'LD')
 
 _add_environ_val('CMAKE_OSX_SYSROOT', 'OSX_SYSROOT')
-
-# we should not have to set this
-_add_environ_val('_CMAKE_TOOLCHAIN_PREFIX', 'TOOLCHAIN_PREFIX')
 
 _add_environ_val('CMAKE_C_COMPILER', 'CC')
 _add_environ_val('CMAKE_CXX_COMPILER', 'CXX')
 
-_add_environ_val('CMAKE_C_SYSROOT_FLAG', 'C_SYSROOT_FLAG')
-_add_environ_val('CMAKE_CXX_SYSROOT_FLAG', 'CXX_SYSROOT_FLAG')
-
 _add_environ_val('CMAKE_ANDROID_NDK', 'ANDROID_NDK')
 _add_environ_val('CMAKE_ANDROID_ARCH_ABI', 'ANDROID_ABI')
 _add_environ_val('CMAKE_ANDROID_API', 'ANDROID_API')
+
+_add_environ_val('PKG_CONFIG_EXECUTABLE', 'PKG_CONFIG')
 
 _add_environ_val('CMAKE_FIND_ROOT_PATH', 'PREFIX')
 

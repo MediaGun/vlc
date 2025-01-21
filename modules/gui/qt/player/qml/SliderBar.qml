@@ -19,8 +19,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Templates as T
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
-
 
 import VLC.Player
 import VLC.Widgets as Widgets
@@ -83,10 +81,13 @@ T.ProgressBar {
         text: {
             let _text
 
+            const length = Player.length
             if (hoverHandler.hovered)
-                _text = Player.length.scale(pos.x / control.width).formatHMS()
+                _text = length.scale(pos.x / control.width)
             else
-                _text = Player.time.formatHMS()
+                _text = Player.time
+
+            _text = _text.formatHMS(length.isSubSecond() ? length.SubSecondFormattedAsMS : 0)
 
             if (Player.hasChapters)
                 _text += " - " + Player.chapters.getNameAtPosition(control._tooltipPosition)
@@ -248,6 +249,8 @@ T.ProgressBar {
             dragThreshold: 0
             grabPermissions: PointerHandler.CanTakeOverFromAnything
 
+            property bool filterEvents: false
+
             function moveControl() {
                 fsm.moveControl(dragHandler.centroid.position.x / control.width,
                                 dragHandler.centroid.modifiers === Qt.ShiftModifier)
@@ -255,6 +258,7 @@ T.ProgressBar {
 
             onActiveChanged: {
                 if (active) {
+                    filterEvents = false
                     fsm.pressControl(centroid.position.x / control.width, centroid.modifiers === Qt.ShiftModifier)
                 } else {
                     fsm.releaseControl( centroid.position.x / control.width, centroid.modifiers === Qt.ShiftModifier)
@@ -263,7 +267,12 @@ T.ProgressBar {
 
             onCentroidChanged: {
                 // FIXME: Qt 6.5 use xAxis.onActiveValueChanged in the DragHandler
-                Qt.callLater(dragHandler.moveControl)
+                if (filterEvents) {
+                    Qt.callLater(dragHandler.moveControl)
+                } else {
+                    dragHandler.moveControl()
+                    filterEvents = true
+                }
             }
         }
     }

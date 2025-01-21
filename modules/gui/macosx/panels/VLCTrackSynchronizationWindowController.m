@@ -26,8 +26,8 @@
 #import "extensions/NSString+Helpers.h"
 #import "coreinteraction/VLCVideoFilterHelper.h"
 #import "main/VLCMain.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 #import "windows/video/VLCVideoOutputProvider.h"
 
 #define SUBSDELAY_CFG_MODE                     "subsdelay-mode"
@@ -57,7 +57,7 @@
 
 - (void)windowDidLoad
 {
-    _playerController = VLCMain.sharedInstance.playlistController.playerController;
+    _playerController = VLCMain.sharedInstance.playQueueController.playerController;
     NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter addObserver:self
                            selector:@selector(updateValues:)

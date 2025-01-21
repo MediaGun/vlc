@@ -39,6 +39,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, readonly) const CGFloat mediumSpacing;
 @property (class, readonly) const CGFloat smallSpacing;
 
+@property (class, readonly) const CGFloat cornerRadius;
+
+@property (class, readonly) const CGFloat borderThickness;
+
 @property (class, readonly) const CGFloat scrollBarSmallSideSize;
 
 @property (class, readonly) const CGFloat largeTableViewRowHeight;
@@ -68,8 +72,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (class, readonly) const CGFloat librarySplitViewSelectionViewDefaultWidth;
 @property (class, readonly) const CGFloat librarySplitViewMainViewMinimumWidth;
+@property (class, readonly) const CGFloat libraryWindowNavSidebarMinWidth;
 @property (class, readonly) const CGFloat libraryWindowNavSidebarMaxWidth;
-@property (class, readonly) const CGFloat libraryWindowPlaylistSidebarMaxWidth;
+@property (class, readonly) const CGFloat libraryWindowPlayQueueSidebarMaxWidth;
+
+@property (class, readonly) const CGFloat largePlaybackControlButtonSize;
+@property (class, readonly) const CGFloat mediumPlaybackControlButtonSize;
+@property (class, readonly) const CGFloat smallPlaybackControlButtonSize;
 
 @property (class, readonly) const CGFloat sliderTickThickness;
 

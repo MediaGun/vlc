@@ -125,6 +125,7 @@ public:
     Q_INVOKABLE void goTo(uint index, bool startPlaying = false);
 
     Q_INVOKABLE void append(const QVariantList&, bool startPlaying = false);
+    Q_INVOKABLE void append(const QVariant&, bool startPlaying = false);
     Q_INVOKABLE void insert(unsigned index, const QVariantList&, bool startPlaying = false);
 
     void append(const QVector<Media> &, bool startPlaying = false);
@@ -140,6 +141,8 @@ public:
     Q_INVOKABLE void sort(void);
 
     Q_INVOKABLE void explore(const PlaylistItem& pItem);
+
+    int serialize(const QString& fileName);
 
 public:
     PlaylistController(vlc_playlist_t *playlist, QObject *parent = nullptr);

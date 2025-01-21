@@ -72,6 +72,7 @@ extern "C" char **environ;
 #ifdef _WIN32
 # include "maininterface/mainctx_win32.hpp"
 #include "maininterface/win32windoweffects_module.hpp"
+#include "util/csdmenu_win32.h"
 #else
 # include "maininterface/mainctx.hpp"   /* MainCtx creation */
 #endif
@@ -83,7 +84,10 @@ extern "C" char **environ;
 #include "maininterface/compositor.hpp"
 #include "util/vlctick.hpp"
 #include "util/shared_input_item.hpp"
+#include "util/model_recovery_agent.hpp"
+#include "util/vlcqtmessagehandler.hpp"
 #include "network/networkmediamodel.hpp"
+#include "network/devicesourceprovider.hpp"
 #include "playlist/playlist_common.hpp"
 #include "playlist/playlist_item.hpp"
 #include "dialogs/dialogs/dialogmodel.hpp"
@@ -284,9 +288,7 @@ static const char *const psz_raise_list_text[] =
 static const char *const compositor_vlc[] = {
     "auto",
 #ifdef _WIN32
-#ifdef HAVE_DCOMP_H
     "dcomp",
-#endif
     "platform",
     "win7",
 #endif
@@ -301,9 +303,7 @@ static const char *const compositor_vlc[] = {
 static const char *const compositor_user[] = {
     N_("Automatic"),
 #ifdef _WIN32
-#ifdef HAVE_DCOMP_H
     "Direct Composition",
-#endif
     "Platform Composition",
     "Windows 7",
 #endif
@@ -468,6 +468,11 @@ vlc_module_begin ()
         set_description( "Provides window effects on Windows." )
         set_capability( "qtwindoweffects", 10 )
         set_callback( QtWin32WindowEffectsOpen )
+    add_submodule ()
+        add_shortcut( "QtWin32CSDMenu" )
+        set_description( "Provides csd menu on Windows." )
+        set_capability( "qtcsdmenu", 10 )
+        set_callback( QtWin32CSDMenuOpen )
 #endif
     add_submodule()
         set_capability("qt theme provider", 1)
@@ -756,36 +761,7 @@ static void *Thread( void *obj )
 {
     qt_intf_t *p_intf = (qt_intf_t *)obj;
 
-    {
-        QString filterRules;
-
-        const int verbosity = var_InheritInteger(p_intf, "verbose");
-        if (verbosity < VLC_MSG_DBG)
-        {
-            filterRules += QStringLiteral("*.debug=false\n");
-            if (verbosity < VLC_MSG_WARN)
-            {
-                filterRules += QStringLiteral("*.warning=false\n");
-                if (verbosity < VLC_MSG_ERR)
-                {
-                    filterRules += QStringLiteral("*.critical=false\n");
-                    if (verbosity < VLC_MSG_INFO)
-                    {
-                        filterRules += QStringLiteral("*.info=false\n");
-                    }
-                }
-            }
-        }
-
-        if (var_InheritBool(p_intf, "qt-verbose"))
-        {
-            filterRules += QStringLiteral("*=true\n" /* Qt by default does not enable some info and error messages */
-                                          "qt.*.debug=false\n" /* Qt's own debug messages are way too much verbose */
-                                          "qt.widgets.painting=false\n" /* Not necessary */);
-        }
-
-        QLoggingCategory::setFilterRules(filterRules);
-    }
+    auto vlcQtMessageHandler = VlcQtMessageHandlerRegisterer{VLC_OBJECT(p_intf)};
 
     char vlc_name[] = "vlc"; /* for WM_CLASS */
     char *argv[3] = { nullptr };
@@ -852,10 +828,20 @@ static void *Thread( void *obj )
 #endif
     Q_INIT_RESOURCE( shaders );
 
-    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects );
-    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects_private );
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    // NOTE:  Qt declarative 6.8.0 initializes scenegraph_shaders,
+    //        but not scenegraph_curve_shaders. Curve shaders
+    //        are used in particular cases even when curve
+    //        rendering is not explicitly enabled, this was
+    //        observed with underlined text on Windows which lead
+    //        access violation in the scene graph thread.
+    Q_INIT_RESOURCE( scenegraph_curve_shaders );
+#endif
+
     Q_INIT_RESOURCE( qmake_QtQml );
+#if QT_VERSION < QT_VERSION_CHECK(6, 8, 0)
     Q_INIT_RESOURCE( qmake_QtQml_Base );
+#endif
     Q_INIT_RESOURCE( qmake_QtQml_Models );
     Q_INIT_RESOURCE( qmake_QtQml_WorkerScript );
     Q_INIT_RESOURCE( qmake_QtQuick );
@@ -866,6 +852,42 @@ static void *Thread( void *obj )
     Q_INIT_RESOURCE( qmake_QtQuick_Controls_Basic_impl );
     Q_INIT_RESOURCE( qmake_QtQuick_Layouts );
     Q_INIT_RESOURCE( qmake_QtQuick_Templates );
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // Qt Quick Effects:
+    Q_INIT_RESOURCE( qmake_QtQuick_Effects );
+    Q_INIT_RESOURCE( effects );
+    Q_INIT_RESOURCE( multieffect_shaders1 );
+    Q_INIT_RESOURCE( multieffect_shaders2 );
+    Q_INIT_RESOURCE( multieffect_shaders3 );
+    Q_INIT_RESOURCE( multieffect_shaders4 );
+    Q_INIT_RESOURCE( multieffect_shaders5 );
+    Q_INIT_RESOURCE( multieffect_shaders6 );
+    Q_INIT_RESOURCE( multieffect_shaders7 );
+    Q_INIT_RESOURCE( multieffect_shaders8 );
+    Q_INIT_RESOURCE( multieffect_shaders9 );
+    Q_INIT_RESOURCE( multieffect_shaders10 );
+    Q_INIT_RESOURCE( multieffect_shaders11 );
+    Q_INIT_RESOURCE( multieffect_shaders12 );
+    Q_INIT_RESOURCE( multieffect_shaders13 );
+    Q_INIT_RESOURCE( multieffect_shaders14 );
+    Q_INIT_RESOURCE( multieffect_shaders15 );
+    Q_INIT_RESOURCE( multieffect_shaders16 );
+    Q_INIT_RESOURCE( multieffect_shaders17 );
+    Q_INIT_RESOURCE( multieffect_shaders18 );
+    Q_INIT_RESOURCE( multieffect_shaders19 );
+    Q_INIT_RESOURCE( multieffect_shaders20 );
+    Q_INIT_RESOURCE( multieffect_shaders21 );
+    Q_INIT_RESOURCE( multieffect_shaders22 );
+    Q_INIT_RESOURCE( multieffect_shaders23 );
+    Q_INIT_RESOURCE( multieffect_shaders24 );
+    Q_INIT_RESOURCE( multieffect_shaders25 );
+#else
+    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects );
+    Q_INIT_RESOURCE( qmake_Qt5Compat_GraphicalEffects_private );
+    Q_INIT_RESOURCE( qtgraphicaleffectsplugin_raw_qml_0 );
+    Q_INIT_RESOURCE( qtgraphicaleffectsprivate_raw_qml_0 );
+    Q_INIT_RESOURCE( qtgraphicaleffectsshaders );
+#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     Q_INIT_RESOURCE( QuickControls2Basic_raw_qml_0 );
@@ -875,9 +897,6 @@ static void *Thread( void *obj )
     Q_INIT_RESOURCE( qtquickcontrols2basicstyleplugin );
 #endif
 
-    Q_INIT_RESOURCE( qtgraphicaleffectsplugin_raw_qml_0 );
-    Q_INIT_RESOURCE( qtgraphicaleffectsprivate_raw_qml_0 );
-    Q_INIT_RESOURCE( qtgraphicaleffectsshaders );
     // Q_INIT_RESOURCE( qtquickshapes_shaders );
 #endif
 
@@ -982,11 +1001,21 @@ static void *Thread( void *obj )
     app.setDesktopFileName( PACKAGE );
 
     DialogErrorModel::getInstance( p_intf );
+    VLCDialogModel::getInstance( p_intf );
 
     /* Initialize the Dialog Provider and the Main Input Manager */
     DialogsProvider::getInstance( p_intf );
     p_intf->p_mainPlayerController = new PlayerController(p_intf);
     p_intf->p_mainPlaylistController = new vlc::playlist::PlaylistController(p_intf->p_playlist);
+
+    std::unique_ptr<ModelRecoveryAgent> playlistModelRecoveryAgent;
+    QMetaObject::invokeMethod(&app, [&playlistModelRecoveryAgent, p_intf]() {
+        try {
+            playlistModelRecoveryAgent = std::make_unique<ModelRecoveryAgent>(p_intf->mainSettings,
+                                                                              QStringLiteral("Playlist"),
+                                                                              p_intf->p_mainPlaylistController);
+        } catch (...){ }
+    }, Qt::QueuedConnection);
 
     /* Create the normal interface in non-DP mode */
 #ifdef _WIN32
@@ -1067,6 +1096,8 @@ static void *Thread( void *obj )
     app.exec();
 
     msg_Dbg( p_intf, "QApp exec() finished" );
+
+    playlistModelRecoveryAgent.reset();
     return ThreadCleanup( p_intf, CLEANUP_APP_TERMINATED );
 }
 
@@ -1086,22 +1117,9 @@ static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason )
     if ( p_intf->p_compositor )
     {
         if (cleanupReason == CLEANUP_INTF_CLOSED)
-        {
             p_intf->p_compositor->unloadGUI();
-            delete p_intf->p_mi;
-            p_intf->p_mi = nullptr;
-        }
         else // CLEANUP_APP_TERMINATED
-        {
             p_intf->p_compositor->destroyMainInterface();
-            delete p_intf->p_mi;
-            p_intf->p_mi = nullptr;
-
-            delete p_intf->mainSettings;
-            p_intf->mainSettings = nullptr;
-
-            p_intf->p_compositor.reset();
-        }
     }
 
     /* */
@@ -1114,8 +1132,23 @@ static void *ThreadCleanup( qt_intf_t *p_intf, CleanupReason cleanupReason )
        Settings must be destroyed after that.
      */
     DialogsProvider::killInstance();
-
+    VLCDialogModel::killInstance();
     DialogErrorModel::killInstance();
+    MediaSourceCache::killInstance();
+
+    //destroy MainCtx, Compositor shouldn't not use MainCtx after `unloadGUI`
+    if (p_intf->p_mi) {
+        delete p_intf->p_mi;
+        p_intf->p_mi = nullptr;
+    }
+
+    if ( p_intf->p_compositor &&  cleanupReason == CLEANUP_APP_TERMINATED)
+    {
+        p_intf->p_compositor.reset();
+
+        delete p_intf->mainSettings;
+        p_intf->mainSettings = nullptr;
+    }
 
     /* Destroy the main playlist controller */
     if (p_intf->p_mainPlaylistController)

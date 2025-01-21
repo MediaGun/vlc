@@ -22,13 +22,22 @@
 
 #import "VLCLibraryWindowChaptersSidebarViewController.h"
 
+#import "extensions/NSString+Helpers.h"
 #import "library/VLCLibraryDataTypes.h"
 #import "main/VLCMain.h"
-#import "playlist/VLCPlayerChapter.h"
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayerChapter.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+
+@interface VLCLibraryWindowChaptersSidebarViewController ()
+
+@property (readwrite) NSUInteger internalItemCount;
+
+@end
 
 @implementation VLCLibraryWindowChaptersSidebarViewController
+
+@synthesize counterLabel = _counterLabel;
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow
 {
@@ -57,12 +66,33 @@
                  options:nil];
 
     [self updateChapterList];
+    [self updateSelectedChapter];
     
     NSNotificationCenter * const notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter addObserver:self
                            selector:@selector(titleListChanged:)
                                name:VLCPlayerTitleListChanged
                              object:nil];
+    [notificationCenter addObserver:self
+                           selector:@selector(chapterSelectionChanged:)
+                               name:VLCPlayerChapterSelectionChanged
+                             object:nil];
+}
+
+- (NSString *)title
+{
+    return _NS("Chapters");
+}
+
+- (BOOL)supportsItemCount
+{
+    return YES;
+}
+
+- (void)setCounterLabel:(NSTextField *)counterLabel
+{
+    _counterLabel = counterLabel;
+    self.counterLabel.stringValue = [NSString stringWithFormat:@"%lu", self.internalItemCount];
 }
 
 - (void)titleListChanged:(NSNotification *)notification
@@ -73,7 +103,7 @@
 - (void)updateChapterList
 {
     VLCPlayerController * const playerController =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
 
     const struct vlc_player_title * const title = playerController.selectedTitle;
     if (title == NULL) {
@@ -83,6 +113,7 @@
     const struct vlc_player_chapter * const pp_chapters = title->chapters;
     const size_t chapterCount = title->chapter_count;
 
+    self.internalItemCount = chapterCount;
     NSMutableArray * const chapters = [NSMutableArray arrayWithCapacity:chapterCount];
     for (size_t i = 0; i < chapterCount; i++) {
         struct vlc_player_chapter p_chapter = pp_chapters[i];
@@ -90,6 +121,31 @@
         [chapters addObject:chapter];
     }
     self.chaptersArrayController.content = chapters.copy;
+    self.counterLabel.stringValue = [NSString stringWithFormat:@"%lu", chapterCount];
+}
+
+- (IBAction)tableViewAction:(id)sender
+{
+    VLCPlayerChapter * const selectedChapter =
+        self.chaptersArrayController.selectedObjects.firstObject;
+    if (selectedChapter == nil) {
+        return;
+    }
+
+    [VLCMain.sharedInstance.playQueueController.playerController setTimeFast:selectedChapter.time];
+}
+
+- (void)chapterSelectionChanged:(NSNotification *)notification
+{
+    [self updateSelectedChapter];
+}
+
+- (void)updateSelectedChapter
+{
+    const NSUInteger selectedChapterIndex =
+        VLCMain.sharedInstance.playQueueController.playerController.selectedChapterIndex;
+    NSIndexSet * const indexSet = [NSIndexSet indexSetWithIndex:selectedChapterIndex];
+    [self.tableView selectRowIndexes:indexSet byExtendingSelection:NO];
 }
 
 # pragma mark - NSTableView delegation
@@ -120,17 +176,6 @@
 
     NSAssert(NO, @"Provided cell view for chapters table view should be valid!");
     return nil;
-}
-
-- (void)tableViewSelectionDidChange:(NSNotification *)notification
-{
-    VLCPlayerChapter * const selectedChapter = 
-        self.chaptersArrayController.selectedObjects.firstObject;
-    if (selectedChapter == nil) {
-        return;
-    }
-
-    [VLCMain.sharedInstance.playlistController.playerController setTimeFast:selectedChapter.time];
 }
 
 @end

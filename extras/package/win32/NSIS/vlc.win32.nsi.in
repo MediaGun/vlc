@@ -27,7 +27,6 @@ ManifestDPIAware true
 Unicode true
 
 !define INSTALL_ACTIVEX
-!define INSTALL_MOZILLA
 
 Var ReinstallType
 Var ReinstallUninstallBtn
@@ -539,9 +538,6 @@ ${MementoSectionDone}
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC01} "$(Desc_Section01)"
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC02a} "$(Desc_Section02a)"
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC02b} "$(Desc_Section02b)"
-!ifdef INSTALL_MOZILLA
-  !insertmacro MUI_DESCRIPTION_TEXT ${SEC03} "$(Desc_Section03)"
-!endif
 !ifdef INSTALL_ACTIVEX
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC04} "$(Desc_Section04)"
 !endif
@@ -563,12 +559,7 @@ ${MementoSectionRestore}
 @HAVE_WIN64_TRUE@    MessageBox MB_OK|MB_ICONSTOP "This version of VLC only runs on 64-bit operating systems.$\nPlease get the 32-bit version and try again."
 @HAVE_WIN64_TRUE@    Quit
 @HAVE_WIN64_TRUE@ ${EndUnless}
-${If} ${AtLeastWinXP}
-    ${If} ${IsWinXP}
-    ${AndIf} ${AtMostServicePack} 1
-        Goto WinTooOld
-    ${Endif}
-${Else}
+${IfNot} ${AtLeastWin7}
     Goto WinTooOld
 ${Endif}
 
@@ -578,7 +569,7 @@ StrCpy $INSTDIR "$@PROGRAMFILES@\VideoLAN\VLC"
 Goto WinOk
 
 WinTooOld:
-    MessageBox MB_OK|MB_ICONSTOP "This version of VLC only runs on Windows XP SP2 and newer."
+    MessageBox MB_OK|MB_ICONSTOP "This version of VLC only runs on Windows 7 and newer."
     Quit
 
 WinOk:

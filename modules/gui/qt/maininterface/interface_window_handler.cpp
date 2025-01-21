@@ -58,12 +58,12 @@ InterfaceWindowHandler::InterfaceWindowHandler(qt_intf_t *_p_intf, MainCtx* main
     m_window->setIcon( QApplication::windowIcon() );
     m_window->setOpacity( var_InheritFloat( p_intf, "qt-opacity" ) );
 
+    QVLCTools::restoreWindowPosition( getSettings(), m_window, QSize(600, 420) );
+
     // this needs to be called asynchronously
     // otherwise QQuickWidget won't initialize properly
     QMetaObject::invokeMethod(this, [this]()
     {
-        QVLCTools::restoreWindowPosition( getSettings(), m_window, QSize(600, 420) );
-
         WindowStateHolder::holdOnTop( m_window,  WindowStateHolder::INTERFACE, m_mainCtx->isInterfaceAlwaysOnTop() );
         WindowStateHolder::holdFullscreen( m_window,  WindowStateHolder::INTERFACE, m_window->visibility() == QWindow::FullScreen );
 
@@ -244,18 +244,9 @@ bool InterfaceWindowHandler::eventFilter(QObject*, QEvent* event)
             }
         }
 
-        bool ret = m_mainCtx->onWindowClose(m_window);
-        if (ret)
-        {
-            /* Accept session quit. Otherwise we break the desktop mamager. */
-            event->accept();
-            return false;
-        }
-        else
-        {
-            event->ignore();
-            return true;
-        }
+        m_mainCtx->onWindowClose(m_window);
+        event->ignore();
+        return true;
     }
     default:
         break;

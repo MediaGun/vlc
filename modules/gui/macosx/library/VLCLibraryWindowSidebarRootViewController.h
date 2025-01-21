@@ -22,9 +22,11 @@
 
 #import <Cocoa/Cocoa.h>
 
+@class VLCRoundedCornerTextField;
 @class VLCLibraryWindow;
 @class VLCLibraryWindowChaptersSidebarViewController;
-@class VLCLibraryWindowPlaylistSidebarViewController;
+@class VLCLibraryWindowPlayQueueSidebarViewController;
+@class VLCLibraryWindowTitlesSidebarViewController;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -36,12 +38,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (readwrite, weak) IBOutlet NSSegmentedControl *viewSelector;
 @property (readwrite, weak) IBOutlet NSView *targetView;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *topInternalConstraint;
+
+// Retain strongly as when showing/hiding the view selector this can get deallocated otherwise
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *topInternalConstraint;
 
 @property (readwrite, nonatomic) BOOL mainVideoModeEnabled;
 
-@property (readonly) VLCLibraryWindowPlaylistSidebarViewController *playlistSidebarViewController;
+@property (readonly) VLCRoundedCornerTextField *counterLabel;
+@property (readonly) NSLayoutConstraint *counterLabelInHeaderConstraint;
+@property (readonly) NSLayoutConstraint *counterLabelInChildViewConstraint;
+@property (readonly) NSLayoutConstraint *playQueueHeaderTopConstraint;
+@property (readonly) NSTextField *playQueueHeaderLabel;
+
+@property (readonly) VLCLibraryWindowPlayQueueSidebarViewController *playQueueSidebarViewController;
 @property (readonly) VLCLibraryWindowChaptersSidebarViewController *chaptersSidebarViewController;
+@property (readonly) VLCLibraryWindowTitlesSidebarViewController *titlesSidebarViewController;
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow;
 

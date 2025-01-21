@@ -107,7 +107,6 @@ pluginsinclude_HEADERS.h = \
 	../include/vlc_subpicture.h \
 	../include/vlc_text_style.h \
 	../include/vlc_threads.h \
-	../include/vlc_thumbnailer.h \
 	../include/vlc_tick.h \
 	../include/vlc_timestamp_helper.h \
 	../include/vlc_tls.h \
@@ -327,7 +326,6 @@ libvlccore_la_SOURCES = \
 	input/stream_filter.c \
 	input/stream_memory.c \
 	input/subtitles.c \
-	input/thumbnailer.c \
 	input/var.c \
 	audio_output/aout_internal.h \
 	audio_output/common.c \

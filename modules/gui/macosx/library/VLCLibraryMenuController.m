@@ -34,7 +34,7 @@
 
 #import "panels/VLCInformationWindowController.h"
 
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
 #import <vlc_input.h>
 #import <vlc_url.h>
@@ -66,7 +66,7 @@
     NSMenuItem *playItem = [[NSMenuItem alloc] initWithTitle:_NS("Play") action:@selector(play:) keyEquivalent:@""];
     playItem.target = self;
 
-    NSMenuItem *appendItem = [[NSMenuItem alloc] initWithTitle:_NS("Append to Playlist") action:@selector(appendToPlaylist:) keyEquivalent:@""];
+    NSMenuItem *appendItem = [[NSMenuItem alloc] initWithTitle:_NS("Append to Play Queue") action:@selector(appendToPlayQueue:) keyEquivalent:@""];
     appendItem.target = self;
 
     NSMenuItem *addItem = [[NSMenuItem alloc] initWithTitle:_NS("Add Media Folder...") action:@selector(addMedia:) keyEquivalent:@""];
@@ -160,11 +160,11 @@
 
 #pragma mark - actions
 
-- (void)addInputItemToPlaylist:(VLCInputItem*)inputItem
-               playImmediately:(BOOL)playImmediately
+- (void)addInputItemToPlayQueue:(VLCInputItem*)inputItem
+                playImmediately:(BOOL)playImmediately
 {
     NSParameterAssert(inputItem);
-    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItems.firstObject.vlcInputItem
+    [VLCMain.sharedInstance.playQueueController addInputItem:inputItem.vlcInputItem
                                                  atPosition:-1
                                               startPlayback:playImmediately];
 }
@@ -181,19 +181,19 @@
         }
 
     } else if (self.representedInputItems != nil && self.representedInputItems.count > 0) {
-        [self addInputItemToPlaylist:self.representedInputItems.firstObject
-                     playImmediately:YES];
+        [self addInputItemToPlayQueue:self.representedInputItems.firstObject
+                      playImmediately:YES];
 
         if (self.representedInputItems.count > 1) {
             for (NSUInteger i = 1; i < self.representedInputItems.count; i++) {
-                [self addInputItemToPlaylist:self.representedInputItems[i]
-                             playImmediately:NO];
+                [self addInputItemToPlayQueue:self.representedInputItems[i]
+                              playImmediately:NO];
             }
         }
     }
 }
 
-- (void)appendToPlaylist:(id)sender
+- (void)appendToPlayQueue:(id)sender
 {
     if (self.representedItems != nil && self.representedItems.count > 0) {
         for (VLCLibraryRepresentedItem * const item in self.representedItems) {
@@ -201,7 +201,7 @@
         }
     } else if (self.representedInputItems != nil && self.representedInputItems.count > 0) {
         for (VLCInputItem * const inputItem in self.representedInputItems) {
-            [self addInputItemToPlaylist:inputItem playImmediately:NO];
+            [self addInputItemToPlayQueue:inputItem playImmediately:NO];
         }
     }
 }

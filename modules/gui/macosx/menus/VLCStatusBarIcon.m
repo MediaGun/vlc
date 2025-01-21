@@ -25,8 +25,8 @@
 
 #import "extensions/NSString+Helpers.h"
 #import "main/VLCMain.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 #import "library/VLCInputItem.h"
 #import "windows/VLCDetachedAudioWindow.h"
 
@@ -279,12 +279,12 @@
 
 - (void)hasPreviousChanged:(NSNotification *)aNotification
 {
-    backwardsButton.enabled = VLCMain.sharedInstance.playlistController.hasPreviousPlaylistItem;
+    backwardsButton.enabled = VLCMain.sharedInstance.playQueueController.hasPreviousPlayQueueItem;
 }
 
 - (void)hasNextChanged:(NSNotification *)aNotification
 {
-    forwardButton.enabled = VLCMain.sharedInstance.playlistController.hasNextPlaylistItem;
+    forwardButton.enabled = VLCMain.sharedInstance.playQueueController.hasNextPlayQueueItem;
 }
 
 /* Updates the Metadata for the currently
@@ -373,7 +373,7 @@
 - (void)updateMenuItemRandom
 {
     // Get current random status
-    [randomButton setState:VLCMain.sharedInstance.playlistController.playbackOrder == VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM ? NSOnState : NSOffState];
+    [randomButton setState:VLCMain.sharedInstance.playQueueController.playbackOrder == VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM ? NSOnState : NSOffState];
 }
 
 #pragma mark -
@@ -449,35 +449,35 @@
 // Action: Toggle Play / Pause
 - (IBAction)statusBarIconTogglePlayPause:(id)sender
 {
-    VLCPlaylistController *playlistController = VLCMain.sharedInstance.playlistController;
-    VLCPlayerController *playerController = playlistController.playerController;
+    VLCPlayQueueController * const playQueueController = VLCMain.sharedInstance.playQueueController;
+    VLCPlayerController * const playerController = playQueueController.playerController;
     enum vlc_player_state playerState = playerController.playerState;
     if (playerState != VLC_PLAYER_STATE_PAUSED) {
         [playerController pause];
     } else if (playerState == VLC_PLAYER_STATE_PAUSED) {
         [playerController resume];
     } else {
-        [playlistController startPlaylist];
+        [playQueueController startPlayQueue];
     }
 }
 
 // Action: Go to next track
 - (IBAction)statusBarIconNext:(id)sender
 {
-    [VLCMain.sharedInstance.playlistController playNextItem];
+    [VLCMain.sharedInstance.playQueueController playNextItem];
 }
 
 // Action: Go to previous track
 - (IBAction)statusBarIconPrevious:(id)sender
 {
-    [VLCMain.sharedInstance.playlistController playPreviousItem];
+    [VLCMain.sharedInstance.playQueueController playPreviousItem];
 }
 
 // Action: Toggle random playback (shuffle)
 - (IBAction)statusBarIconToggleRandom:(id)sender
 {
-    VLCPlaylistController *playlistController = VLCMain.sharedInstance.playlistController;
-    playlistController.playbackOrder = (playlistController.playbackOrder == VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM) ? VLC_PLAYLIST_PLAYBACK_ORDER_NORMAL : VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM;
+    VLCPlayQueueController * const playQueueController = VLCMain.sharedInstance.playQueueController;
+    playQueueController.playbackOrder = (playQueueController.playbackOrder == VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM) ? VLC_PLAYLIST_PLAYBACK_ORDER_NORMAL : VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM;
 }
 
 // Action: Toggle between elapsed and remaining time

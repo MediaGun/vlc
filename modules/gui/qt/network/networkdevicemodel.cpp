@@ -20,7 +20,6 @@
 #include <QTimer>
 
 #include "maininterface/mainctx.hpp"
-#include "util/workerthreadset.hpp"
 
 #include "devicesourceprovider.hpp"
 #include "networkmediamodel.hpp"
@@ -29,10 +28,125 @@
 #include "playlist/playlist_controller.hpp"
 
 #include "util/shared_input_item.hpp"
+#include "vlcmediasourcewrapper.hpp"
+
 #include "util/locallistbasemodel.hpp"
+
+#include "vlcmediasourcewrapper.hpp"
 
 namespace
 {
+
+//represents an entry of the model
+struct NetworkDeviceItem : public NetworkBaseItem
+{
+    NetworkDeviceItem(
+        const SharedInputItem& item,
+        const SharedMediaSourceModel& source
+        )
+    {
+        name = qfu(item->psz_name);
+        mainMrl = QUrl::fromEncoded(item->psz_uri);
+        protocol = mainMrl.scheme();
+        type = static_cast<NetworkDeviceModel::ItemType>(item->i_type);
+
+        id = qHash(item);
+        mrls.push_back(Source{mainMrl, item, source});
+
+        char* artworkUrl = input_item_GetArtworkURL(item.get());
+        if (artworkUrl)
+        {
+            artwork = QString::fromUtf8(artworkUrl);
+            free(artworkUrl);
+        }
+    }
+
+    QString sourceDesciption() const {
+        if (mrls.empty())
+            return {};
+        return mrls.front().source->getDescription();
+    }
+
+    NetworkTreeItem makeTreeItem() const
+    {
+        if (unlikely(mrls.empty()))
+            return {};
+        const Source& src = mrls.front();
+        return NetworkTreeItem(src.source, src.item);
+    }
+
+    SharedInputItem getInputItem() const
+    {
+        if (unlikely(mrls.empty()))
+            return {};
+        const Source& src = mrls.front();
+        return src.item;
+    }
+
+    void addSource(const SharedInputItem& item,
+                   const SharedMediaSourceModel& source)
+    {
+        mrls.emplace_back(Source{
+            QUrl::fromEncoded(item->psz_uri),
+            item,
+            source
+        });
+    }
+
+    /**
+     * @brief addRemoveSource
+     * @param item
+     * @param source
+     * @return false when no sources left
+     */
+    bool removeSource(const SharedInputItem& item,
+                   const SharedMediaSourceModel&)
+    {
+        mrls.erase(std::remove_if(
+            mrls.begin(), mrls.end(),
+            [item](const Source& source){
+                return source.item == item;
+            })
+        );
+
+        if (mrls.empty())
+        {
+            mainMrl = QUrl{};
+            return false;
+        }
+        else
+        {
+            mainMrl = mrls.front().mrl;
+            return true;
+        }
+    }
+
+
+    struct Source {
+        QUrl mrl;
+        SharedInputItem item;
+        SharedMediaSourceModel source;
+    };
+
+    size_t id;
+    std::vector<Source> mrls;
+};
+
+using NetworkDeviceItemPtr =std::shared_ptr<NetworkDeviceItem>;
+
+
+static inline bool operator == (const NetworkDeviceItemPtr& a, const NetworkDeviceItemPtr& b) noexcept
+{
+    return a->id == b->id
+           && QString::compare(a->name, b->name, Qt::CaseInsensitive) == 0
+           && QString::compare(a->protocol, b->protocol, Qt::CaseInsensitive) == 0;
+}
+
+static inline std::size_t qHash(const NetworkDeviceItemPtr& s, size_t seed = 0) noexcept
+{
+    VLC_UNUSED(seed);
+    return s->id;
+}
 
 bool itemMatchPattern(const NetworkDeviceItemPtr& a, const QString& pattern)
 {
@@ -117,32 +231,20 @@ public:
     {
         Q_Q(NetworkDeviceModel);
 
-        if (m_qmlInitializing || !q->m_ctx || q->m_sdSource == NetworkDeviceModel::CAT_UNDEFINED || q->m_sourceName.isEmpty())
+        if (m_qmlInitializing || !m_ctx || m_sdSource == NetworkDeviceModel::CAT_UNDEFINED || m_sourceName.isEmpty())
             return false;
 
         m_items.clear();
 
-        if (m_sources)
-        {
-            q->disconnect( m_sources );
-            m_sources->deleteLater();
-            m_sources = nullptr;
-        }
+        if (m_sourcesProvider)
+            m_sourcesProvider.reset();
 
-        q->m_name = QString {};
+        m_name = QString {};
         emit q->nameChanged();
 
-        m_sources = new DeviceSourceProvider( q->m_sdSource, q->m_sourceName );
-        q->m_ctx->workersThreads()->assignToWorkerThread( m_sources );
+        m_sourcesProvider = std::make_unique<DeviceSourceProvider>( m_sdSource, m_sourceName, m_ctx );
 
-        // make sure we're not releasing resources on main thread
-        // by clearing copies of model before source provider
-        QObject::connect(q, &QObject::destroyed, m_sources, [sources = m_sources]()
-        {
-            sources->deleteLater();
-        });
-
-        QObject::connect(m_sources, &DeviceSourceProvider::failed, q,
+        QObject::connect(m_sourcesProvider.get(), &DeviceSourceProvider::failed, q,
                 [this]()
         {
             m_items.clear();
@@ -151,27 +253,40 @@ public:
             invalidateCache();
         });
 
-        QObject::connect(m_sources, &DeviceSourceProvider::nameUpdated, q,
-                [q](QString name)
+        QObject::connect(m_sourcesProvider.get(), &DeviceSourceProvider::nameUpdated, q,
+                [this, q](QString name)
         {
-            q->m_name = name;
+            m_name = name;
             emit q->nameChanged();
         });
 
-        QObject::connect(m_sources, &DeviceSourceProvider::itemsUpdated, q,
-                [this](NetworkDeviceItemSet items)
+        //itemsUpdated is called only once after init.
+        QObject::connect(m_sourcesProvider.get(), &DeviceSourceProvider::itemsUpdated, q,
+                [this]()
         {
-            m_items = items;
+            for (const auto& source: m_sourcesProvider->getMediaSources())
+            {
+                //fill initial values
+                for (const SharedInputItem& media : source->getMedias())
+                    onMediaAdded(source, media);
+
+                QObject::connect(
+                    source.get(), &MediaSourceModel::mediaAdded,
+                    q_ptr, [this, source](SharedInputItem media) {
+                        onMediaAdded(source, media);
+                    }, Qt::UniqueConnection);
+                QObject::connect(
+                    source.get(), &MediaSourceModel::mediaRemoved,
+                    q_ptr, [this, source](SharedInputItem media) {
+                        onMediaAdded(source, media);
+                    }, Qt::UniqueConnection);
+            }
 
             m_revision += 1;
             invalidateCache();
         });
 
-        QMetaObject::invokeMethod(m_sources,
-                                  [sources = this->m_sources, intf = q->m_ctx->getIntf()]()
-        {
-            sources->init( intf );
-        });
+        m_sourcesProvider->init();
 
         //service discovery don't notify preparse end
         m_loading = false;
@@ -186,6 +301,47 @@ public:
         if (ref)
             return ref->get();
         return nullptr;
+    }
+
+    void onMediaAdded(const QSharedPointer<MediaSourceModel>& mediaSource, SharedInputItem media)
+    {
+        std::size_t hash = qHash(media);
+        auto it = std::find_if(
+            m_items.begin(), m_items.end(),
+            [hash](const NetworkDeviceItemPtr& item) {
+                return item->id == hash;
+            });
+        if (it != m_items.end())
+        {
+            (*it)->addSource(media, mediaSource);
+        }
+        else
+        {
+            m_items.push_back(std::make_unique<NetworkDeviceItem>(media, mediaSource));
+            m_revision += 1;
+            invalidateCache();
+        }
+    }
+
+    void onMediaRemoved(const QSharedPointer<MediaSourceModel>& mediaSource, SharedInputItem media)
+    {
+        std::size_t hash = qHash(media);
+        auto it = std::find_if(
+            m_items.begin(), m_items.end(),
+            [hash, &media](const NetworkDeviceItemPtr& item) {
+                return item->id == hash;
+            });
+        if (it == m_items.end())
+            return;
+
+        bool needDestruction = (*it)->removeSource(media, mediaSource);
+        if (needDestruction)
+        {
+            m_items.erase(it);
+        }
+
+        m_revision += 1;
+        invalidateCache();
     }
 
 public: //LocalListCacheLoader::ModelSource
@@ -211,8 +367,13 @@ public: //LocalListCacheLoader::ModelSource
     }
 
 public:
-    NetworkDeviceItemSet m_items;
-    QPointer<DeviceSourceProvider> m_sources {};
+    std::unique_ptr<DeviceSourceProvider> m_sourcesProvider;
+    std::vector<NetworkDeviceItemPtr> m_items;
+
+    MainCtx* m_ctx = nullptr;
+    NetworkDeviceModel::SDCatType m_sdSource = NetworkDeviceModel::CAT_UNDEFINED;
+    QString m_sourceName; // '*' -> all sources
+    QString m_name; // source long name
 };
 
 NetworkDeviceModel::NetworkDeviceModel( QObject* parent )
@@ -228,7 +389,7 @@ NetworkDeviceModel::NetworkDeviceModel( NetworkDeviceModelPrivate* priv, QObject
 QVariant NetworkDeviceModel::data( const QModelIndex& index, int role ) const
 {
     Q_D(const NetworkDeviceModel);
-    if (!m_ctx)
+    if (!d->m_ctx)
         return {};
 
     const NetworkDeviceItem* item = d->getItemForRow(index.row());
@@ -238,9 +399,9 @@ QVariant NetworkDeviceModel::data( const QModelIndex& index, int role ) const
     switch ( role )
     {
         case NETWORK_SOURCE:
-            return item->mediaSource->description;
+            return item->sourceDesciption();
         case NETWORK_TREE:
-            return QVariant::fromValue( NetworkTreeItem(MediaTreePtr{ item->mediaSource->tree }, item->inputItem.get()) );
+            return QVariant::fromValue(item->makeTreeItem());
         default:
             return NetworkBaseModel::basedata(*item, role);
     }
@@ -257,19 +418,39 @@ QHash<int, QByteArray> NetworkDeviceModel::roleNames() const
 void NetworkDeviceModel::setCtx(MainCtx* ctx)
 {
     Q_D(NetworkDeviceModel);
-    if (m_ctx == ctx)
+    if (d->m_ctx == ctx)
         return;
-    m_ctx = ctx;
+    d->m_ctx = ctx;
     d->initializeModel();
     emit ctxChanged();
+}
+
+MainCtx* NetworkDeviceModel::getCtx() const
+{
+    Q_D(const NetworkDeviceModel);
+    return d->m_ctx;
+}
+
+NetworkDeviceModel::SDCatType NetworkDeviceModel::getSdSource() const {
+    Q_D(const NetworkDeviceModel);
+    return d->m_sdSource;
+}
+QString NetworkDeviceModel::getName() const {
+    Q_D(const NetworkDeviceModel);
+    return d->m_name;
+
+}
+QString NetworkDeviceModel::getSourceName() const {
+    Q_D(const NetworkDeviceModel);
+    return d->m_sourceName;
 }
 
 void NetworkDeviceModel::setSdSource(SDCatType s)
 {
     Q_D(NetworkDeviceModel);
-    if (m_sdSource == s)
+    if (d->m_sdSource == s)
         return;
-    m_sdSource = s;
+    d->m_sdSource = s;
     d->initializeModel();
     emit sdSourceChanged();
 }
@@ -277,9 +458,9 @@ void NetworkDeviceModel::setSdSource(SDCatType s)
 void NetworkDeviceModel::setSourceName(const QString& sourceName)
 {
     Q_D(NetworkDeviceModel);
-    if (m_sourceName == sourceName)
+    if (d->m_sourceName == sourceName)
         return;
-    m_sourceName = sourceName;
+    d->m_sourceName = sourceName;
     d->initializeModel();
     emit sourceNameChanged();
 }
@@ -287,7 +468,7 @@ void NetworkDeviceModel::setSourceName(const QString& sourceName)
 bool NetworkDeviceModel::insertIntoPlaylist(const QModelIndexList &itemIdList, ssize_t playlistIndex)
 {
     Q_D(NetworkDeviceModel);
-    if (!(m_ctx && m_sdSource != CAT_MYCOMPUTER))
+    if (!(d->m_ctx && d->m_sdSource != CAT_MYCOMPUTER))
         return false;
     QVector<vlc::playlist::Media> medias;
     medias.reserve( itemIdList.size() );
@@ -296,26 +477,26 @@ bool NetworkDeviceModel::insertIntoPlaylist(const QModelIndexList &itemIdList, s
         const NetworkDeviceItem* item = d->getItemForRow(id.row());
         if (!item)
             continue;
-        medias.append( vlc::playlist::Media {item->inputItem.get()} );
+        medias.append( vlc::playlist::Media {item->getInputItem().get() } );
     }
     if (medias.isEmpty())
         return false;
-    m_ctx->getIntf()->p_mainPlaylistController->insert(playlistIndex, medias, false);
+    d->m_ctx->getIntf()->p_mainPlaylistController->insert(playlistIndex, medias, false);
     return true;
 }
 
 bool NetworkDeviceModel::addToPlaylist(int row)
 {
     Q_D(NetworkDeviceModel);
-    if (!(m_ctx && m_sdSource != CAT_MYCOMPUTER))
+    if (!(d->m_ctx && d->m_sdSource != CAT_MYCOMPUTER))
         return false;
 
     const NetworkDeviceItem* item = d->getItemForRow(row);
     if (!item)
         return false;
 
-    vlc::playlist::Media media{ item->inputItem.get() };
-    m_ctx->getIntf()->p_mainPlaylistController->append( QVector<vlc::playlist::Media>{ media }, false);
+    vlc::playlist::Media media{ item->getInputItem().get() };
+    d->m_ctx->getIntf()->p_mainPlaylistController->append( QVector<vlc::playlist::Media>{ media }, false);
     return true;
 }
 
@@ -348,15 +529,15 @@ bool NetworkDeviceModel::addToPlaylist(const QModelIndexList &itemIdList)
 bool NetworkDeviceModel::addAndPlay(int row)
 {
     Q_D(NetworkDeviceModel);
-    if (!(m_ctx && m_sdSource != CAT_MYCOMPUTER))
+    if (!(d->m_ctx && d->m_sdSource != CAT_MYCOMPUTER))
         return false;
 
     const NetworkDeviceItem* item = d->getItemForRow(row);
     if (!item)
         return false;
 
-    vlc::playlist::Media media{ item->inputItem.get() };
-    m_ctx->getIntf()->p_mainPlaylistController->append( QVector<vlc::playlist::Media>{ media }, true);
+    vlc::playlist::Media media{ item->getInputItem().get() };
+    d->m_ctx->getIntf()->p_mainPlaylistController->append( QVector<vlc::playlist::Media>{ media }, true);
     return true;
 }
 
@@ -404,9 +585,8 @@ QVariantList NetworkDeviceModel::getItemsForIndexes(const QModelIndexList & inde
         if (!item)
             continue;
 
-        items.append(QVariant::fromValue(SharedInputItem(item->inputItem.get(), true)));
+        items.append(QVariant::fromValue(SharedInputItem(item->getInputItem().get(), true)));
     }
 
     return items;
 }
-

@@ -37,7 +37,7 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
 #import "views/VLCImageView.h"
 
@@ -62,6 +62,27 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
 {
     [self.tableView setDoubleAction:@selector(tableViewAction:)];
     [self.tableView setTarget:self];
+}
+
+- (VLCInputNode *)inputNodeForIndexPath:(NSIndexPath *)indexPath
+{
+    VLCInputNode * const rootNode = self.nodeToDisplay;
+    NSArray * const nodeChildren = rootNode.children;
+    return nodeChildren[indexPath.item];
+}
+
+- (NSArray<VLCInputItem *> *)mediaSourceInputItemsAtIndexPaths:(NSSet<NSIndexPath *> *const)indexPaths
+{
+    NSMutableArray<VLCInputItem *> * const inputItems =
+        [NSMutableArray arrayWithCapacity:indexPaths.count];
+
+    for (NSIndexPath * const indexPath in indexPaths) {
+        VLCInputNode * const inputNode = [self inputNodeForIndexPath:indexPath];
+        VLCInputItem * const inputItem = inputNode.inputItem;
+        [inputItems addObject:inputItem];
+    }
+
+    return inputItems.copy;
 }
 
 #pragma mark - collection view data source and delegation
@@ -98,14 +119,15 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
 
 - (void)collectionView:(NSCollectionView *)collectionView didSelectItemsAtIndexPaths:(NSSet<NSIndexPath *> *)indexPaths
 {
-    NSIndexPath *indexPath = indexPaths.anyObject;
+    if (indexPaths.count != 1) {
+        return;
+    }
+
+    NSIndexPath * const indexPath = indexPaths.anyObject;
     if (!indexPath) {
         return;
     }
-    VLCInputNode *rootNode = self.nodeToDisplay;
-    NSArray *nodeChildren = rootNode.children;
-    VLCInputNode *childNode = nodeChildren[indexPath.item];
-
+    VLCInputNode * const childNode = [self inputNodeForIndexPath:indexPath];
     [self performActionForNode:childNode allowPlayback:YES];
 }
 
@@ -206,7 +228,7 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
 
         [VLCMain.sharedInstance.libraryWindow.navigationStack appendCurrentLibraryState];
     } else if (childRootInput.inputType == ITEM_TYPE_FILE && allowPlayback) {
-        [VLCMain.sharedInstance.playlistController addInputItem:childRootInput.vlcInputItem atPosition:-1 startPlayback:YES];
+        [VLCMain.sharedInstance.playQueueController addInputItem:childRootInput.vlcInputItem atPosition:-1 startPlayback:YES];
     }
 }
 

@@ -44,8 +44,8 @@ GridView {
 
     property alias removeInfoRectVisible: removeInfoRect.visible
 
-    signal dragStarted(int id)
-    signal dragStopped(int id)
+    signal controlDragStarted(int id)
+    signal controlDragStopped(int id)
 
 
     readonly property ColorContext colorContext: ColorContext {
@@ -79,7 +79,8 @@ GridView {
             if (isFromList())
                 return
 
-            drag.source.dndView.model.remove(drag.source.DelegateModel.itemsIndex)
+            drop.source.dndView.model.remove(drop.source.DelegateModel.itemsIndex)
+            drop.accept(Qt.MoveAction)
         }
     }
 
@@ -140,9 +141,13 @@ GridView {
 
         readonly property int mIndex: PlayerControlbarControls.controlList[model.index].id
 
+        readonly property ColorContext colorContext: ColorContext {
+            colorSet: ColorContext.Item
+        }
+
         drag.onActiveChanged: {
             if (drag.active) {
-                dragStarted(mIndex)
+                root.controlDragStarted(mIndex)
 
                 buttonDragItem.text = PlayerControlbarControls.controlList[model.index].label
                 buttonDragItem.Drag.source = this
@@ -152,7 +157,7 @@ GridView {
             } else {
                 buttonDragItem.Drag.drop()
 
-                dragStopped(mIndex)
+                root.controlDragStopped(mIndex)
 
                 GridView.delayRemove = false
             }
@@ -173,7 +178,7 @@ GridView {
             color: "transparent"
 
             border.width: VLCStyle.dp(1, VLCStyle.scale)
-            border.color: containsMouse && !buttonDragItem.Drag.active ? theme.border
+            border.color: containsMouse && !buttonDragItem.Drag.active ? colorContext.border
                                                                        : "transparent"
 
             ColumnLayout {
@@ -185,7 +190,7 @@ GridView {
                     Layout.preferredHeight: VLCStyle.icon_medium
                     Layout.alignment: Qt.AlignHCenter
 
-                    color: theme.fg.primary
+                    color: colorContext.fg.primary
                     text: PlayerControlbarControls.controlList[model.index].label
                 }
 
@@ -193,7 +198,7 @@ GridView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
-                    color: theme.fg.secondary
+                    color: colorContext.fg.secondary
                     elide: Text.ElideNone
                     fontSizeMode: Text.Fit
                     text: PlayerControlbarControls.controlList[model.index].text

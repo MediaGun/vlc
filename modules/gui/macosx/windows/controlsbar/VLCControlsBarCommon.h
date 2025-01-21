@@ -45,6 +45,8 @@
 @property (readwrite, strong) IBOutlet NSButton *playButton;
 @property (readwrite, strong) IBOutlet NSButton *backwardButton;
 @property (readwrite, strong) IBOutlet NSButton *forwardButton;
+@property (readwrite, strong) IBOutlet NSButton *jumpBackwardButton;
+@property (readwrite, strong) IBOutlet NSButton *jumpForwardButton;
 
 @property (readwrite, strong) IBOutlet VLCPlaybackProgressSlider *timeSlider;
 @property (readwrite, strong) IBOutlet VLCVolumeSlider *volumeSlider;
@@ -72,6 +74,8 @@
 - (IBAction)play:(id)sender;
 - (IBAction)bwd:(id)sender;
 - (IBAction)fwd:(id)sender;
+- (IBAction)jumpBackward:(id)sender;
+- (IBAction)jumpForward:(id)sender;
 
 - (IBAction)timeSliderAction:(id)sender;
 - (IBAction)volumeAction:(id)sender;

@@ -857,6 +857,16 @@ vlc_player_input_NavigationFallback(struct vlc_player_input *input, int nav_type
 }
 
 static void
+vlc_player_input_MouseFallback(struct vlc_player_input *input,
+                               const struct vlc_input_event_mouse *ev)
+{
+    vlc_player_t *player = input->player;
+
+    if (vlc_mouse_HasPressed(&ev->oldmouse, &ev->newmouse, MOUSE_BUTTON_LEFT))
+        vlc_player_TogglePause(player);
+}
+
+static void
 input_thread_Events(input_thread_t *input_thread,
                     const struct vlc_input_event *event, void *user_data)
 {
@@ -1035,6 +1045,9 @@ input_thread_Events(input_thread_t *input_thread,
         case INPUT_EVENT_NAV_FAILED:
             vlc_player_input_NavigationFallback(input, event->nav_type);
             break;
+        case INPUT_EVENT_MOUSE:
+            vlc_player_input_MouseFallback(input, &event->mouse_data);
+            break;
         default:
             break;
     }
@@ -1142,6 +1155,7 @@ vlc_player_input_New(vlc_player_t *player, input_item_t *item)
 
     const struct vlc_input_thread_cfg cfg = {
         .type = INPUT_TYPE_PLAYBACK,
+        .hw_dec = INPUT_CFG_HW_DEC_DEFAULT,
         .resource = player->resource,
         .renderer = player->renderer,
         .cbs = &cbs,

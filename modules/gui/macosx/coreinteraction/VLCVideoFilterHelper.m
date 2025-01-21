@@ -27,8 +27,8 @@
 #import <vlc_charset.h>
 
 #import "main/VLCMain.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 @implementation VLCVideoFilterHelper
 
@@ -66,7 +66,7 @@
         return;
     }
 
-    VLCPlayerController *playerController = VLCMain.sharedInstance.playlistController.playerController;
+    VLCPlayerController *playerController = VLCMain.sharedInstance.playQueueController.playerController;
     vout_thread_t *vout = [playerController mainVideoOutputThread];
     if (!vout)
         return;
@@ -128,7 +128,7 @@
         return;
     }
 
-    VLCPlayerController *playerController = VLCMain.sharedInstance.playlistController.playerController;
+    VLCPlayerController *playerController = VLCMain.sharedInstance.playQueueController.playerController;
     vout_thread_t *vout = [playerController mainVideoOutputThread];
     if (!vout)
         return;

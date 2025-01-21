@@ -26,16 +26,17 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class VLCControlsBarCommon;
+@class VLCMainWindowControlsBar;
 @class VLCDragDropView;
 @class VLCRoundedCornerTextField;
 @class VLCInputNodePathControl;
 @class VLCLibraryAbstractSegmentViewController;
+@class VLCLibraryCollectionView;
 @class VLCLibraryMediaSourceViewController;
 @class VLCLibraryNavigationStack;
 @class VLCLibrarySortingMenuController;
 @class VLCMediaLibraryGroup;
-@class VLCPlaylistController;
+@class VLCPlayQueueController;
 @class VLCCustomEmptyLibraryBrowseButton;
 @class VLCLibraryWindowSplitViewController;
 @class VLCLibraryWindowToolbarDelegate;
@@ -59,24 +60,22 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 
 @property (readonly) NSView *libraryTargetView;
 
-@property (nonatomic, weak) IBOutlet VLCControlsBarCommon* controlsBar;
+@property (nonatomic, weak) IBOutlet VLCMainWindowControlsBar *controlsBar;
 @property (readwrite, weak) IBOutlet NSLayoutConstraint *controlsBarHeightConstraint;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *videoViewBottomConstraint;
 @property (readwrite, weak) IBOutlet NSSegmentedControl *gridVsListSegmentedControl;
 @property (readwrite, weak) IBOutlet NSSplitView *mainSplitView;
-@property (readwrite, weak) IBOutlet NSOutlineView *navSidebarOutlineView;
 @property (readwrite, weak) IBOutlet NSView *homeLibraryView;
 @property (readwrite, weak) IBOutlet NSScrollView *homeLibraryStackViewScrollView;
 @property (readwrite, weak) IBOutlet NSStackView *homeLibraryStackView;
 @property (readwrite, weak) IBOutlet NSView *videoLibraryView;
 @property (readwrite, weak) IBOutlet NSSplitView *videoLibrarySplitView;
 @property (readwrite, weak) IBOutlet NSScrollView *videoLibraryCollectionViewScrollView;
-@property (readwrite, weak) IBOutlet NSCollectionView *videoLibraryCollectionView;
+@property (readwrite, weak) IBOutlet VLCLibraryCollectionView *videoLibraryCollectionView;
 @property (readwrite, weak) IBOutlet NSScrollView *videoLibraryGroupSelectionTableViewScrollView;
 @property (readwrite, weak) IBOutlet NSTableView *videoLibraryGroupSelectionTableView;
 @property (readwrite, weak) IBOutlet NSScrollView *videoLibraryGroupsTableViewScrollView;
 @property (readwrite, weak) IBOutlet NSTableView *videoLibraryGroupsTableView;
-@property (readwrite, weak) IBOutlet NSCollectionView *mediaSourceCollectionView;
+@property (readwrite, weak) IBOutlet VLCLibraryCollectionView *mediaSourceCollectionView;
 @property (readwrite, weak) IBOutlet NSView *audioLibraryView;
 @property (readwrite, weak) IBOutlet NSSplitView *audioLibrarySplitView;
 @property (readwrite, weak) IBOutlet NSScrollView *audioCollectionSelectionTableViewScrollView;
@@ -86,12 +85,12 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 @property (readwrite, weak) IBOutlet NSScrollView *audioLibrarySongsTableViewScrollView;
 @property (readwrite, weak) IBOutlet NSTableView *audioLibrarySongsTableView;
 @property (readwrite, weak) IBOutlet NSScrollView *audioCollectionViewScrollView;
-@property (readwrite, weak) IBOutlet NSCollectionView *audioLibraryCollectionView;
+@property (readwrite, weak) IBOutlet VLCLibraryCollectionView *audioLibraryCollectionView;
 @property (readwrite, weak) IBOutlet NSSplitView *audioLibraryGridModeSplitView;
 @property (readwrite, weak) IBOutlet NSScrollView *audioLibraryGridModeSplitViewListTableViewScrollView;
 @property (readwrite, weak) IBOutlet NSTableView *audioLibraryGridModeSplitViewListTableView;
 @property (readwrite, weak) IBOutlet NSScrollView *audioLibraryGridModeSplitViewListSelectionCollectionViewScrollView;
-@property (readwrite, weak) IBOutlet NSCollectionView *audioLibraryGridModeSplitViewListSelectionCollectionView;
+@property (readwrite, weak) IBOutlet VLCLibraryCollectionView *audioLibraryGridModeSplitViewListSelectionCollectionView;
 @property (readwrite, weak) IBOutlet NSView *mediaSourceView;
 @property (readwrite, weak) IBOutlet NSButton *mediaSourceHomeButton;
 @property (readwrite, weak) IBOutlet VLCInputNodePathControl *mediaSourcePathControl;
@@ -99,7 +98,6 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 @property (readwrite, weak) IBOutlet NSScrollView *mediaSourceTableViewScrollView;
 @property (readwrite, weak) IBOutlet NSTableView *mediaSourceTableView;
 @property (readwrite, weak) IBOutlet NSScrollView *mediaSourceCollectionViewScrollView;
-@property (readwrite, weak) IBOutlet NSView *mediaOptionBar;
 @property (readwrite, weak) IBOutlet NSToolbar *mediaToolBar;
 @property (readwrite, weak) IBOutlet NSButton *librarySortButton;
 @property (readwrite, weak) IBOutlet NSSearchField *librarySearchField;
@@ -108,7 +106,6 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 @property (readwrite, weak) IBOutlet NSButton *forwardsNavigationButton;
 @property (readwrite, weak) IBOutlet NSButton *artworkButton;
 @property (readwrite, weak) IBOutlet VLCLibraryWindowToolbarDelegate *toolbarDelegate;
-@property (readwrite, weak) IBOutlet NSLayoutConstraint *splitViewBottomConstraintToBottomBar;
 
 @property (nonatomic, readwrite, strong) IBOutlet NSView *emptyLibraryView;
 @property (nonatomic, readwrite, strong) IBOutlet NSImageView *placeholderImageView;
@@ -116,7 +113,6 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 @property (nonatomic, readwrite, strong) IBOutlet VLCCustomEmptyLibraryBrowseButton *placeholderGoToBrowseButton;
 
 @property (readonly) VLCLoadingOverlayView *loadingOverlayView;
-@property (readonly) NSArray<NSLayoutConstraint *> *loadingOverlayViewConstraints;
 @property (readonly) NSArray<NSLayoutConstraint *> *placeholderImageViewConstraints;
 @property (readonly) VLCNoResultsLabel *noResultsLabel;
 
@@ -128,9 +124,9 @@ extern const NSUserInterfaceItemIdentifier VLCLibraryWindowIdentifier;
 @property (readonly) VLCLibraryMediaSourceViewController *libraryMediaSourceViewController;
 @property (readonly) VLCLibraryAbstractSegmentViewController *librarySegmentViewController;
 @property (readonly) VLCLibrarySortingMenuController *librarySortingMenuController;
-@property (readonly) VLCPlaylistController *playlistController;
+@property (readonly) VLCPlayQueueController *playQueueController;
 
-- (void)reopenVideoView;
+- (void)enableVideoPlaybackAppearance;
 - (void)disableVideoPlaybackAppearance;
 - (void)hideControlsBar;
 - (void)showControlsBar;

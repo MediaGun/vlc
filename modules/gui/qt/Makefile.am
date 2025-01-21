@@ -18,6 +18,13 @@ SUFFIXES += .ui .h .hpp .moc.cpp .qml .js .mjs .moc
 TEST_EXTENSIONS = .qml
 EXTRA_DIST = qt6.pro private-core.pro private-gui.pro private-quick.pro quicktest.pro scripts
 vlc_qt_libs = $(QT_LIBS)
+RCC_EXTRA_PARAMS =
+
+if HAVE_QT_ZSTD
+RCC_EXTRA_PARAMS += -compress-algo=zstd
+else
+RCC_EXTRA_PARAMS += -compress-algo=zlib
+endif
 
 vlc_qt_check_SOURCES = vlc-qt-check.cpp plugins.hpp
 vlc_qt_check_CXXFLAGS = $(AM_CXXFLAGS) $(QT_CFLAGS) -fPIC $(CXXFLAGS_qt)
@@ -27,6 +34,9 @@ vlc_qt_check_LDFLAGS = $(AM_LDFLAGS) $(QT_LDFLAGS)
 
 libqt_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_qt) \
 	-DQT_STRICT_ITERATORS \
+	-DQT_USE_QSTRINGBUILDER \
+	-DQT_NO_CAST_TO_ASCII \
+	-DQT_NO_CAST_FROM_BYTEARRAY \
 	-I$(srcdir) -I$(builddir) \
 	-I$(builddir)/dialogs/extended \
 	-I$(builddir)/dialogs/fingerprint \
@@ -257,6 +267,7 @@ libqt_plugin_la_SOURCES = \
 	network/servicesdiscoverymodel.hpp \
 	network/standardpathmodel.cpp \
 	network/standardpathmodel.hpp \
+	network/vlcmediasourcewrapper.hpp \
 	style/qtthemeprovider.hpp \
 	style/colorcontext.cpp \
 	style/colorcontext.hpp \
@@ -294,6 +305,7 @@ libqt_plugin_la_SOURCES = \
 	util/covergenerator.hpp \
 	util/imageluminanceextractor.cpp util/imageluminanceextractor.hpp \
 	util/csdbuttonmodel.cpp util/csdbuttonmodel.hpp \
+	util/csdmenu.cpp util/csdmenu.hpp \
 	util/imagehelper.cpp util/imagehelper.hpp \
 	util/keyhelper.cpp util/keyhelper.hpp \
 	util/listcache.hxx util/listcache.hpp \
@@ -327,6 +339,9 @@ libqt_plugin_la_SOURCES = \
 	util/dismiss_popup_event_filter.hpp \
 	util/list_selection_model.cpp \
 	util/list_selection_model.hpp \
+	util/model_recovery_agent.hpp \
+	util/vlcqtmessagehandler.cpp \
+	util/vlcqtmessagehandler.hpp \
 	widgets/native/animators.cpp \
 	widgets/native/animators.hpp \
 	widgets/native/customwidgets.cpp widgets/native/customwidgets.hpp \
@@ -340,7 +355,6 @@ libqt_plugin_la_SOURCES = \
 	widgets/native/mlfolderseditor.hpp \
 	widgets/native/qvlcframe.cpp \
 	widgets/native/qvlcframe.hpp \
-	widgets/native/roundimage.cpp widgets/native/roundimage.hpp widgets/native/roundimage_p.hpp \
 	widgets/native/searchlineedit.cpp widgets/native/searchlineedit.hpp \
 	widgets/native/viewblockingrectangle.cpp widgets/native/viewblockingrectangle.hpp \
 	widgets/native/doubleclickignoringitem.hpp
@@ -467,6 +481,7 @@ nodist_libqt_plugin_la_SOURCES = \
 	util/vlcaccess_image_provider.moc.cpp \
 	util/imageluminanceextractor.moc.cpp \
 	util/csdbuttonmodel.moc.cpp \
+	util/csdmenu.moc.cpp \
 	util/keyhelper.moc.cpp \
 	util/listcache.moc.cpp \
 	util/locallistcacheloader.moc.cpp \
@@ -487,8 +502,6 @@ nodist_libqt_plugin_la_SOURCES = \
 	widgets/native/interface_widgets.moc.cpp \
 	widgets/native/navigation_attached.moc.cpp \
 	widgets/native/mlfolderseditor.moc.cpp \
-	widgets/native/roundimage.moc.cpp \
-	widgets/native/roundimage_p.moc.cpp \
 	widgets/native/searchlineedit.moc.cpp \
 	widgets/native/viewblockingrectangle.moc.cpp
 
@@ -528,12 +541,13 @@ libqt_plugin_la_SOURCES += \
 	maininterface/compositor_win7.hpp \
 	style/windowsthemeprovider.cpp \
 	maininterface/win32windoweffects_module.cpp \
-	maininterface/win32windoweffects_module.hpp
+	maininterface/win32windoweffects_module.hpp \
+	util/csdmenu_win32.c \
+	util/csdmenu_win32.h
 
 nodist_libqt_plugin_la_SOURCES += maininterface/mainctx_win32.moc.cpp \
 	maininterface/compositor_win7.moc.cpp
 
-if HAVE_DCOMP
 libqt_plugin_la_SOURCES += \
 	maininterface/compositor_dcomp.cpp \
 	maininterface/compositor_dcomp.hpp \
@@ -546,7 +560,6 @@ nodist_libqt_plugin_la_SOURCES += \
 	maininterface/compositor_dcomp.moc.cpp
 
 endif
-endif
 
 # X11 compositor
 
@@ -556,7 +569,7 @@ if HAVE_XCB_DAMAGE
 if HAVE_XCB_XFIXES
 
 libqt_plugin_la_CXXFLAGS += -DQT_HAS_X11_COMPOSITOR \
-	$(QT_X11_CFLAGS) $(XCB_RENDER_CFLAGS) $(XCB_COMPOSITE_CFLAGS) $(XLCB_DAMAGE_CFLAGS) $(XCB_XFIXES_CFLAGS)
+	$(QT_X11_CFLAGS) $(XCB_RENDER_CFLAGS) $(XCB_COMPOSITE_CFLAGS) $(XCB_DAMAGE_CFLAGS) $(XCB_XFIXES_CFLAGS)
 
 libqt_plugin_la_LIBADD += $(QT_X11_LIBS) $(XCB_RENDER_LIBS) $(XCB_COMPOSITE_LIBS) $(XCB_DAMAGE_LIBS) $(XCB_XFIXES_LIBS)
 
@@ -576,8 +589,24 @@ nodist_libqt_plugin_la_SOURCES += \
 	maininterface/compositor_x11.moc.cpp \
 	maininterface/compositor_x11_renderclient.moc.cpp \
 	maininterface/compositor_x11_renderwindow.moc.cpp \
-	maininterface/compositor_x11_uisurface.moc.cpp \
-	maininterface/compositor_x11_utils.moc.cpp
+	maininterface/compositor_x11_uisurface.moc.cpp
+
+#extra X11 features
+
+libqt_x11_plugin_la_CXXFLAGS = $(AM_CXXFLAGS) $(XCB_CFLAGS) $(XCB_RENDER_CFLAGS) $(XCB_COMPOSITE_CFLAGS) $(XCB_DAMAGE_CFLAGS) $(XCB_XFIXES_CFLAGS)
+libqt_x11_plugin_la_LIBADD = $(XCB_LIBS) $(XCB_RENDER_LIBS) $(XCB_COMPOSITE_LIBS) $(XCB_DAMAGE_LIBS) $(XCB_XFIXES_LIBS)
+libqt_x11_plugin_la_SOURCES = \
+	maininterface/qt_x11_plugin.c \
+	maininterface/compositor_x11_utils.hpp \
+	maininterface/compositor_x11_utils.cpp \
+	util/csdmenu_module.h \
+	util/csdmenu_x11.cpp \
+	util/csdmenu_x11.h
+
+if ENABLE_QT
+gui_LTLIBRARIES += libqt_x11_plugin.la
+endif
+
 
 endif
 endif
@@ -602,6 +631,7 @@ nodist_libqt_plugin_la_SOURCES += \
 libqt_wayland_plugin_la_CFLAGS = $(AM_CFLAGS) $(WAYLAND_CLIENT_CFLAGS)
 libqt_wayland_plugin_la_LIBADD =  $(WAYLAND_CLIENT_LIBS)
 libqt_wayland_plugin_la_SOURCES = \
+	maininterface/qt_wayland_plugin.c \
 	maininterface/compositor_wayland_module.c \
 	maininterface/compositor_wayland_module.h
 
@@ -609,9 +639,16 @@ libqt_wayland_plugin_la_SOURCES = \
 #if WAYLAND_SCANNER
 libqt_wayland_plugin_la_CFLAGS += -DQT_HAS_WAYLAND_PROTOCOLS -I$(builddir)/maininterface
 
+libqt_wayland_plugin_la_SOURCES += \
+	util/csdmenu_wayland.c \
+	util/csdmenu_wayland.h \
+	util/csdmenu_module.h
+
 nodist_libqt_wayland_plugin_la_SOURCES = \
 	maininterface/viewporter-client-protocol.h \
-	maininterface/viewporter-protocol.c
+	maininterface/viewporter-protocol.c \
+	maininterface/xdg-shell-client-protocol.h \
+	maininterface/xdg-shell-protocol.c
 
 BUILT_SOURCES += $(nodist_libqt_wayland_plugin_la_SOURCES)
 
@@ -622,6 +659,12 @@ maininterface/viewporter-client-protocol.h: \
 maininterface/viewporter-protocol.c: \
 		$(WAYLAND_PROTOCOLS)/stable/viewporter/viewporter.xml \
 		maininterface/viewporter-client-protocol.h
+	$(AM_V_GEN)$(WAYLAND_SCANNER) private-code $< $@
+
+maininterface/xdg-shell-client-protocol.h: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml Makefile.am
+	$(AM_V_GEN)$(WAYLAND_SCANNER) client-header $< $@
+
+maininterface/xdg-shell-protocol.c: $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml Makefile.am
 	$(AM_V_GEN)$(WAYLAND_SCANNER) private-code $< $@
 
 #endif
@@ -1247,7 +1290,18 @@ libqml_module_widgets_a_QML = \
 	widgets/qml/PopupIconToolButton.qml \
 	widgets/qml/PartialEffect.qml \
 	widgets/qml/ViewHeader.qml \
-	widgets/qml/ProgressIndicator.qml
+	widgets/qml/ProgressIndicator.qml \
+	widgets/qml/RectangularGlow.qml \
+	widgets/qml/RoundImage.qml
+if HAVE_QT65
+libqml_module_widgets_a_QML += \
+	widgets/qml/DynamicShadow.qml \
+	widgets/qml/BlurEffect.qml
+else
+libqml_module_widgets_a_QML += \
+	widgets/qml/compat/DynamicShadow.qml \
+	widgets/qml/compat/BlurEffect.qml
+endif
 nodist_libqml_module_widgets_a_SOURCES = widgets_qmlassets.cpp
 $(libqml_module_widgets_a_QML:.qml=.cpp) : $(builddir)/widgets/res.qrc
 $(libqml_module_widgets_a_QML:.qml=.cpp) : QML_CACHEGEN_ARGS=--resource=$(builddir)/widgets/res.qrc
@@ -1285,10 +1339,13 @@ libqt_plugin_la_ALL_QML = \
 libqt_plugin_la_SHADER := shaders/FadingEdge.frag \
                           shaders/FadingEdgeX.vert \
                           shaders/FadingEdgeY.vert \
-                          shaders/FrostedGlass.frag \
+                          shaders/Noise.frag \
                           shaders/RectFilter.frag \
                           shaders/SubTexture.vert \
-                          shaders/PlayerBlurredBackground.frag
+                          shaders/PlayerBlurredBackground.frag \
+                          shaders/HollowRectangularGlow.frag \
+                          shaders/RectangularGlow.frag \
+                          shaders/SDFAARoundedTexture.frag
 if ENABLE_QT
 
 libqt_plugin_la_LIBADD += libqml_module_dialogs.a \
@@ -1350,7 +1407,7 @@ QSB_PARAMS_VERBOSE__0 = $(QSB_PARAMS_VERBOSE_0)
 
 shaders/shaders.cpp: $(srcdir)/shaders/shaders.qrc $(libqt_plugin_la_SHADER:.frag=.frag.qsb) $(libqt_plugin_la_SHADER:.vert=.vert.qsb)
 	$(AM_V_GEN) cp -f $(filter %.qrc, $^) $(builddir)/shaders/shaders.qrc || true
-	$(AM_V_GEN) $(RCC) --name shaders -o $@ $(builddir)/shaders/$(notdir $(filter %.qrc, $^))
+	$(AM_V_GEN) $(RCC) $(RCC_EXTRA_PARAMS) --name shaders -o $@ $(builddir)/shaders/$(notdir $(filter %.qrc, $^))
 
 libqt_plugin_la_SOURCES += shaders/shaders.qrc $(libqt_plugin_la_SHADER)
 BUILT_SOURCES += shaders/shaders.qrc
@@ -1362,7 +1419,7 @@ lib_qt_plugin_la_QRC += windows.qrc
 
 windows.cpp: $(libqt_plugin_la_RES)
 windows.cpp: windows.qrc
-	$(AM_V_GEN)$(RCC) --name windows -o $@ $<
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name windows -o $@ $<
 
 nodist_libqt_plugin_la_SOURCES += windows.cpp
 endif
@@ -1453,7 +1510,7 @@ endif
 
 #package qmldir files
 %_qmlassets.cpp: $(builddir)/%/qmldir.qrc
-	$(AM_V_GEN)$(RCC) --name $*_assets -o $@ $<
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $*_assets -o $@ $<
 
 
 CLEANFILES += \
@@ -1471,7 +1528,7 @@ libqt_plugin_la_QML_MODULES_QMLDIR = $(libqt_plugin_la_QML_MODULES:%=$(builddir)
 libqt_plugin_la_QML_MODULES_QMLDIR_QRC = $(libqt_plugin_la_QML_MODULES:%=$(builddir)/%/qmldir.qrc)
 
 %_qmlassets.cpp: $(builddir)/%/qmldir.qrc $(builddir)/%/res.qrc $(libqt_plugin_la_ALL_QML)
-	$(AM_V_GEN)$(RCC) --name $*_assets -o $@ $(builddir)/$*/qmldir.qrc $(builddir)/$*/res.qrc
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name $*_assets -o $@ $(builddir)/$*/qmldir.qrc $(builddir)/$*/res.qrc
 
 nodist_libqt_plugin_la_SOURCES += $(libqt_plugin_la_QML_MODULES:%=%_qmlassets.cpp)
 
@@ -1485,7 +1542,7 @@ EXTRA_DIST += $(libqt_plugin_la_QML)
 
 assets.cpp: $(libqt_plugin_la_RES)
 assets.cpp: assets.qrc
-	$(AM_V_GEN)$(RCC) --name assets -o $@ $<
+	$(AM_V_GEN)$(RCC) $(RCC_EXTRA_PARAMS) --name assets -o $@ $<
 
 
 if HAVE_QT_GTK
@@ -1533,6 +1590,55 @@ base_model_test_LDFLAGS = $(AM_LDFLAGS) $(QT_LDFLAGS)
 check_PROGRAMS = base_model_test
 TESTS = base_model_test
 
+if HAVE_QT_QTEST
+
+LIBVLC = -L../../../lib -lvlc
+QT_QTEST_COMMON_cppflags = $(libqt_plugin_la_CPPFLAGS) -I$(builddir)/tests -DTOP_BUILDDIR=\"$(abs_top_builddir)\"
+QT_QTEST_COMMON_cxxflags = $(AM_CXXFLAGS) $(QT_CFLAGS) $(QT_QTEST_CFLAGS) -fPIC $(CXXFLAGS_qt)
+QT_QTEST_COMMON_ldadd = $(QT_LIBS) $(LIBS_qt) $(QT_QTEST_LIBS) $(LIBVLCCORE) $(LIBVLC)
+QT_QTEST_COMMON_ldflags = $(AM_LDFLAGS) $(QT_LDFLAGS) $(QT_QTEST_LDFLAGS)
+
+# test_renderer_manager_model
+
+test_renderer_manager_model_SOURCES = \
+	tests/vlc_stub_modules.cpp \
+	tests/test_renderer_manager_model.cpp \
+    util/renderer_manager.hpp util/renderer_manager.cpp
+
+nodist_test_renderer_manager_model_SOURCES = \
+	tests/test_renderer_manager_model.moc \
+    util/renderer_manager.moc.cpp
+
+BUILT_SOURCES += tests/test_renderer_manager_model.moc
+CLEANFILES += tests/test_renderer_manager_model.moc
+test_renderer_manager_model_CPPFLAGS = $(QT_QTEST_COMMON_cppflags)
+test_renderer_manager_model_CXXFLAGS = $(QT_QTEST_COMMON_cxxflags)
+test_renderer_manager_model_LDADD = $(QT_QTEST_COMMON_ldadd)
+test_renderer_manager_model_LDFLAGS = $(QT_QTEST_COMMON_ldflags)
+check_PROGRAMS += test_renderer_manager_model
+TESTS += test_renderer_manager_model
+
+# test_vlc_dialog_model
+
+test_vlc_dialog_model_SOURCES = \
+	tests/vlc_stub_modules.cpp \
+	tests/test_vlc_dialog_model.cpp \
+	dialogs/dialogs/dialogmodel.cpp
+
+nodist_test_vlc_dialog_model_SOURCES = \
+	tests/test_vlc_dialog_model.moc \
+	dialogs/dialogs/dialogmodel.moc.cpp
+
+BUILT_SOURCES += tests/test_vlc_dialog_model.moc
+CLEANFILES += tests/test_vlc_dialog_model.moc
+test_vlc_dialog_model_CPPFLAGS = $(QT_QTEST_COMMON_cppflags)
+test_vlc_dialog_model_CXXFLAGS = $(QT_QTEST_COMMON_cxxflags)
+test_vlc_dialog_model_LDADD = $(QT_QTEST_COMMON_ldadd)
+test_vlc_dialog_model_LDFLAGS = $(QT_QTEST_COMMON_ldflags)
+check_PROGRAMS += test_vlc_dialog_model
+TESTS += test_vlc_dialog_model
+
+endif
 
 QML_LOG_COMPILER = $(builddir)/qml_test -input
 

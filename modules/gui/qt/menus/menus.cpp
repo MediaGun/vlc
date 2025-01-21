@@ -359,7 +359,7 @@ void VLCMenuBar::ViewMenu(qt_intf_t *p_intf, QMenu *menu, std::optional<bool> pl
     action->setCheckable( true );
     action->setChecked( mi->hasGridView() );
 
-    menu->addMenu( new CheckableListMenu(qtr( "&Color Scheme" ), mi->getColorScheme(), CheckableListMenu::GROUPED_EXLUSIVE, menu) );
+    menu->addMenu( new CheckableListMenu(qtr( "&Color Scheme" ), mi->getColorScheme(), QActionGroup::ExclusionPolicy::Exclusive, menu) );
 
     menu->addSeparator();
 
@@ -377,7 +377,7 @@ void VLCMenuBar::InterfacesMenu( qt_intf_t *p_intf, QMenu *current )
 {
     assert(current);
     VLCVarChoiceModel* model = new VLCVarChoiceModel(VLC_OBJECT(p_intf->intf), "intf-add", current);
-    CheckableListMenu* submenu = new CheckableListMenu(qtr("Interfaces"), model, CheckableListMenu::UNGROUPED, current);
+    CheckableListMenu* submenu = new CheckableListMenu(qtr("Interfaces"), model, QActionGroup::ExclusionPolicy::None, current);
     current->addMenu(submenu);
 }
 
@@ -421,24 +421,18 @@ void VLCMenuBar::AudioMenu( qt_intf_t *p_intf, QMenu * current )
 {
     if( current->isEmpty() )
     {
-        current->addMenu(new CheckableListMenu(qtr( "Audio &Track" ), THEMIM->getAudioTracks(), CheckableListMenu::GROUPED_OPTIONAL, current));
+        current->addMenu(new CheckableListMenu(qtr( "Audio &Track" ), THEMIM->getAudioTracks(), QActionGroup::ExclusionPolicy::ExclusiveOptional, current));
 
-        QAction *audioDeviceAction = new QAction( qtr( "&Audio Device" ), current );
-        QMenu *audioDeviceSubmenu = new QMenu( current );
-        audioDeviceAction->setMenu( audioDeviceSubmenu );
-        current->addAction( audioDeviceAction );
-        connect(audioDeviceSubmenu, &QMenu::aboutToShow, [=]() {
-            updateAudioDevice( p_intf, audioDeviceSubmenu );
-        });
+        current->addMenu(new CheckableListMenu(qtr( "&Audio Device" ), THEMIM->getAudioDevices(), QActionGroup::ExclusionPolicy::Exclusive, current));
 
         VLCVarChoiceModel *mix_mode = THEMIM->getAudioMixMode();
         if (mix_mode->rowCount() == 0)
-            current->addMenu( new CheckableListMenu(qtr( "&Stereo Mode" ), THEMIM->getAudioStereoMode(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
+            current->addMenu( new CheckableListMenu(qtr( "&Stereo Mode" ), THEMIM->getAudioStereoMode(), QActionGroup::ExclusionPolicy::Exclusive, current) );
         else
-            current->addMenu( new CheckableListMenu(qtr( "&Mix Mode" ), mix_mode, CheckableListMenu::GROUPED_EXLUSIVE, current) );
+            current->addMenu( new CheckableListMenu(qtr( "&Mix Mode" ), mix_mode, QActionGroup::ExclusionPolicy::Exclusive, current) );
         current->addSeparator();
 
-        current->addMenu( new CheckableListMenu(qtr( "&Visualizations" ), THEMIM->getAudioVisualizations(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Visualizations" ), THEMIM->getAudioVisualizations(), QActionGroup::ExclusionPolicy::Exclusive, current) );
         VolumeEntries( p_intf, current );
     }
 }
@@ -450,7 +444,7 @@ void VLCMenuBar::SubtitleMenu( qt_intf_t *p_intf, QMenu *current, bool b_popup )
     {
         addDPStaticEntry( current, qtr( "Add &Subtitle File..." ), "",
                 &DialogsProvider::loadSubtitlesFile);
-        current->addMenu(new CheckableListMenu(qtr( "Sub &Track" ), THEMIM->getSubtitleTracks(), CheckableListMenu::GROUPED_OPTIONAL, current));
+        current->addMenu(new CheckableListMenu(qtr( "Sub &Track" ), THEMIM->getSubtitleTracks(), QActionGroup::ExclusionPolicy::ExclusiveOptional, current));
         current->addSeparator();
     }
 }
@@ -463,7 +457,7 @@ void VLCMenuBar::VideoMenu( qt_intf_t *p_intf, QMenu *current )
 {
     if( current->isEmpty() )
     {
-        current->addMenu(new CheckableListMenu(qtr( "Video &Track" ), THEMIM->getVideoTracks(), CheckableListMenu::GROUPED_OPTIONAL, current));
+        current->addMenu(new CheckableListMenu(qtr( "Video &Track" ), THEMIM->getVideoTracks(), QActionGroup::ExclusionPolicy::ExclusiveOptional, current));
 
         current->addSeparator();
         /* Surface modifiers */
@@ -476,15 +470,15 @@ void VLCMenuBar::VideoMenu( qt_intf_t *p_intf, QMenu *current )
 
         current->addSeparator();
         /* Size modifiers */
-        current->addMenu( new CheckableListMenu(qtr( "&Zoom" ), THEMIM->getZoom(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
-        current->addMenu( new CheckableListMenu(qtr( "&Aspect Ratio" ), THEMIM->getAspectRatio(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
-        current->addMenu( new CheckableListMenu(qtr( "&Crop" ), THEMIM->getCrop(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
-        current->addMenu( new CheckableListMenu(qtr( "&Fit" ), THEMIM->getFit(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Zoom" ), THEMIM->getZoom(), QActionGroup::ExclusionPolicy::Exclusive, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Aspect Ratio" ), THEMIM->getAspectRatio(), QActionGroup::ExclusionPolicy::Exclusive, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Crop" ), THEMIM->getCrop(), QActionGroup::ExclusionPolicy::Exclusive, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Fit" ), THEMIM->getFit(), QActionGroup::ExclusionPolicy::Exclusive, current) );
 
         current->addSeparator();
         /* Rendering modifiers */
-        current->addMenu( new CheckableListMenu(qtr( "&Deinterlace" ), THEMIM->getDeinterlace(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
-        current->addMenu( new CheckableListMenu(qtr( "&Deinterlace mode" ), THEMIM->getDeinterlaceMode(), CheckableListMenu::GROUPED_EXLUSIVE, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Deinterlace" ), THEMIM->getDeinterlace(), QActionGroup::ExclusionPolicy::Exclusive, current) );
+        current->addMenu( new CheckableListMenu(qtr( "&Deinterlace mode" ), THEMIM->getDeinterlaceMode(), QActionGroup::ExclusionPolicy::Exclusive, current) );
 
         current->addSeparator();
         /* Other actions */
@@ -503,11 +497,11 @@ void VLCMenuBar::NavigMenu( qt_intf_t *p_intf, QMenu *menu )
     QAction *action;
     QMenu *submenu;
 
-    menu->addMenu( new CheckableListMenu( qtr( "T&itle" ), THEMIM->getTitles(), CheckableListMenu::GROUPED_EXLUSIVE, menu) );
-    submenu = new CheckableListMenu( qtr( "&Chapter" ), THEMIM->getChapters(), CheckableListMenu::GROUPED_EXLUSIVE, menu );
+    menu->addMenu( new CheckableListMenu( qtr( "T&itle" ), THEMIM->getTitles(), QActionGroup::ExclusionPolicy::Exclusive, menu) );
+    submenu = new CheckableListMenu( qtr( "&Chapter" ), THEMIM->getChapters(), QActionGroup::ExclusionPolicy::Exclusive, menu );
     submenu->setTearOffEnabled( true );
     menu->addMenu( submenu );
-    menu->addMenu( new CheckableListMenu( qtr("&Program") , THEMIM->getPrograms(), CheckableListMenu::GROUPED_EXLUSIVE, menu) );
+    menu->addMenu( new CheckableListMenu( qtr("&Program") , THEMIM->getPrograms(), QActionGroup::ExclusionPolicy::Exclusive, menu) );
 
     MainCtx * mi = p_intf->p_mi;
 
@@ -527,7 +521,7 @@ void VLCMenuBar::NavigMenu( qt_intf_t *p_intf, QMenu *menu )
     menu->addSeparator();
 
     if ( !VLCMenuBar::rendererMenu )
-        VLCMenuBar::rendererMenu = new RendererMenu( NULL, p_intf );
+        VLCMenuBar::rendererMenu = new RendererMenu( NULL, p_intf, p_intf->p_mainPlayerController );
 
     menu->addMenu( VLCMenuBar::rendererMenu );
     menu->addSeparator();
@@ -765,12 +759,7 @@ QMenu* VLCMenuBar::PopupMenu( qt_intf_t *p_intf, bool show )
         /* Add a fullscreen switch button, since it is the most used function */
         if( p_vout )
         {
-            b_isFullscreen = THEMIM->isFullscreen();
-            if (b_isFullscreen)
-                menu->addAction(new BooleanPropertyAction(qtr( "Leave Fullscreen" ), THEMIM, "fullscreen", menu) );
-            else
-                menu->addAction(new BooleanPropertyAction(qtr( "&Fullscreen" ), THEMIM, "fullscreen", menu) );
-
+            menu->addAction(new BooleanPropertyAction(qtr( "&Fullscreen" ), THEMIM, "fullscreen", menu) );
             menu->addSeparator();
         }
 
@@ -833,7 +822,7 @@ QMenu* VLCMenuBar::PopupMenu( qt_intf_t *p_intf, bool show )
             }
 
             VLCVarChoiceModel* skinmodel = new VLCVarChoiceModel(p_object, "intf-skins", submenu);
-            CheckableListMenu* skinsubmenu = new CheckableListMenu(qtr("Interface"), skinmodel, CheckableListMenu::GROUPED_OPTIONAL, submenu);
+            CheckableListMenu* skinsubmenu = new CheckableListMenu(qtr("Interface"), skinmodel, QActionGroup::ExclusionPolicy::ExclusiveOptional, submenu);
             submenu->addMenu(skinsubmenu);
 
             submenu->addSeparator();
@@ -878,51 +867,4 @@ QMenu* VLCMenuBar::PopupMenu( qt_intf_t *p_intf, bool show )
     if( show )
         menu->popup( QCursor::pos() );
     return menu;
-}
-
-
-/*****************************************************************************
- * Private methods.
- *****************************************************************************/
-
-void VLCMenuBar::updateAudioDevice( qt_intf_t * p_intf, QMenu *current )
-{
-    char **ids, **names;
-    char *selected;
-
-    if( !current )
-        return;
-
-    current->clear();
-    SharedAOut aout = THEMIM->getAout();
-    if (!aout)
-        return;
-
-    int i_result = aout_DevicesList( aout.get(), &ids, &names);
-    if( i_result < 0 )
-        return;
-
-    selected = aout_DeviceGet( aout.get() );
-
-    QActionGroup *actionGroup = new QActionGroup(current);
-    QAction *action;
-
-    for( int i = 0; i < i_result; i++ )
-    {
-        action = new QAction( qfue( names[i] ), actionGroup );
-        action->setData( qfu(ids[i]) );
-        action->setCheckable( true );
-        if( (selected && !strcmp( ids[i], selected ) ) ||
-            (selected == NULL && ids[i] && ids[i][0] == '\0' ) )
-            action->setChecked( true );
-        actionGroup->addAction( action );
-        current->addAction( action );
-        connect(action, &QAction::triggered, THEMIM->menusAudioMapper, QOverload<>::of(&QSignalMapper::map));
-        THEMIM->menusAudioMapper->setMapping(action, ids[i]);
-        free( ids[i] );
-        free( names[i] );
-    }
-    free( ids );
-    free( names );
-    free( selected );
 }

@@ -406,6 +406,11 @@ void PlaylistController::append(const QVariantList& sourceList, bool startPlayin
     append(toMediaList(sourceList), startPlaying);
 }
 
+void PlaylistController::append(const QVariant &source, bool startPlaying)
+{
+    append(QVariantList{source}, startPlaying);
+}
+
 void PlaylistController::insert(unsigned index, const QVariantList& sourceList, bool startPlaying)
 {
     insert(index, toMediaList(sourceList), startPlaying);
@@ -569,6 +574,13 @@ void PlaylistController::explore(const PlaylistItem& pItem)
             QDesktopServices::openUrl( file );
         }
     }
+}
+
+int PlaylistController::serialize(const QString &fileName)
+{
+    Q_D(PlaylistController);
+    vlc_playlist_locker lock{d->m_playlist};
+    return vlc_playlist_Export(d->m_playlist, qtu(fileName), "export-m3u8");
 }
 
 int PlaylistController::currentIndex() const

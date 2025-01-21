@@ -25,7 +25,8 @@ import QtQuick.Layouts
 import QtQuick.Templates
 import QtQuick.Controls
 import QtQuick.Window
-import Qt5Compat.GraphicalEffects
+import QtQuick.Effects // Unconditionally available, dummy if Qt version is less than 6.5.0
+import Qt5Compat.GraphicalEffects // Unconditionally available, dummy if Qt version is equal to or greater than 6.5.0
 
 
 import VLC.MainInterface
@@ -100,7 +101,7 @@ Item {
         Binding {
             target: MainCtx
             property: "windowExtendedMargin"
-            value: _extendedFrameVisible ? VLCStyle.dp(20, VLCStyle.scale) : 0
+            value: _extendedFrameVisible ? 20 : 0
         }
 
         Window.onWindowChanged: {
@@ -252,7 +253,12 @@ Item {
                        so check if mimedata has valid url in text and use it
                        if we didn't get any normal Urls()*/
 
-                    urls.push(drop.text)
+                    if (drop.text.includes("\n")) {
+                        const normalizedLineEndingsDropText = drop.text.replace("\r\n", "\n")
+                        urls.push(...normalizedLineEndingsDropText.split("\n"))
+                    } else {
+                        urls.push(drop.text)
+                    }
                 }
 
                 if (urls.length > 0) {
@@ -321,9 +327,11 @@ Item {
 
     //draw the window drop shadow ourselve when the windowing system doesn't
     //provide them but support extended frame
-    RectangularGlow {
+    Widgets.RectangularGlow {
         id: effect
         z: -1
+        hollow: Window.window && (Window.window.color.a < 1.0) // the interface may be translucent if the window has backdrop blur
+        blending: false // stacked below everything, no need for blending even though it is not opaque
         visible: _extendedFrameVisible
         anchors.fill: g_mainInterface
         spread: 0.0

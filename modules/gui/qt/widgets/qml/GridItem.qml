@@ -55,6 +55,7 @@ T.ItemDelegate {
 
     property alias title: titleLabel.text
     property alias subtitle: subtitleTxt.text
+    property alias subtitleVisible: subtitleTxt.visible
     property alias playCoverShowPlay: picture.playCoverShowPlay
     property alias playIconSize: picture.playIconSize
     property alias pictureRadius: picture.radius
@@ -75,6 +76,9 @@ T.ItemDelegate {
 
     implicitWidth: layout.implicitWidth
     implicitHeight: layout.implicitHeight
+
+    width: Math.round(implicitWidth)
+    height: Math.round(implicitHeight)
 
     highlighted: (hovered || visualFocus)
 
@@ -167,6 +171,8 @@ T.ItemDelegate {
         DragHandler {
             id: dragHandler
 
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
+
             target: null
 
             grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
@@ -253,6 +259,13 @@ T.ItemDelegate {
 
     contentItem: ColumnLayout {
         id: layout
+
+        // Raise the content item so that the handlers of the control
+        // do not handle events that are to be handled by the handlers
+        // of the content item. Raising the content item should be
+        // fine because content item is supposed to be the foreground
+        // item.
+        z: 1
 
         spacing: 0
 
@@ -365,7 +378,6 @@ T.ItemDelegate {
 
             HoverHandler {
                 id: subtitleTxtMouseHandler
-                acceptedDevices: PointerDevice.Mouse
             }
         }
     }

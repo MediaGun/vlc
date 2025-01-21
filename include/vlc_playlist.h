@@ -22,6 +22,7 @@
 #define VLC_PLAYLIST_NEW_H
 
 #include <vlc_common.h>
+#include <vlc_preparser.h>
 
 # ifdef __cplusplus
 extern "C" {
@@ -152,6 +153,19 @@ struct vlc_playlist_sort_criterion
 {
     enum vlc_playlist_sort_key key;
     enum vlc_playlist_sort_order order;
+};
+
+/** Preparsing depth */
+enum vlc_playlist_preparsing
+{
+    /** Don't parse anything */
+    VLC_PLAYLIST_PREPARSING_DISABLED,
+    /** Auto parse items but don't auto-parse sub items */
+    VLC_PLAYLIST_PREPARSING_ENABLED,
+    /** Auto parse sub items of items (1 level depth) */
+    VLC_PLAYLIST_PREPARSING_COLLAPSE,
+    /** Auto parse all sub items recursively */
+    VLC_PLAYLIST_PREPARSING_RECURSIVE,
 };
 
 /**
@@ -359,10 +373,14 @@ vlc_playlist_item_GetId(vlc_playlist_item_t *);
  * Create a new playlist.
  *
  * \param parent   a VLC object
+ * \param rec preparsing depth
+ * \param preparse_max_threads the maximum number of threads used to parse, must be >= 1
+ * \param preparse_timeout default timeout of the preparser, 0 for no limits.
  * \return a pointer to a valid playlist instance, or NULL if an error occurred
  */
 VLC_API VLC_USED vlc_playlist_t *
-vlc_playlist_New(vlc_object_t *parent);
+vlc_playlist_New(vlc_object_t *parent, enum vlc_playlist_preparsing rec,
+                 unsigned preparse_max_threads, vlc_tick_t preparse_timeout);
 
 /**
  * Delete a playlist.
@@ -895,17 +913,6 @@ vlc_playlist_PlayAt(vlc_playlist_t *playlist, size_t index)
         return ret;
     return vlc_playlist_Start(playlist);
 }
-
-/**
- * Preparse a media, and expand it in the playlist on subitems added.
- *
- * \param playlist the playlist (not necessarily locked)
- * \param media the media to preparse
- * \param parse_subitems true to parse subitems (from a folder or a playlist file)
- */
-VLC_API void
-vlc_playlist_Preparse(vlc_playlist_t *playlist, input_item_t *media,
-                      bool parse_subitems);
 
 /**
  * Export the playlist to a file.

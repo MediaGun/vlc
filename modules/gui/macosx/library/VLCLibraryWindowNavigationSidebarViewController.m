@@ -29,12 +29,18 @@
 #import "library/VLCLibraryWindow.h"
 #import "library/VLCLibraryWindowNavigationSidebarOutlineView.h"
 
+#import "extensions/NSColor+VLCAdditions.h"
+#import "extensions/NSWindow+VLCAdditions.h"
+
+#import "views/VLCStatusNotifierView.h"
+
 // This needs to match whatever identifier has been set in the library window XIB
 static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCellIdentifier";
 
 @interface VLCLibraryWindowNavigationSidebarViewController ()
 
 @property BOOL ignoreSegmentSelectionChanges;
+@property (readonly) NSEdgeInsets scrollViewInsets;
 
 @end
 
@@ -73,6 +79,15 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
 
     [_outlineView reloadData];
 
+    const NSEdgeInsets scrollViewInsets = self.outlineViewScrollView.contentInsets;
+    _scrollViewInsets =
+        NSEdgeInsetsMake(scrollViewInsets.top + self.libraryWindow.titlebarHeight,
+                         scrollViewInsets.left,
+                         scrollViewInsets.bottom,
+                         scrollViewInsets.right);
+
+    self.statusNotifierView.postsFrameChangedNotifications = YES;
+
     NSNotificationCenter * const defaultCenter = NSNotificationCenter.defaultCenter;
     [defaultCenter addObserver:self
                       selector:@selector(internalNodesChanged:)
@@ -89,6 +104,18 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
     [defaultCenter addObserver:self
                       selector:@selector(internalNodesChanged:)
                           name:VLCLibraryModelGroupDeleted
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(statusViewActivated:)
+                          name:VLCStatusNotifierViewActivated
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(statusViewDeactivated:)
+                          name:VLCStatusNotifierViewDeactivated
+                        object:nil];
+    [defaultCenter addObserver:self
+                      selector:@selector(statusViewSizeChanged:)
+                          name:NSViewFrameDidChangeNotification
                         object:nil];
 }
 
@@ -108,6 +135,42 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
                   byExtendingSelection:NO];
 
     self.ignoreSegmentSelectionChanges = NO;
+}
+
+- (void)statusViewActivated:(NSNotification *)notification
+{
+    const CGFloat statusNotifierHeight = self.statusNotifierView.frame.size.height;
+    self.outlineViewScrollView.contentInsets =
+        NSEdgeInsetsMake(self.scrollViewInsets.top,
+                         self.scrollViewInsets.left,
+                         self.scrollViewInsets.bottom + statusNotifierHeight,
+                         self.scrollViewInsets.right);
+    self.statusNotifierView.hidden = NO;
+    self.statusNotifierView.animator.alphaValue = 1.0;
+}
+
+- (void)statusViewDeactivated:(NSNotification *)notification
+{
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
+        self.statusNotifierView.animator.alphaValue = 0.0;
+    } completionHandler:^{
+        self.statusNotifierView.hidden = YES;
+        self.outlineViewScrollView.contentInsets = self.scrollViewInsets;
+    }];
+}
+
+- (void)statusViewSizeChanged:(NSNotification *)notification
+{
+    if (self.statusNotifierView.hidden) {
+        return;
+    }
+
+    const CGFloat statusNotifierHeight = self.statusNotifierView.frame.size.height;
+    self.outlineViewScrollView.contentInsets =
+        NSEdgeInsetsMake(self.scrollViewInsets.top,
+                         self.scrollViewInsets.left,
+                         self.scrollViewInsets.bottom + statusNotifierHeight,
+                         self.scrollViewInsets.right);
 }
 
 - (NSTreeNode *)nodeForSegmentType:(VLCLibrarySegmentType)segmentType
@@ -157,7 +220,7 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
              segmentType < VLCLibraryHighSentinelSegment,
              @"Invalid segment type value provided");
 
-    if (segmentType == VLCLibraryVLCTitleSegment || segmentType == VLCLibraryHeaderSegment) {
+    if (segmentType == VLCLibraryHeaderSegment || segmentType == VLCLibraryExploreHeaderSegment) {
         return;
     }
 
@@ -183,10 +246,18 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
 {
     NSAssert(outlineView == _outlineView, @"VLCLibraryWindowNavigationSidebarController should only be a delegate for the libraryWindow nav sidebar outline view!");
 
-    NSTableCellView * const cellView = [outlineView makeViewWithIdentifier:@"VLCLibrarySegmentCellIdentifier" owner:self];
+    const BOOL isHeader = [self outlineView:outlineView isGroupItem:item];
+    NSTableCellView * const cellView = isHeader
+        ? [outlineView makeViewWithIdentifier:@"VLCLibrarySegmentHeaderCellIdentifier" owner:self]
+        : [outlineView makeViewWithIdentifier:@"VLCLibrarySegmentCellIdentifier" owner:self];
     NSAssert(cellView != nil, @"Provided cell view for navigation outline view should be valid!");
     [cellView.textField bind:NSValueBinding toObject:cellView withKeyPath:@"objectValue.displayString" options:nil];
     [cellView.imageView bind:NSImageBinding toObject:cellView withKeyPath:@"objectValue.displayImage" options:nil];
+
+    if (@available(macOS 10.14, *)) {
+        cellView.imageView.contentTintColor = NSColor.VLCAccentColor;
+    }
+
     return cellView;
 }
 
@@ -198,8 +269,7 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
         NSTreeNode * const node = [self.outlineView itemAtRow:proposedSelectionIndexes.firstIndex];
         VLCLibrarySegment * const segment = (VLCLibrarySegment *)node.representedObject;
 
-        if (segment.segmentType == VLCLibraryVLCTitleSegment ||
-            segment.segmentType == VLCLibraryHeaderSegment) {
+        if (segment.segmentType == VLCLibraryHeaderSegment || segment.segmentType == VLCLibraryExploreHeaderSegment) {
             return NSIndexSet.indexSet;
         } else if (segment.segmentType == VLCLibraryMusicSegment) {
             [self.outlineView expandItem:[self nodeForSegmentType:VLCLibraryMusicSegment]];
@@ -240,7 +310,7 @@ static NSString * const VLCLibrarySegmentCellIdentifier = @"VLCLibrarySegmentCel
 {
     NSTreeNode * const treeNode = (NSTreeNode *)item;
     VLCLibrarySegment * const segment = (VLCLibrarySegment *)treeNode.representedObject;
-    return segment.segmentType == VLCLibraryHeaderSegment;
+    return segment.segmentType == VLCLibraryHeaderSegment || segment.segmentType == VLCLibraryExploreHeaderSegment;
 }
 
 @end

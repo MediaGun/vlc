@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 
 
@@ -26,7 +27,7 @@ import VLC.Style
 
 // NOTE: This rectangle is useful to discern the item against a similar background.
 // FIXME: Maybe we could refactor this to draw the background directly in the RoundImage.
-Rectangle {
+Item {
     id: root
 
     // Properties
@@ -34,6 +35,14 @@ Rectangle {
     property real playIconSize: VLCStyle.play_cover_normal
 
     property bool playCoverShowPlay: true
+
+    readonly property real effectiveRadius: image.visible ? image.effectiveRadius
+                                                          : (fallbackImage.visible ? fallbackImage.effectiveRadius
+                                                                                   : 0.0)
+
+    property alias radius: image.radius
+
+    property alias color: background.color
 
     // Aliases
 
@@ -67,6 +76,12 @@ Rectangle {
 
     // Children
 
+    Rectangle {
+        id: background
+        anchors.fill: parent
+        radius: root.effectiveRadius
+    }
+
     //delay placeholder showing up
     Timer {
         id: timer
@@ -80,13 +95,11 @@ Rectangle {
 
         anchors.fill: parent
 
-        radius: root.radius
-
-        sourceSize.width: root.pictureWidth
-        sourceSize.height: root.pictureHeight
+        sourceSize.width: root.pictureWidth * Screen.devicePixelRatio
+        sourceSize.height: root.pictureHeight * Screen.devicePixelRatio
 
         onStatusChanged: {
-            if (status === Widgets.RoundImage.Loading) {
+            if (status === Image.Loading) {
                 root._loadTimeout = false
                 timer.start()
             } else {
@@ -105,15 +118,15 @@ Rectangle {
         radius: root.radius
 
         visible: image.source.toString() === "" //RoundImage.source is a QUrl
-                 || image.status === Widgets.RoundImage.Error
-                 || (image.status === Widgets.RoundImage.Loading && root._loadTimeout)
+                 || image.status === Image.Error
+                 || (image.status === Image.Loading && root._loadTimeout)
 
         // we only keep this image till there is no main image
         // try to release the resources otherwise
         source: visible ? root.fallbackImageSource : ""
 
-        sourceSize.width: root.pictureWidth
-        sourceSize.height: root.pictureHeight
+        sourceSize.width: root.pictureWidth * Screen.devicePixelRatio
+        sourceSize.height: root.pictureHeight * Screen.devicePixelRatio
 
         cache: true
     }

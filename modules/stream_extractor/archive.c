@@ -81,6 +81,9 @@ struct private_sys_t
 
     libarchive_callback_t** pp_callback_data;
     size_t i_callback_data;
+
+    const uint8_t *last_arcbuf;
+    size_t last_arcsize;
 };
 
 struct libarchive_callback_t {
@@ -187,8 +190,8 @@ static la_ssize_t libarchive_read_cb( libarchive_t* p_arc, void* p_obj,
     stream_t*  p_source = p_cb->p_source;
     private_sys_t* p_sys = p_cb->p_sys;
 
-    ssize_t i_ret = vlc_stream_Read( p_source, &p_sys->buffer,
-      sizeof( p_sys->buffer ) );
+    ssize_t i_ret = vlc_stream_Read( p_source, p_sys->buffer,
+                                     sizeof( p_sys->buffer ) );
 
     if( i_ret < 0 )
     {
@@ -399,6 +402,8 @@ static int archive_extractor_reset( stream_extractor_t* p_extractor )
     p_sys->i_offset = 0;
     p_sys->b_eof = false;
     p_sys->b_dead = false;
+    p_sys->last_arcbuf = NULL;
+    p_sys->last_arcsize = 0;
     return VLC_SUCCESS;
 }
 
@@ -424,6 +429,8 @@ static private_sys_t* setup( vlc_object_t* obj, stream_t* source,
 
     p_sys->source = source;
     p_sys->p_obj = obj;
+    p_sys->last_arcbuf = NULL;
+    p_sys->last_arcsize = 0;
 
     return p_sys;
 
@@ -530,6 +537,7 @@ static int ReadDir( stream_directory_t* p_directory, input_item_node_t* p_node )
     vlc_readdir_helper_init( &rdh, p_directory, p_node);
     struct archive_entry* entry;
     int archive_status;
+    unsigned item_count = 0;
 
     while( !( archive_status = archive_read_next_header( p_arc, &entry ) ) )
     {
@@ -564,6 +572,7 @@ static int ReadDir( stream_directory_t* p_directory, input_item_node_t* p_node )
             int64_t size = archive_entry_size( entry );
             if( size >= 0 )
                 input_item_AddStat( p_item, "size", size );
+            item_count++;
         }
         free( mrl );
 
@@ -571,14 +580,14 @@ static int ReadDir( stream_directory_t* p_directory, input_item_node_t* p_node )
             break;
     }
 
-    vlc_readdir_helper_finish( &rdh, archive_status == ARCHIVE_EOF );
-    return archive_status == ARCHIVE_EOF ? VLC_SUCCESS : VLC_EGENERIC;
+    bool success = item_count > 0 || archive_status == ARCHIVE_EOF;
+
+    vlc_readdir_helper_finish( &rdh, success );
+    return success ? VLC_SUCCESS : VLC_EGENERIC;
 }
 
 static ssize_t Read( stream_extractor_t *p_extractor, void* p_data, size_t i_size )
 {
-    char dummy_buffer[ 8192 ];
-
     private_sys_t* p_sys = p_extractor->p_sys;
     libarchive_t* p_arc = p_sys->p_archive;
     ssize_t       i_ret;
@@ -589,12 +598,39 @@ static ssize_t Read( stream_extractor_t *p_extractor, void* p_data, size_t i_siz
     if( p_sys->b_eof )
         return 0;
 
-    i_ret = archive_read_data( p_arc,
-      p_data ? p_data :                        dummy_buffer,
-      p_data ? i_size : __MIN( i_size, sizeof( dummy_buffer ) ) );
+    const void *arcbuf = NULL;
+    size_t arcsize = 0;
+    la_int64_t arcoffset = 0;
+    if( p_sys->last_arcbuf == NULL )
+    {
+        i_ret = archive_read_data_block( p_arc, &arcbuf, &arcsize, &arcoffset);
+        assert(arcoffset == (la_int64_t) p_sys->i_offset); (void)arcoffset;
+    }
+    else
+    {
+        i_ret = ARCHIVE_OK;
+        arcbuf = p_sys->last_arcbuf;
+        arcsize = p_sys->last_arcsize;
+    }
 
     switch( i_ret )
     {
+        case ARCHIVE_OK:
+        case ARCHIVE_EOF:
+            if( i_size >= arcsize )
+            {
+                i_size = arcsize;
+                p_sys->last_arcbuf = NULL;
+                p_sys->last_arcsize = 0;
+            }
+            else
+            {
+                p_sys->last_arcbuf = (uint8_t *)arcbuf + i_size;
+                p_sys->last_arcsize = arcsize - i_size;
+            }
+            if( p_data != NULL)
+                memcpy( p_data, arcbuf, i_size );
+            break;
         case ARCHIVE_RETRY:
         case ARCHIVE_FAILED:
             msg_Dbg( p_extractor, "libarchive: %s", archive_error_string( p_arc ) );
@@ -609,8 +645,8 @@ static ssize_t Read( stream_extractor_t *p_extractor, void* p_data, size_t i_siz
             goto fatal_error;
     }
 
-    p_sys->i_offset += i_ret;
-    return i_ret;
+    p_sys->i_offset += i_size;
+    return i_size;
 
 fatal_error:
     p_sys->b_dead = true;
@@ -650,6 +686,7 @@ static int Seek( stream_extractor_t* p_extractor, uint64_t i_req )
     }
 
     p_sys->b_eof = false;
+    int ret = VLC_SUCCESS;
 
     if( !p_sys->b_seekable_archive || p_sys->b_dead
       || archive_seek_data( p_sys->p_archive, i_req, SEEK_SET ) < 0 )
@@ -660,29 +697,47 @@ static int Seek( stream_extractor_t* p_extractor, uint64_t i_req )
 
         uint64_t i_skip = i_req - p_sys->i_offset;
 
-        /* RECREATE LIBARCHIVE HANDLE IF WE ARE SEEKING BACKWARDS */
 
-        if( i_req < p_sys->i_offset )
+        /* The 1st try is the original skip.
+         * The 2nd try is to go back to the previous position in case of
+         * failure. */
+        uint64_t preskip_offset = p_sys->i_offset;
+        for (unsigned i = 0; i < 2; ++i)
         {
-            if( archive_extractor_reset( p_extractor ) )
+            if( i_req < p_sys->i_offset )
             {
-                msg_Err( p_extractor, "unable to reset libarchive handle" );
-                return VLC_EGENERIC;
+                /* RECREATE LIBARCHIVE HANDLE IF WE ARE SEEKING BACKWARDS */
+                if( archive_extractor_reset( p_extractor ) )
+                {
+                    msg_Err( p_extractor, "unable to reset libarchive handle" );
+                    return VLC_EGENERIC;
+                }
+
+                i_skip = i_req;
             }
 
-            i_skip = i_req;
+            if( archive_skip_decompressed( p_extractor, &i_skip ) == 0 )
+                break; /* Success */
+            msg_Warn( p_extractor, "failed to skip to seek position %"
+                      PRIu64 "/%" PRId64, i_req,
+                      archive_entry_size( p_sys->p_entry ) );
+            ret = VLC_EGENERIC;
+
+            /* Seek back to the original offset before failure */
+            i_req = preskip_offset;
+            if( i_req == p_sys->i_offset )
+                break; /* no data was skipped, no need for a 2nd try */
+            assert( i_req < p_sys->i_offset );
         }
-        if( archive_skip_decompressed( p_extractor, &i_skip ) )
-        {
-            msg_Warn( p_extractor, "failed to skip to seek position %" PRIu64 "/%" PRId64,
-                      i_req, archive_entry_size( p_sys->p_entry ) );
-            p_sys->i_offset += i_skip;
-            return VLC_EGENERIC;
-        }
+    }
+    else
+    {
+        p_sys->last_arcbuf = NULL;
+        p_sys->last_arcsize = 0;
     }
 
     p_sys->i_offset = i_req;
-    return VLC_SUCCESS;
+    return ret;
 }
 
 

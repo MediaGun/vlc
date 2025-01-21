@@ -29,7 +29,7 @@
 @interface VLCMediaSource ()
 {
     BOOL _respondsToDiskChanges;
-    libvlc_int_t *_p_libvlcInstance;
+    vlc_preparser_t *_p_preparser;
     vlc_media_source_t *_p_mediaSource;
     vlc_media_tree_listener_id *_p_treeListenerID;
 }
@@ -79,7 +79,7 @@ static void cb_children_removed(vlc_media_tree_t *p_tree,
 
 static void cb_preparse_ended(vlc_media_tree_t *p_tree,
                               input_item_node_t *p_node,
-                              enum input_item_preparse_status status,
+                              int status,
                               void *p_data)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -102,12 +102,12 @@ static const char *const myFoldersDescription = "My Folders";
 #pragma mark - VLCMediaSource methods
 @implementation VLCMediaSource
 
-- (instancetype)initForLocalDevices:(libvlc_int_t *)p_libvlcInstance
+- (instancetype)initForLocalDevices:(vlc_preparser_t *)p_preparser
 {
     self = [super init];
     if (self) {
         _respondsToDiskChanges = NO;
-        _p_libvlcInstance = p_libvlcInstance;
+        _p_preparser = p_preparser;
         
         _p_mediaSource = malloc(sizeof(vlc_media_source_t));
         if (!_p_mediaSource) {
@@ -129,13 +129,13 @@ static const char *const myFoldersDescription = "My Folders";
 }
 
 - (instancetype)initWithMediaSource:(vlc_media_source_t *)p_mediaSource
-                  andLibVLCInstance:(libvlc_int_t *)p_libvlcInstance
+                       andPreparser:(vlc_preparser_t *)p_preparser
                         forCategory:(enum services_discovery_category_e)category
 {
     self = [super init];
     if (self && p_mediaSource != NULL) {
         _respondsToDiskChanges = NO;
-        _p_libvlcInstance = p_libvlcInstance;
+        _p_preparser = p_preparser;
         _p_mediaSource = p_mediaSource;
         vlc_media_source_Hold(_p_mediaSource);
         _p_treeListenerID = vlc_media_tree_AddListener(_p_mediaSource->tree,
@@ -147,11 +147,11 @@ static const char *const myFoldersDescription = "My Folders";
     return self;
 }
 
-- (instancetype)initMyFoldersMediaSourceWithLibVLCInstance:(libvlc_int_t *)p_libvlcInstance
+- (instancetype)initMyFoldersMediaSourceWithPreparser:(vlc_preparser_t *)p_preparser
 {
     self = [super init];
     if (self) {
-        _p_libvlcInstance = p_libvlcInstance;
+        _p_preparser = p_preparser;
 
          _p_mediaSource = malloc(sizeof(vlc_media_source_t));
         if (!_p_mediaSource) {
@@ -216,11 +216,11 @@ static const char *const myFoldersDescription = "My Folders";
 }
 
 - (instancetype)initWithLocalFolderMrl:(NSString *)mrl
-                     andLibVLCInstance:(libvlc_int_t *)p_libvlcInstance
+                          andPreparser:(vlc_preparser_t *)p_preparser
 {
     self = [super init];
     if (self) {
-        _p_libvlcInstance = p_libvlcInstance;
+        _p_preparser = p_preparser;
 
          _p_mediaSource = malloc(sizeof(vlc_media_source_t));
         if (!_p_mediaSource) {
@@ -316,12 +316,8 @@ static const char *const myFoldersDescription = "My Folders";
         return;
     }
 
-    vlc_preparser_t *parser = libvlc_GetMainPreparser(_p_libvlcInstance);
-    if (unlikely(parser == NULL))
-        return;
-
-    vlc_media_tree_Preparse(_p_mediaSource->tree, parser,
-                            inputNode.inputItem.vlcInputItem, NULL);
+    vlc_media_tree_Preparse(_p_mediaSource->tree, _p_preparser,
+                            inputNode.inputItem.vlcInputItem);
 }
 
 - (void)clearChildNodesForNode:(nonnull input_item_node_t*)inputNode

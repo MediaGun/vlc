@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="22505" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="23504" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
     <dependencies>
         <deployment version="101000" identifier="macosx"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="22505"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="23504"/>
         <capability name="Image references" minToolsVersion="12.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
@@ -10,6 +10,7 @@
         <customObject id="-2" userLabel="File's Owner" customClass="VLCMainVideoViewController">
             <connections>
                 <outlet property="bottomBarView" destination="1GA-GG-Sdx" id="0UY-5o-eVD"/>
+                <outlet property="centerButtonStackInViewConstraint" destination="l2Y-IR-aus" id="kLb-Ev-BuY"/>
                 <outlet property="centralControlsStackView" destination="CvV-yX-Nbh" id="zyI-Rb-bem"/>
                 <outlet property="controlsBar" destination="3" id="Mfq-2w-2uR"/>
                 <outlet property="fakeTitleBar" destination="jnw-gL-nrF" id="7lZ-al-c3d"/>
@@ -17,10 +18,13 @@
                 <outlet property="floatOnTopIndicatorImageView" destination="CrW-mq-gge" id="hqR-4Z-a18"/>
                 <outlet property="loadingIndicator" destination="xOQ-YR-iAc" id="CtX-Yo-UX2"/>
                 <outlet property="mainControlsView" destination="D4V-Zd-qvB" id="KwM-ya-ETn"/>
+                <outlet property="nextButtonSizeConstraint" destination="M5n-CD-fd3" id="WIM-QF-IMG"/>
                 <outlet property="overlayView" destination="FGS-tq-54S" id="RSC-7m-N0y"/>
-                <outlet property="playlistButton" destination="Drq-if-dw4" id="BZe-Cr-mzZ"/>
-                <outlet property="playlistButtonTopConstraint" destination="VyM-t4-y6F" id="V94-GS-KcS"/>
-                <outlet property="playlistButtonTrailingConstraint" destination="rWa-NJ-Aju" id="tzU-Iz-CXl"/>
+                <outlet property="playButtonSizeConstraint" destination="OHb-xJ-sqM" id="7Ve-Gd-rEz"/>
+                <outlet property="playQueueButton" destination="Drq-if-dw4" id="BZe-Cr-mzZ"/>
+                <outlet property="playQueueButtonTopConstraint" destination="VyM-t4-y6F" id="V94-GS-KcS"/>
+                <outlet property="playQueueButtonTrailingConstraint" destination="rWa-NJ-Aju" id="tzU-Iz-CXl"/>
+                <outlet property="prevButtonSizeConstraint" destination="XBm-GM-29d" id="8x6-WZ-ydw"/>
                 <outlet property="returnButton" destination="UoQ-34-Pox" id="nyY-OF-9zj"/>
                 <outlet property="returnButtonLeadingConstraint" destination="BkP-RA-uxn" id="CsI-gH-SYp"/>
                 <outlet property="returnButtonTopConstraint" destination="0l2-eC-67c" id="78K-sz-kmV"/>
@@ -41,6 +45,8 @@
                 <outlet property="forwardButton" destination="sF5-Z0-bef" id="H6w-Le-NAK"/>
                 <outlet property="fullscreenButton" destination="dYZ-ri-Kra" id="Cw2-BS-QG9"/>
                 <outlet property="fullscreenButtonWidthConstraint" destination="quS-fD-Od7" id="6hT-nR-yQI"/>
+                <outlet property="jumpBackwardButton" destination="AXA-01-AU8" id="gfa-Yt-ezI"/>
+                <outlet property="jumpForwardButton" destination="aAq-uE-mLW" id="M7n-mW-tNe"/>
                 <outlet property="muteVolumeButton" destination="afi-4d-rQk" id="y6R-6o-2OM"/>
                 <outlet property="pipButton" destination="yEi-SZ-SIS" id="vFi-Ln-9lT"/>
                 <outlet property="pipButtonWidthConstraint" destination="dxa-Jx-T4p" id="a5S-ec-2xD"/>
@@ -54,7 +60,7 @@
                 <outlet property="volumeSlider" destination="fKc-2d-Uu6" id="2pU-fH-Afo"/>
             </connections>
         </customObject>
-        <customView id="WRu-Ic-lQK">
+        <customView appearanceType="darkAqua" id="WRu-Ic-lQK">
             <rect key="frame" x="0.0" y="0.0" width="720" height="480"/>
             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
             <subviews>
@@ -86,21 +92,6 @@
                             </visualEffectView>
                             <customView translatesAutoresizingMaskIntoConstraints="NO" id="FGS-tq-54S" customClass="VLCMainVideoViewOverlayView">
                                 <rect key="frame" x="0.0" y="0.0" width="720" height="480"/>
-                                <subviews>
-                                    <imageView horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="CrW-mq-gge">
-                                        <rect key="frame" x="344" y="285.5" width="32.5" height="45"/>
-                                        <constraints>
-                                            <constraint firstAttribute="width" constant="32" id="wyi-7y-I1n"/>
-                                            <constraint firstAttribute="height" constant="32" id="yeS-Wi-3sX"/>
-                                        </constraints>
-                                        <imageCell key="cell" refusesFirstResponder="YES" alignment="left" imageScaling="proportionallyUpOrDown" id="OcH-tO-P80">
-                                            <imageReference key="image" image="pin.fill" catalog="system" symbolScale="large"/>
-                                        </imageCell>
-                                    </imageView>
-                                </subviews>
-                                <constraints>
-                                    <constraint firstItem="CrW-mq-gge" firstAttribute="centerX" secondItem="FGS-tq-54S" secondAttribute="centerX" id="rPJ-ci-c4T"/>
-                                </constraints>
                             </customView>
                             <customView translatesAutoresizingMaskIntoConstraints="NO" id="1GA-GG-Sdx">
                                 <rect key="frame" x="0.0" y="0.0" width="720" height="132"/>
@@ -366,10 +357,28 @@
                                 </shadow>
                             </customView>
                             <stackView wantsLayer="YES" distribution="fill" orientation="horizontal" alignment="centerY" spacing="20" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="CvV-yX-Nbh">
-                                <rect key="frame" x="260" y="208" width="200" height="64"/>
+                                <rect key="frame" x="208" y="208" width="304" height="64"/>
                                 <subviews>
+                                    <button translatesAutoresizingMaskIntoConstraints="NO" id="AXA-01-AU8" customClass="VLCImageButton">
+                                        <rect key="frame" x="0.0" y="13" width="32" height="40"/>
+                                        <shadow key="shadow" blurRadius="20">
+                                            <color key="color" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                        </shadow>
+                                        <buttonCell key="cell" type="square" bezelStyle="shadowlessSquare" image="arrow.trianglehead.counterclockwise" catalog="system" imagePosition="only" alignment="center" continuous="YES" imageScaling="proportionallyUpOrDown" inset="2" id="BGU-Ew-pvq">
+                                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <color key="contentTintColor" red="0.99999600649999998" green="1" blue="1" alpha="0.85338267140000001" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="32" id="Xh5-1i-dxH"/>
+                                            <constraint firstAttribute="width" secondItem="AXA-01-AU8" secondAttribute="height" multiplier="1:1" id="lgn-JT-8Qk"/>
+                                        </constraints>
+                                        <connections>
+                                            <action selector="jumpBackward:" target="3" id="Kkq-12-jbm"/>
+                                        </connections>
+                                    </button>
                                     <button translatesAutoresizingMaskIntoConstraints="NO" id="V9d-hX-iyg" customClass="VLCImageButton">
-                                        <rect key="frame" x="0.0" y="6.5" width="48" height="51"/>
+                                        <rect key="frame" x="52" y="6.5" width="48.5" height="51"/>
                                         <shadow key="shadow" blurRadius="20">
                                             <color key="color" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         </shadow>
@@ -387,7 +396,7 @@
                                         </connections>
                                     </button>
                                     <button translatesAutoresizingMaskIntoConstraints="NO" id="PCC-8a-sVF" customClass="VLCImageButton">
-                                        <rect key="frame" x="68" y="-2" width="64.5" height="68"/>
+                                        <rect key="frame" x="120" y="-1.5" width="64.5" height="68"/>
                                         <shadow key="shadow" blurRadius="30">
                                             <color key="color" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         </shadow>
@@ -408,7 +417,7 @@
                                         </connections>
                                     </button>
                                     <button translatesAutoresizingMaskIntoConstraints="NO" id="sF5-Z0-bef" customClass="VLCImageButton">
-                                        <rect key="frame" x="152" y="6.5" width="48" height="51"/>
+                                        <rect key="frame" x="204" y="6.5" width="48.5" height="51"/>
                                         <shadow key="shadow" blurRadius="20">
                                             <color key="color" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                         </shadow>
@@ -425,13 +434,39 @@
                                             <action selector="fwd:" target="3" id="uPX-Xa-CwO"/>
                                         </connections>
                                     </button>
+                                    <button translatesAutoresizingMaskIntoConstraints="NO" id="aAq-uE-mLW" customClass="VLCImageButton">
+                                        <rect key="frame" x="272" y="13" width="32" height="40"/>
+                                        <shadow key="shadow" blurRadius="20">
+                                            <color key="color" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                        </shadow>
+                                        <buttonCell key="cell" type="square" bezelStyle="shadowlessSquare" image="arrow.trianglehead.clockwise" catalog="system" imagePosition="only" alignment="center" continuous="YES" imageScaling="proportionallyUpOrDown" inset="2" id="V5z-Pf-hj2">
+                                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <color key="contentTintColor" red="0.99999600649999998" green="1" blue="1" alpha="0.85338267140000001" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="32" id="OBA-WG-jaz"/>
+                                            <constraint firstAttribute="width" secondItem="aAq-uE-mLW" secondAttribute="height" multiplier="1:1" id="g5c-kh-jsZ"/>
+                                        </constraints>
+                                        <connections>
+                                            <action selector="jumpForward:" target="3" id="5yg-na-tAR"/>
+                                        </connections>
+                                    </button>
                                 </subviews>
+                                <constraints>
+                                    <constraint firstItem="aAq-uE-mLW" firstAttribute="width" secondItem="aAq-uE-mLW" secondAttribute="height" multiplier="1:1" id="eMl-LK-UdE"/>
+                                    <constraint firstItem="AXA-01-AU8" firstAttribute="width" secondItem="AXA-01-AU8" secondAttribute="height" multiplier="1:1" id="tkp-uc-bfs"/>
+                                </constraints>
                                 <visibilityPriorities>
+                                    <integer value="1000"/>
+                                    <integer value="1000"/>
                                     <integer value="1000"/>
                                     <integer value="1000"/>
                                     <integer value="1000"/>
                                 </visibilityPriorities>
                                 <customSpacing>
+                                    <real value="3.4028234663852886e+38"/>
+                                    <real value="3.4028234663852886e+38"/>
                                     <real value="3.4028234663852886e+38"/>
                                     <real value="3.4028234663852886e+38"/>
                                     <real value="3.4028234663852886e+38"/>
@@ -464,7 +499,7 @@
                                 </buttonCell>
                                 <color key="contentTintColor" red="0.99999600649999998" green="1" blue="1" alpha="0.85338267140000001" colorSpace="custom" customColorSpace="sRGB"/>
                                 <connections>
-                                    <action selector="togglePlaylist:" target="-2" id="WrP-vg-etw"/>
+                                    <action selector="togglePlayQueue:" target="-2" id="WrP-vg-etw"/>
                                 </connections>
                             </button>
                         </subviews>
@@ -480,7 +515,6 @@
                             <constraint firstItem="jnw-gL-nrF" firstAttribute="leading" secondItem="1tI-8K-e3c" secondAttribute="leading" id="Z37-TJ-B2D"/>
                             <constraint firstAttribute="trailing" secondItem="1GA-GG-Sdx" secondAttribute="trailing" id="dWk-NI-ekN"/>
                             <constraint firstItem="CvV-yX-Nbh" firstAttribute="centerY" secondItem="1tI-8K-e3c" secondAttribute="centerY" id="l2Y-IR-aus"/>
-                            <constraint firstItem="CrW-mq-gge" firstAttribute="bottom" secondItem="CvV-yX-Nbh" secondAttribute="top" constant="-20" id="mik-2t-Inh"/>
                             <constraint firstAttribute="bottom" secondItem="FGS-tq-54S" secondAttribute="bottom" id="ps4-nL-1Xc"/>
                             <constraint firstItem="FGS-tq-54S" firstAttribute="leading" secondItem="1tI-8K-e3c" secondAttribute="leading" id="qfd-OD-CHv"/>
                             <constraint firstAttribute="trailing" secondItem="Drq-if-dw4" secondAttribute="trailing" constant="20" id="rWa-NJ-Aju"/>
@@ -490,22 +524,44 @@
                     </view>
                     <color key="fillColor" red="0.0" green="0.0" blue="0.0" alpha="0.35060533940397354" colorSpace="custom" customColorSpace="sRGB"/>
                 </box>
-                <progressIndicator maxValue="100" indeterminate="YES" style="spinning" translatesAutoresizingMaskIntoConstraints="NO" id="xOQ-YR-iAc">
-                    <rect key="frame" x="344" y="156" width="32" height="32"/>
-                </progressIndicator>
+                <stackView distribution="fill" orientation="horizontal" alignment="top" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="CjJ-z0-ITu">
+                    <rect key="frame" x="324" y="292" width="72" height="32"/>
+                    <subviews>
+                        <progressIndicator maxValue="100" indeterminate="YES" style="spinning" translatesAutoresizingMaskIntoConstraints="NO" id="xOQ-YR-iAc">
+                            <rect key="frame" x="0.0" y="0.0" width="32" height="32"/>
+                        </progressIndicator>
+                        <imageView horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="CrW-mq-gge">
+                            <rect key="frame" x="40" y="-6.5" width="32.5" height="45"/>
+                            <constraints>
+                                <constraint firstAttribute="width" constant="32" id="wyi-7y-I1n"/>
+                                <constraint firstAttribute="height" constant="32" id="yeS-Wi-3sX"/>
+                            </constraints>
+                            <imageCell key="cell" refusesFirstResponder="YES" alignment="left" imageScaling="proportionallyUpOrDown" id="OcH-tO-P80">
+                                <imageReference key="image" image="pin.fill" catalog="system" symbolScale="large"/>
+                            </imageCell>
+                        </imageView>
+                    </subviews>
+                    <visibilityPriorities>
+                        <integer value="1000"/>
+                        <integer value="1000"/>
+                    </visibilityPriorities>
+                    <customSpacing>
+                        <real value="3.4028234663852886e+38"/>
+                        <real value="3.4028234663852886e+38"/>
+                    </customSpacing>
+                </stackView>
             </subviews>
             <constraints>
+                <constraint firstItem="D4V-Zd-qvB" firstAttribute="leading" secondItem="WRu-Ic-lQK" secondAttribute="leading" id="0vg-TG-O1c"/>
                 <constraint firstItem="MTR-ds-I8o" firstAttribute="top" secondItem="WRu-Ic-lQK" secondAttribute="top" id="2cq-kJ-XAR"/>
+                <constraint firstAttribute="bottom" secondItem="D4V-Zd-qvB" secondAttribute="bottom" id="D7Y-ck-iZE"/>
                 <constraint firstAttribute="trailing" secondItem="MTR-ds-I8o" secondAttribute="trailing" id="E2t-0S-hdB"/>
-                <constraint firstItem="D4V-Zd-qvB" firstAttribute="leading" secondItem="MTR-ds-I8o" secondAttribute="leading" id="LJf-4H-NXB"/>
-                <constraint firstItem="D4V-Zd-qvB" firstAttribute="top" secondItem="MTR-ds-I8o" secondAttribute="top" id="M6r-Gq-UVy"/>
-                <constraint firstItem="xOQ-YR-iAc" firstAttribute="top" secondItem="CvV-yX-Nbh" secondAttribute="bottom" constant="20" id="S0Y-3b-Ibd"/>
+                <constraint firstItem="CvV-yX-Nbh" firstAttribute="top" secondItem="CjJ-z0-ITu" secondAttribute="bottom" constant="20" id="R49-bc-DdH"/>
                 <constraint firstItem="MTR-ds-I8o" firstAttribute="leading" secondItem="WRu-Ic-lQK" secondAttribute="leading" id="TJ3-v0-eiw"/>
-                <constraint firstItem="D4V-Zd-qvB" firstAttribute="bottom" secondItem="MTR-ds-I8o" secondAttribute="bottom" id="cC2-Et-2M0"/>
-                <constraint firstItem="xOQ-YR-iAc" firstAttribute="centerX" secondItem="WRu-Ic-lQK" secondAttribute="centerX" id="enR-Xo-ume"/>
-                <constraint firstItem="1GA-GG-Sdx" firstAttribute="top" relation="greaterThanOrEqual" secondItem="xOQ-YR-iAc" secondAttribute="bottom" constant="20" id="jM9-dz-8jm"/>
+                <constraint firstAttribute="trailing" secondItem="D4V-Zd-qvB" secondAttribute="trailing" id="XP7-9K-6UE"/>
+                <constraint firstItem="CjJ-z0-ITu" firstAttribute="centerX" secondItem="CvV-yX-Nbh" secondAttribute="centerX" id="i8u-sK-BUl"/>
                 <constraint firstAttribute="bottom" secondItem="MTR-ds-I8o" secondAttribute="bottom" id="mbp-Lj-iuX"/>
-                <constraint firstItem="D4V-Zd-qvB" firstAttribute="trailing" secondItem="MTR-ds-I8o" secondAttribute="trailing" id="uy6-SD-44y"/>
+                <constraint firstItem="D4V-Zd-qvB" firstAttribute="top" secondItem="WRu-Ic-lQK" secondAttribute="top" id="n1X-TQ-EW3"/>
             </constraints>
             <point key="canvasLocation" x="66" y="-232"/>
         </customView>
@@ -514,10 +570,12 @@
         <image name="NSLeftFacingTriangleTemplate" width="12" height="17"/>
         <image name="NSListViewTemplate" width="21" height="15"/>
         <image name="VLCPauseTemplate" width="128" height="128"/>
+        <image name="arrow.trianglehead.clockwise" catalog="system" width="15" height="17"/>
+        <image name="arrow.trianglehead.counterclockwise" catalog="system" width="15" height="17"/>
         <image name="arrow.up.left.and.arrow.down.right" catalog="system" width="16" height="15"/>
-        <image name="backward.fill" catalog="system" width="19" height="12"/>
+        <image name="backward.fill" catalog="system" width="20" height="12"/>
         <image name="bookmark.circle" catalog="system" width="15" height="15"/>
-        <image name="forward.fill" catalog="system" width="19" height="12"/>
+        <image name="forward.fill" catalog="system" width="20" height="12"/>
         <image name="photo.tv" catalog="system" width="19" height="15"/>
         <image name="pin.fill" catalog="system" width="19" height="22"/>
         <image name="pip.enter" catalog="system" width="20" height="16"/>

@@ -34,9 +34,10 @@
 #import "main/VLCMain.h"
 #import "menus/VLCMainMenu.h"
 
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
+#import "library/VLCInputItem.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryCollectionViewItem.h"
 #import "library/VLCLibraryCollectionViewSupplementaryElementView.h"
@@ -74,8 +75,9 @@
 #import "views/VLCLoadingOverlayView.h"
 #import "views/VLCNoResultsLabel.h"
 #import "views/VLCRoundedCornerTextField.h"
+#import "views/VLCTrackingView.h"
 
-#import "windows/controlsbar/VLCControlsBarCommon.h"
+#import "windows/controlsbar/VLCMainWindowControlsBar.h"
 
 #import "windows/video/VLCVoutView.h"
 #import "windows/video/VLCVideoOutputProvider.h"
@@ -142,6 +144,12 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
     imageView.shadow = buttonShadow;
 }
 
+@interface VLCLibraryWindow ()
+
+@property BOOL presentLoadingOverlayOnVideoPlaybackHide;
+
+@end
+
 @implementation VLCLibraryWindow
 
 - (void)awakeFromNib
@@ -155,7 +163,7 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
     }
 
     VLCMain *mainInstance = VLCMain.sharedInstance;
-    _playlistController = [mainInstance playlistController];
+    _playQueueController = [mainInstance playQueueController];
 
     libvlc_int_t *libvlc = vlc_object_instance(getIntf());
     var_AddCallback(libvlc, "intf-toggle-fscontrol", ShowFullscreenController, (__bridge void *)self);
@@ -184,6 +192,10 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
                            selector:@selector(playerStateChanged:)
                                name:VLCPlayerStateChanged
                              object:nil];
+    [notificationCenter addObserver:self
+                           selector:@selector(playerTrackSelectionChanged:)
+                               name:VLCPlayerTrackSelectionChanged
+                             object:nil];
 
     _libraryMediaSourceViewController = [[VLCLibraryMediaSourceViewController alloc] initWithLibraryWindow:self];
 
@@ -194,10 +206,6 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 - (void)dealloc
 {
     [NSNotificationCenter.defaultCenter removeObserver:self];
-    if (@available(macOS 10.14, *)) {
-        [NSApplication.sharedApplication removeObserver:self forKeyPath:@"effectiveAppearance"];
-    }
-
     libvlc_int_t *libvlc = vlc_object_instance(getIntf());
     var_DelCallback(libvlc, "intf-toggle-fscontrol", ShowFullscreenController, (__bridge void *)self);
     var_DelCallback(libvlc, "intf-show", ShowController, (__bridge void *)self);
@@ -213,36 +221,6 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 {
     _loadingOverlayView = [[VLCLoadingOverlayView alloc] init];
     self.loadingOverlayView.translatesAutoresizingMaskIntoConstraints = NO;
-    _loadingOverlayViewConstraints = @[
-        [NSLayoutConstraint constraintWithItem:self.loadingOverlayView
-                                     attribute:NSLayoutAttributeTop
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.libraryTargetView
-                                     attribute:NSLayoutAttributeTop
-                                    multiplier:1
-                                      constant:0],
-        [NSLayoutConstraint constraintWithItem:self.loadingOverlayView
-                                     attribute:NSLayoutAttributeRight
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.libraryTargetView
-                                     attribute:NSLayoutAttributeRight
-                                    multiplier:1
-                                      constant:0],
-        [NSLayoutConstraint constraintWithItem:self.loadingOverlayView
-                                     attribute:NSLayoutAttributeBottom
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.libraryTargetView
-                                     attribute:NSLayoutAttributeBottom
-                                    multiplier:1
-                                      constant:0],
-        [NSLayoutConstraint constraintWithItem:self.loadingOverlayView
-                                     attribute:NSLayoutAttributeLeft
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.libraryTargetView
-                                     attribute:NSLayoutAttributeLeft
-                                    multiplier:1
-                                      constant:0]
-    ];
 }
 
 #pragma mark - misc. user interactions
@@ -649,7 +627,7 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
             [metadataArray addObject:inputMetadata];
         }
-        [_playlistController addPlaylistItems:metadataArray];
+        [_playQueueController addPlayQueueItems:metadataArray];
 
         return YES;
     }
@@ -681,7 +659,7 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
         [self enableVideoPlaybackAppearance];
     } else if (!self.videoViewController.view.hidden) {
         // If we are switching to audio media then keep the active main video view open
-        NSURL * const currentMediaUrl = _playlistController.playerController.URLOfCurrentMediaItem;
+        NSURL * const currentMediaUrl = _playQueueController.playerController.URLOfCurrentMediaItem;
         VLCMediaLibraryMediaItem * const mediaItem = [VLCMediaLibraryMediaItem mediaItemForURL:currentMediaUrl];
         const BOOL decorativeViewVisible = mediaItem != nil && mediaItem.mediaType == VLC_ML_MEDIA_TYPE_AUDIO;
 
@@ -695,7 +673,7 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
 - (void)playerStateChanged:(NSNotification *)notification
 {
-    if (_playlistController.playerController.playerState == VLC_PLAYER_STATE_STOPPED) {
+    if (_playQueueController.playerController.playerState == VLC_PLAYER_STATE_STOPPED) {
         [self hideControlsBar];
         return;
     }
@@ -705,10 +683,29 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
     }
 }
 
-// This handles reopening the video view when the user has closed it.
-- (void)reopenVideoView
+- (void)playerTrackSelectionChanged:(NSNotification *)notification
 {
-    [self enableVideoPlaybackAppearance];
+    [self updateArtworkButtonEnabledState];
+}
+
+- (void)updateArtworkButtonEnabledState
+{
+    VLCPlayerController * const playerController = self.playerController;
+    const BOOL videoTrackDisabled =
+        !playerController.videoTracksEnabled || !playerController.selectedVideoTrack.selected;
+    const BOOL audioTrackDisabled =
+        !playerController.audioTracksEnabled || !playerController.selectedAudioTrack.selected;
+    const BOOL currentItemIsAudio =
+        playerController.videoTracks.count == 0 && playerController.audioTracks.count > 0;
+    const BOOL pipOpen = self.videoViewController.pipIsActive;
+    const BOOL artworkButtonDisabled =
+        (videoTrackDisabled && audioTrackDisabled) ||
+        (videoTrackDisabled && !currentItemIsAudio) ||
+        pipOpen;
+    self.artworkButton.enabled = !artworkButtonDisabled;
+    self.artworkButton.hidden = artworkButtonDisabled;
+    self.controlsBar.thumbnailTrackingView.enabled = !artworkButtonDisabled;
+    self.controlsBar.thumbnailTrackingView.viewToHide.hidden = artworkButtonDisabled;
 }
 
 - (void)hideControlsBarImmediately
@@ -765,46 +762,27 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
     NSLog(@"Presenting video view in main library window.");
 
-    NSView *videoView = self.videoViewController.view;
+    NSView * const videoView = self.videoViewController.view;
     videoView.translatesAutoresizingMaskIntoConstraints = NO;
     videoView.hidden = NO;
 
     [_libraryTargetView addSubview:videoView];
-    NSDictionary *dict = NSDictionaryOfVariableBindings(videoView);
-    [_libraryTargetView addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:videoView
-                                     attribute:NSLayoutAttributeTop
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:_libraryTargetView
-                                     attribute:NSLayoutAttributeTop
-                                    multiplier:1.
-                                      constant:0.],
-        [NSLayoutConstraint constraintWithItem:videoView
-                                     attribute:NSLayoutAttributeBottom
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:_libraryTargetView
-                                     attribute:NSLayoutAttributeBottom
-                                    multiplier:1.
-                                      constant:0.],
-        [NSLayoutConstraint constraintWithItem:videoView
-                                     attribute:NSLayoutAttributeLeft
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:_libraryTargetView
-                                     attribute:NSLayoutAttributeLeft
-                                    multiplier:1.
-                                      constant:0.],
-        [NSLayoutConstraint constraintWithItem:videoView
-                                     attribute:NSLayoutAttributeRight
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:_libraryTargetView
-                                     attribute:NSLayoutAttributeRight
-                                    multiplier:1.
-                                      constant:0.]
-    ]];
+    [videoView applyConstraintsToFillSuperview];
 }
 
 - (void)enableVideoPlaybackAppearance
 {
+    VLCPlayerController * const playerController = self.playerController;
+    const BOOL videoTrackDisabled =
+        !playerController.videoTracksEnabled || !playerController.selectedVideoTrack.selected;
+    const BOOL audioTrackDisabled =
+        !playerController.audioTracksEnabled || !playerController.selectedAudioTrack.selected;
+    const BOOL currentItemIsAudio =
+        playerController.videoTracks.count == 0 && playerController.audioTracks.count > 0;
+    if ((videoTrackDisabled && audioTrackDisabled) || (videoTrackDisabled && !currentItemIsAudio)) {
+        return;
+    }
+
     const BOOL isEmbedded = var_InheritBool(getIntf(), "embedded-video");
     if (!isEmbedded) {
         [self presentExternalWindows];
@@ -828,16 +806,23 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
     // restore alpha value to 1 for the case that macosx-opaqueness is set to < 1
     self.alphaValue = 1.0;
-    self.videoViewController.view.hidden = YES;
     [self setViewForSelectedSegment];
     [self disableVideoTitleBarMode];
     [self showControlsBarImmediately];
+    [self updateArtworkButtonEnabledState];
     self.splitViewController.multifunctionSidebarViewController.mainVideoModeEnabled = NO;
+
+    if (self.presentLoadingOverlayOnVideoPlaybackHide) {
+        [self showLoadingOverlay];
+    }
 }
 
 - (void)showLoadingOverlay
 {
     if ([self.libraryTargetView.subviews containsObject:self.loadingOverlayView]) {
+        return;
+    } else if ([self.libraryTargetView.subviews containsObject:self.videoViewController.view]) {
+        self.presentLoadingOverlayOnVideoPlaybackHide = YES;
         return;
     }
 
@@ -846,7 +831,7 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
     NSArray * const views = [self.libraryTargetView.subviews arrayByAddingObject:self.loadingOverlayView];
     self.libraryTargetView.subviews = views;
-    [self.libraryTargetView addConstraints:self.loadingOverlayViewConstraints];
+    [self.loadingOverlayView applyConstraintsToFillSuperview];
 
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext * const context) {
         context.duration = 0.5;
@@ -858,6 +843,8 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
 
 - (void)hideLoadingOverlay
 {
+    self.presentLoadingOverlayOnVideoPlaybackHide = NO;
+
     if (![self.libraryTargetView.subviews containsObject:self.loadingOverlayView]) {
         return;
     }
@@ -869,7 +856,6 @@ static void addShadow(NSImageView *__unsafe_unretained imageView)
         context.duration = 1.0;
         self.loadingOverlayView.animator.alphaValue = 0.0;
     } completionHandler:^{
-        [self.libraryTargetView removeConstraints:self.loadingOverlayViewConstraints];
         NSMutableArray * const views = self.libraryTargetView.subviews.mutableCopy;
         [views removeObject:self.loadingOverlayView];
         self.libraryTargetView.subviews = views.copy;

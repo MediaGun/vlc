@@ -17,36 +17,49 @@
  *****************************************************************************/
 
 import QtQuick
-import Qt5Compat.GraphicalEffects
 
 import VLC.Style
 import VLC.Util
+import VLC.Widgets as Widgets
 
 // This item can be used as a layer effect.
 // Make sure that the sampler name is set to "source" (default).
-FastBlur {
+Widgets.BlurEffect {
     id: root
 
     radius: 64
 
-    property bool blending: false
-
     property color tint: "transparent"
     property real tintStrength: Qt.colorEqual(tint, "transparent") ? 0.0 : 0.7
     property real noiseStrength: 0.02
-    property real exclusionStrength: 0.09
 
-    layer.enabled: true
-    layer.effect: ShaderEffect {
-        readonly property color tint: root.tint
-        readonly property real tintStrength: root.tintStrength
-        readonly property real noiseStrength: root.noiseStrength
-        readonly property real exclusionStrength: root.exclusionStrength
+    // Have a semi-opaque filter blended with the source.
+    // This is intended to act as both colorization (tint),
+    // and exclusion effects.
+    Rectangle {
+        id: filter
 
-        cullMode: ShaderEffect.BackFaceCulling
+        // Underlay for the blur effect:
+        parent: root.source?.sourceItem ?? root.source
+        anchors.fill: parent
+        z: 999
 
-        blending: root.blending
+        visible: root.tintStrength > 0.0
 
-        fragmentShader: "qrc:///shaders/FrostedGlass.frag.qsb"
+        color: Qt.alpha(root.tint, root.tintStrength)
+    }
+
+    ShaderEffect {
+        id: noise
+
+        // Overlay for the blur effect:
+        anchors.fill: parent
+        z: 999
+
+        visible: root.noiseStrength > 0.0
+
+        readonly property real strength: root.noiseStrength
+
+        fragmentShader: "qrc:///shaders/Noise.frag.qsb"
     }
 }

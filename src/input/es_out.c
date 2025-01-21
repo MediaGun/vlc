@@ -157,6 +157,7 @@ struct es_out_id_t
 
     vlc_mouse_event mouse_event_cb;
     void* mouse_event_userdata;
+    vlc_mouse_t oldmouse;
 };
 
 typedef struct
@@ -324,6 +325,35 @@ default_val:
 #define foreach_es_then_es_slaves( pos ) \
     for( int fetes_i=0; fetes_i<2; fetes_i++ ) \
         vlc_list_foreach( pos, (!fetes_i ? &p_sys->es : &p_sys->es_slaves), node )
+
+static void MouseEventCb(const vlc_mouse_t *newmouse, void *userdata)
+{
+    es_out_id_t *id = userdata;
+    struct vlc_input_es_out *out = id->out;
+    es_out_sys_t *p_sys = PRIV(&out->out);
+
+    if(!p_sys->p_input)
+        return;
+
+    /* player event is disabled when a filter is listening to mouse events */
+    if(!newmouse || vlc_mouse_HasMouseFilter(newmouse))
+    {
+        vlc_mouse_Init(&id->oldmouse);
+        return;
+    }
+
+    struct vlc_input_event_mouse event = {
+        .oldmouse = id->oldmouse,
+        .newmouse = *newmouse
+    };
+
+    input_SendEvent(p_sys->p_input, &(struct vlc_input_event) {
+        .type = INPUT_EVENT_MOUSE,
+        .mouse_data = event,
+    });
+
+    id->oldmouse = *newmouse;
+}
 
 static void
 decoder_on_vout_started(vlc_input_decoder_t *decoder, vout_thread_t *vout,
@@ -804,6 +834,7 @@ static int EsOutSetRecord(es_out_sys_t *p_sys, bool b_record, const char *dir_pa
             .resource = input_priv(p_input)->p_resource,
             .sout = p_sys->p_sout_record,
             .input_type = INPUT_TYPE_PLAYBACK,
+            .hw_dec = input_priv(p_input)->hw_dec,
             .cc_decoder = p_sys->cc_decoder,
             .cbs = &decoder_cbs,
             .cbs_data = p_es,
@@ -2189,8 +2220,9 @@ static es_out_id_t *EsOutAddLocked(es_out_sys_t *p_sys,
     es->master = false;
     vlc_vector_init(&es->sub_es_vec);
     es->p_master = p_master;
-    es->mouse_event_cb = NULL;
-    es->mouse_event_userdata = NULL;
+    vlc_mouse_Init(&es->oldmouse);
+    es->mouse_event_cb = MouseEventCb;
+    es->mouse_event_userdata = es;
     es->i_pts_level = VLC_TICK_INVALID;
     es->delay = VLC_TICK_MAX;
 
@@ -2300,6 +2332,7 @@ static void EsOutCreateDecoder(es_out_sys_t *p_sys, es_out_id_t *p_es)
         .resource = priv->p_resource,
         .sout = priv->p_sout,
         .input_type = p_sys->input_type,
+        .hw_dec = priv->hw_dec,
         .cc_decoder = p_sys->cc_decoder,
         .cbs = &decoder_cbs,
         .cbs_data = p_es,
@@ -2332,6 +2365,7 @@ static void EsOutCreateDecoder(es_out_sys_t *p_sys, es_out_id_t *p_es)
                 .resource = priv->p_resource,
                 .sout = p_sys->p_sout_record,
                 .input_type = INPUT_TYPE_PLAYBACK,
+                .hw_dec = priv->hw_dec,
                 .cc_decoder = p_sys->cc_decoder,
                 .cbs = &decoder_cbs,
                 .cbs_data = p_es,
@@ -3602,9 +3636,14 @@ static int EsOutVaControlLocked(es_out_sys_t *p_sys, input_source_t *source,
         p_es->mouse_event_cb = va_arg( args, vlc_mouse_event );
         p_es->mouse_event_userdata = va_arg( args, void * );
 
-        if( p_es->p_dec )
+        if( p_es->p_dec && p_es->mouse_event_cb )
             vlc_input_decoder_SetVoutMouseEvent( p_es->p_dec,
                 p_es->mouse_event_cb, p_es->mouse_event_userdata );
+        else /* fallback to player event */
+        {
+            p_es->mouse_event_cb = MouseEventCb;
+            p_es->mouse_event_userdata = p_es;
+        }
 
         return VLC_SUCCESS;
     }

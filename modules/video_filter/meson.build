@@ -36,6 +36,36 @@ vlc_modules += {
     'sources' : files('antiflicker.c')
 }
 
+if host_system == 'windows'
+    vlc_modules += {
+        'name' : 'amf_frc',
+        'sources' : files(
+                'amf_frc.c',
+                '../hw/amf/amf_helper.c',
+            ),
+        'link_with': [ d3d11_common_lib ],
+        'dependencies': [ contrib_dep, cc.find_library('d3d11')],
+        'enabled' : get_option('amf_frc').allowed() \
+                    and cc.find_library('d3d11').found() \
+                    and cc.check_header('AMF/core/PropertyStorage.h', args: [contrib_inc_args]) \
+                    and cc.check_header('AMF/components/FRC.h', args: [contrib_inc_args]),
+    }
+
+    vlc_modules += {
+        'name' : 'amf_vqenhancer',
+        'sources' : files(
+                'amf_vqenhancer.c',
+                '../hw/amf/amf_helper.c',
+            ),
+        'link_with': [ d3d11_common_lib ],
+        'dependencies': [ contrib_dep, cc.find_library('d3d11') ],
+        'enabled' : get_option('amf_vqenhancer').allowed() \
+                    and cc.find_library('d3d11').found() \
+                    and cc.check_header('AMF/core/PropertyStorage.h', args: [contrib_inc_args]) \
+                    and cc.check_header('AMF/components/VQEnhancer.h', args: [contrib_inc_args]),
+    }
+endif
+
 # Ball filter
 vlc_modules += {
     'name' : 'ball',
@@ -259,19 +289,8 @@ vlc_modules += {
     'enabled' : host_system == 'darwin',
 }
 
-# deinterlace common helper lib
-deinterlacecommon_lib = static_library(
-    'deinterlace_common',
-    files('deinterlace/common.c'),
-    include_directories: [vlc_include_dirs],
-    pic: true,
-    install: false
-)
-
 # deinterlace filter
-vlc_modules += {
-    'name' : 'deinterlace',
-    'sources' : files(
+deinterlace_sources = files(
         'deinterlace/deinterlace.c',
         'deinterlace/merge.c',
         'deinterlace/helpers.c',
@@ -280,19 +299,29 @@ vlc_modules += {
         'deinterlace/algo_yadif.c',
         'deinterlace/algo_phosphor.c',
         'deinterlace/algo_ivtc.c',
-    ),
-    # Inline ASM doesn't build with -O0
-    # bring back if needed when inline ASM is supported 'c_args' : ['-O2'],
+    )
+if cdata.has('HAVE_X86ASM')
+    deinterlace_sources+=files('deinterlace/yadif_x86.asm')
+endif
+vlc_modules += {
+    'name' : 'deinterlace',
+    'sources' : deinterlace_sources,
+    'include_directories' : include_directories('../../extras/include/x86'),
     'link_with' : [deinterlacecommon_lib]
 }
 
 # Postproc filter
 postproc_dep = dependency('libpostproc', required: get_option('postproc'))
+postproc_c_args = []
 if postproc_dep.found()
+    if cc.check_header('postproc/postprocess.h', dependencies: [postproc_dep])
+        postproc_c_args += ['-DHAVE_POSTPROC_POSTPROCESS_H']
+    endif
     vlc_modules += {
     'name' : 'postproc',
     'sources' : files('postproc.c'),
-    'dependencies' : [m_lib, postproc_dep]
+    'dependencies' : [m_lib, postproc_dep],
+    'c_args' : postproc_c_args,
     }
 endif
 

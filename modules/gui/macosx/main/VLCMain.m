@@ -42,6 +42,7 @@
 #include <vlc_dialog.h>
 #include <vlc_url.h>
 #include <vlc_variables.h>
+#include <vlc_preparser.h>
 
 #import "extensions/NSString+Helpers.h"
 
@@ -64,10 +65,10 @@
 #import "panels/VLCVideoEffectsWindowController.h"
 #import "panels/VLCTrackSynchronizationWindowController.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistModel.h"
-#import "playlist/VLCPlaybackContinuityController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueModel.h"
+#import "playqueue/VLCPlaybackContinuityController.h"
 
 #import "preferences/prefs.h"
 #import "preferences/VLCSimplePrefsController.h"
@@ -133,10 +134,16 @@ NSString *VLCConfigurationChangedNotification = @"VLCConfigurationChangedNotific
  *****************************************************************************/
 
 static intf_thread_t *p_interface_thread;
+static vlc_preparser_t *p_network_preparser;
 
 intf_thread_t *getIntf()
 {
     return p_interface_thread;
+}
+
+vlc_preparser_t *getNetworkPreparser()
+{
+    return p_network_preparser;
 }
 
 int OpenIntf (vlc_object_t *p_this)
@@ -147,6 +154,19 @@ int OpenIntf (vlc_object_t *p_this)
         @autoreleasepool {
             intf_thread_t *p_intf = (intf_thread_t*) p_this;
             p_interface_thread = p_intf;
+
+            const struct vlc_preparser_cfg cfg = {
+                .types = VLC_PREPARSER_TYPE_PARSE,
+                .max_parser_threads = 1,
+                .timeout = 0,
+            };
+            p_network_preparser = vlc_preparser_New(p_this, &cfg);
+            if (p_network_preparser == nil)
+            {
+                retcode = VLC_ENOMEM;
+                dispatch_semaphore_signal(sem);
+                return;
+            }
             msg_Dbg(p_intf, "Starting macosx interface");
 
             @try {
@@ -160,6 +180,7 @@ int OpenIntf (vlc_object_t *p_this)
             } @catch (NSException *exception) {
                 msg_Err(p_intf, "Loading the macosx interface failed. Do you have a valid window server?");
                 retcode = VLC_EGENERIC;
+                dispatch_semaphore_signal(sem);
                 return;
             }
             dispatch_semaphore_signal(sem);
@@ -182,6 +203,9 @@ void CloseIntf (vlc_object_t *p_this)
             [VLCMain killInstance];
         }
         p_interface_thread = nil;
+
+        vlc_preparser_Delete(p_network_preparser);
+        p_network_preparser = nil;
     };
     if (CFRunLoopGetCurrent() == CFRunLoopGetMain())
         release_intf();
@@ -233,7 +257,7 @@ static VLCMain *sharedInstance = nil;
 
         VLCApplication.sharedApplication.delegate = self;
 
-        _playlistController = [[VLCPlaylistController alloc] initWithPlaylist:vlc_intf_GetMainPlaylist(_p_intf)];
+        _playQueueController = [[VLCPlayQueueController alloc] initWithPlaylist:vlc_intf_GetMainPlaylist(_p_intf)];
         _libraryController = [[VLCLibraryController alloc] init];
         _continuityController = [[VLCPlaybackContinuityController alloc] init];
 
@@ -250,7 +274,7 @@ static VLCMain *sharedInstance = nil;
         _audioEffectsPanel = [[VLCAudioEffectsWindowController alloc] init];
 
         if ([NSApp currentSystemPresentationOptions] & NSApplicationPresentationFullScreen)
-            [_playlistController.playerController setFullscreen:YES];
+            [_playQueueController.playerController setFullscreen:YES];
     }
 
     return self;
@@ -345,13 +369,13 @@ static VLCMain *sharedInstance = nil;
 - (void)updater:(SUUpdater *)updater willInstallUpdate:(SUAppcastItem *)update
 {
     [NSApp activateIgnoringOtherApps:YES];
-    [_playlistController stopPlayback];
+    [_playQueueController stopPlayback];
 }
 
 /* don't be enthusiastic about an update if we currently play a video */
 - (BOOL)updaterMayCheckForUpdates:(SUUpdater *)bundle
 {
-    if ([_playlistController.playerController activeVideoPlayback])
+    if ([_playQueueController.playerController activeVideoPlayback])
         return NO;
 
     return YES;
@@ -424,7 +448,7 @@ static VLCMain *sharedInstance = nil;
         [o_result addObject:inputMetadata];
     }
 
-    [_playlistController addPlaylistItems:o_result];
+    [_playQueueController addPlayQueueItems:o_result];
 }
 
 /* When user click in the Dock icon our double click in the finder */

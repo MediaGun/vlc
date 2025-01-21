@@ -31,6 +31,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface VLCMainVideoViewController : NSViewController
+
 @property (readwrite, strong) IBOutlet NSView *voutContainingView;
 
 @property (readwrite, strong) IBOutlet VLCVoutView *voutView;
@@ -40,25 +41,33 @@ NS_ASSUME_NONNULL_BEGIN
 @property (readwrite, strong) IBOutlet NSStackView *centralControlsStackView;
 @property (readwrite, strong) IBOutlet VLCMainVideoViewControlsBar *controlsBar;
 @property (readwrite, strong) IBOutlet NSButton *returnButton;
-@property (readwrite, strong) IBOutlet NSButton *playlistButton;
+@property (readwrite, strong) IBOutlet NSButton *playQueueButton;
 @property (readwrite, strong) IBOutlet NSLayoutConstraint *returnButtonTopConstraint;
 @property (readwrite, strong) IBOutlet NSLayoutConstraint *returnButtonLeadingConstraint;
-@property (readwrite, strong) IBOutlet NSLayoutConstraint *playlistButtonTopConstraint;
-@property (readwrite, strong) IBOutlet NSLayoutConstraint *playlistButtonTrailingConstraint;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *playQueueButtonTopConstraint;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *playQueueButtonTrailingConstraint;
 @property (readwrite, strong) IBOutlet NSVisualEffectView *fakeTitleBar;
 @property (readwrite, strong) IBOutlet NSLayoutConstraint *fakeTitleBarHeightConstraint;
 @property (readwrite, strong) IBOutlet NSProgressIndicator *loadingIndicator;
 @property (readwrite, strong) IBOutlet NSImageView *floatOnTopIndicatorImageView;
 
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *playButtonSizeConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *prevButtonSizeConstraint;
+@property (readwrite, weak) IBOutlet NSLayoutConstraint *nextButtonSizeConstraint;
+
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *centerButtonStackInViewConstraint;
+@property (readonly) NSLayoutConstraint *bottomButtonStackViewConstraint;
+
 @property (readonly, strong) VLCMainVideoViewAudioMediaDecorativeView *audioDecorativeView;
 @property (readwrite, nonatomic) BOOL autohideControls;
 @property (readwrite, nonatomic) BOOL displayLibraryControls;
 @property (readonly) BOOL mouseOnControls;
+@property (readonly) BOOL pipIsActive;
 
 - (void)showControls;
 - (void)hideControls;
 
-- (IBAction)togglePlaylist:(id)sender;
+- (IBAction)togglePlayQueue:(id)sender;
 - (IBAction)returnToLibrary:(id)sender;
 
 @end

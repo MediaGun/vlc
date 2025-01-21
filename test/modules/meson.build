@@ -6,6 +6,7 @@ vlc_tests += {
     'module_depends' : vlc_plugins_targets.keys()
 }
 
+if not (host_system == 'windows') # missing mkdtemp()
 vlc_tests += {
     'name' : 'test_modules_misc_medialibrary',
     'sources' : files('misc/medialibrary.c'),
@@ -14,6 +15,7 @@ vlc_tests += {
     'module_depends' : vlc_plugins_targets.keys(),
     #'module_depends' : ['medialibrary', 'demux_mock', 'jpeg', 'png', 'rawvid'],
 }
+endif
 
 vlc_tests += {
     'name' : 'test_modules_packetizer_helpers',
@@ -63,6 +65,7 @@ vlc_tests += {
     'module_depends' : vlc_plugins_targets.keys()
 }
 
+if not(host_system == 'windows')
 vlc_tests += {
     'name' : 'test_modules_tls',
     'sources' : files('misc/tls.c'),
@@ -70,6 +73,7 @@ vlc_tests += {
     'link_with' : [libvlc, libvlccore],
     'module_depends' : vlc_plugins_targets.keys()
 }
+endif
 
 vlc_tests += {
     'name' : 'test_modules_demux_timestamps_filter',
@@ -92,18 +96,13 @@ vlc_tests += {
 
 vlc_tests += {
     'name' : 'test_modules_codec_hxxx_helper',
-    'sources' : files(
-        'codec/hxxx_helper.c',
-        '../../modules/codec/hxxx_helper.c',
-        '../../modules/packetizer/hxxx_nal.c',
-        '../../modules/packetizer/h264_slice.c',
-        '../../modules/packetizer/h264_nal.c',
-        '../../modules/packetizer/hevc_nal.c'),
+    'sources' : files('codec/hxxx_helper.c'),
     'suite' : ['modules', 'test_modules'],
-    'link_with' : [libvlc, libvlccore],
+    'link_with' : [libvlc, libvlccore, hxxxhelper_lib],
     'module_depends' : vlc_plugins_targets.keys()
 }
 
+if opengl_dep.found()
 vlc_tests += {
     'name' : 'test_modules_video_output_opengl_filters',
     'sources' : files(
@@ -141,6 +140,7 @@ vlc_tests += {
     'c_args' : ['-DVLC_TEST_OPENGL_API=VLC_OPENGL_ES2'],
     'module_depends' : vlc_plugins_targets.keys()
 }
+endif
 
 vlc_tests += {
     'name' : 'test_modules_stream_out_transcode',

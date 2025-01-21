@@ -62,7 +62,6 @@ class VideoSurfaceProvider;
 class ControlbarProfileModel;
 class SearchCtx;
 class SortCtx;
-class WorkerThreadSet;
 class VLCSystray;
 class MediaLib;
 class ColorSchemeModel;
@@ -71,6 +70,7 @@ class VLCVarChoiceModel;
 class UpdateModel;
 #endif
 struct vlc_preparser_t;
+class ThreadRunner;
 
 namespace vlc {
 namespace playlist {
@@ -128,6 +128,7 @@ class MainCtx : public QObject
     Q_PROPERTY(int maxVolume READ maxVolume NOTIFY maxVolumeChanged FINAL)
     Q_PROPERTY(float safeArea READ safeArea NOTIFY safeAreaChanged FINAL)
     Q_PROPERTY(VideoSurfaceProvider* videoSurfaceProvider READ getVideoSurfaceProvider WRITE setVideoSurfaceProvider NOTIFY hasEmbededVideoChanged FINAL)
+    Q_PROPERTY(int mouseHideTimeout READ mouseHideTimeout NOTIFY mouseHideTimeoutChanged FINAL)
 
     Q_PROPERTY(CSDButtonModel *csdButtonModel READ csdButtonModel CONSTANT FINAL)
 
@@ -167,7 +168,7 @@ public:
 public:
     /* Getters */
     inline qt_intf_t* getIntf() const { return p_intf; }
-    inline vlc_preparser_t *getPreparser() const { return m_preparser; };
+    inline vlc_preparser_t *getNetworkPreparser() const { return m_network_preparser; };
     bool smoothScroll() const { return m_smoothScroll; }
 
     VLCSystray* getSysTray() { return m_systray.get(); }
@@ -211,7 +212,7 @@ public:
     inline bool isShowRemainingTime() const  { return m_showRemainingTime; }
     inline double getIntfScaleFactor() const { return m_intfScaleFactor; }
     inline double getIntfUserScaleFactor() const { return m_intfUserScaleFactor; }
-    inline int CSDBorderSize() const { return 5 * getIntfScaleFactor(); }
+    inline int CSDBorderSize() const { return 10; }
     inline double getMinIntfUserScaleFactor() const { return MIN_INTF_USER_SCALE_FACTOR; }
     inline double getMaxIntfUserScaleFactor() const { return MAX_INTF_USER_SCALE_FACTOR; }
     inline bool hasMediaLibrary() const { return b_hasMedialibrary; }
@@ -255,6 +256,8 @@ public:
     VideoSurfaceProvider* getVideoSurfaceProvider() const;
     void setVideoSurfaceProvider(VideoSurfaceProvider* videoSurfaceProvider);
 
+    int mouseHideTimeout() const { return m_mouseHideTimeout; }
+
     Q_INVOKABLE static inline void setCursor(Qt::CursorShape cursor) { QApplication::setOverrideCursor(QCursor(cursor)); }
     Q_INVOKABLE static inline void restoreCursor(void) { QApplication::restoreOverrideCursor(); }
 
@@ -278,9 +281,8 @@ public:
 
     /**
      * @brief ask for the application to terminate
-     * @return true if the application can be close right away, false if it will be delayed
      */
-    bool onWindowClose(QWindow* );
+    void onWindowClose(QWindow* );
 
     bool acrylicActive() const;
     void setAcrylicActive(bool newAcrylicActive);
@@ -302,7 +304,7 @@ public:
 
     Q_INVOKABLE bool useXmasCone() const;
 
-    WorkerThreadSet *workersThreads() const;
+    ThreadRunner* threadRunner() const;
 
     Q_INVOKABLE QUrl folderMRL(const QString &fileMRL) const;
     Q_INVOKABLE QUrl folderMRL(const QUrl &fileMRL) const;
@@ -321,7 +323,7 @@ protected:
     void initSystray();
 
     qt_intf_t* p_intf = nullptr;
-    vlc_preparser_t *m_preparser = nullptr;
+    vlc_preparser_t *m_network_preparser = nullptr;
 
     bool m_hasEmbededVideo = false;
     VideoSurfaceProvider* m_videoSurfaceProvider = nullptr;
@@ -382,6 +384,8 @@ protected:
 
     float m_safeArea = 0.0;
 
+    int m_mouseHideTimeout = 1000;
+
     OsType m_osName;
     int m_osVersion;
 
@@ -399,7 +403,7 @@ protected:
     mutable std::unique_ptr<UpdateModel> m_updateModel;
 #endif
 
-    mutable std::unique_ptr<WorkerThreadSet> m_workersThreads;
+    ThreadRunner* m_threadRunner = nullptr;
 
 public slots:
     void toggleToolbarMenu();
@@ -434,6 +438,8 @@ public slots:
 
     virtual void reloadPrefs();
     VLCVarChoiceModel* getExtraInterfaces();
+
+    bool pasteFromClipboard();
 
 protected slots:
     void onInputChanged( bool );
@@ -490,6 +496,8 @@ signals:
     void maxVolumeChanged();
 
     void safeAreaChanged();
+
+    void mouseHideTimeoutChanged();
 
     void navBoxToggled();
 

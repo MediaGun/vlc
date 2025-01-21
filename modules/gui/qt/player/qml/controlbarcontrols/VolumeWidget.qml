@@ -18,8 +18,6 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Templates as T
-import Qt5Compat.GraphicalEffects
-
 
 import VLC.MainInterface
 import VLC.Widgets as Widgets
@@ -110,6 +108,8 @@ T.Pane {
             property real _clamp: 0.01
 
             property bool _keyPressed: false
+
+            property bool filterEvents: false
 
             color: root.sliderColor
 
@@ -211,7 +211,12 @@ T.Pane {
                     return
 
                 if (!volControl._inhibitPlayerVolumeUpdate) {
-                    Qt.callLater(volControl._adjustPlayerVolume)
+                    if (filterEvents) {
+                        Qt.callLater(volControl._adjustPlayerVolume)
+                    } else {
+                        volControl._adjustPlayerVolume()
+                        filterEvents = true
+                    }
                 }
             }
 
@@ -271,6 +276,7 @@ T.Pane {
                         return
                     }
 
+                    volControl.filterEvents = false
                     adjustVolume(mouse)
                 }
 

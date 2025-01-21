@@ -27,77 +27,43 @@
 #include <QString>
 #include <QSet>
 #include <vector>
+#include <QMutex>
 
 #include "networkdevicemodel.hpp"
 #include "mediatreelistener.hpp"
+#include "util/shared_input_item.hpp"
+#include "vlcmediasourcewrapper.hpp"
+#include "util/singleton.hpp"
 
-//represents an entry of the model
-struct NetworkDeviceItem : public NetworkBaseItem
+static inline std::size_t qHash(const SharedInputItem& item, size_t seed = 0) noexcept
 {
-    NetworkDeviceItem(const SharedInputItem& item, const NetworkDeviceModel::MediaSourcePtr& source)
-    {
-        name = qfu(item->psz_name);
-        mainMrl = QUrl::fromEncoded(item->psz_uri);
-        protocol = mainMrl.scheme();
-        type = static_cast<NetworkDeviceModel::ItemType>(item->i_type);
-        mediaSource = source;
-        inputItem = item;
-
-        id = qHash(name) ^ qHash(protocol);
-        mrls.push_back(std::make_pair(mainMrl, source));
-
-        char* artworkUrl = input_item_GetArtworkURL(inputItem.get());
-        if (artworkUrl)
-        {
-            artwork = QString::fromUtf8(artworkUrl);
-            free(artworkUrl);
-        }
-    }
-
-    uint id;
-    std::vector<std::pair<QUrl, NetworkDeviceModel::MediaSourcePtr>> mrls;
-    NetworkDeviceModel::MediaSourcePtr mediaSource;
-    SharedInputItem inputItem;
- };
-
-using NetworkDeviceItemPtr =std::shared_ptr<NetworkDeviceItem>;
-
-static inline bool operator == (const NetworkDeviceItemPtr& a, const NetworkDeviceItemPtr& b) noexcept
-{
-    return a->id == b->id
-        && QString::compare(a->name, b->name, Qt::CaseInsensitive) == 0
-        && QString::compare(a->protocol, b->protocol, Qt::CaseInsensitive) == 0;
+    QString name = qfu(item->psz_name);
+    QUrl mainMrl = QUrl::fromEncoded(item->psz_uri);
+    QString protocol = mainMrl.scheme();
+    return qHash(name, seed) ^ qHash(protocol);;
 }
 
-
-static inline std::size_t qHash(const NetworkDeviceItemPtr& s, size_t = 0) noexcept
-{
-    return s->id;
-}
-
-using NetworkDeviceItemSet = QSet<NetworkDeviceItemPtr>;
-
-class DeviceSourceProvider : public QObject
+class MediaSourceModel : public QObject
 {
     Q_OBJECT
+public:
+
+    MediaSourceModel(MediaSourcePtr& mediaSource);
+    ~MediaSourceModel();
 
 public:
-    using MediaSourcePtr = NetworkDeviceModel::MediaSourcePtr;
+    void init();
 
-    DeviceSourceProvider(NetworkDeviceModel::SDCatType sdSource,
-                         const QString &sourceName,
-                         QObject *parent = nullptr);
+    const std::vector<SharedInputItem>& getMedias() const;
 
-    void init(qt_intf_t *intf);
+    QString getDescription() const;
+    MediaTreePtr getTree() const;
 
 signals:
-    void failed();
-    void nameUpdated( QString name );
-    void itemsUpdated( NetworkDeviceItemSet items );
+    void mediaAdded(SharedInputItem media);
+    void mediaRemoved(SharedInputItem media);
 
 private:
-    struct ListenerCb;
-
     void addItems(const std::vector<SharedInputItem>& inputList,
                   const MediaSourcePtr& mediaSource,
                   bool clear);
@@ -105,15 +71,58 @@ private:
     void removeItems(const std::vector<SharedInputItem>& inputList,
                      const MediaSourcePtr& mediaSource);
 
+    struct ListenerCb;
+    std::unique_ptr<MediaTreeListener> m_listenner;
+    MediaSourcePtr m_mediaSource;
+    std::vector<SharedInputItem> m_medias;
+};
+typedef QSharedPointer<MediaSourceModel> SharedMediaSourceModel;
+
+
+class MediaSourceCache : public Singleton<MediaSourceCache>
+{
+public:
+    SharedMediaSourceModel getMediaSourceModel(vlc_media_source_provider_t* provider, const char* name);
+
+private:
+    MediaSourceCache() = default;
+    ~MediaSourceCache() = default;
+    friend class Singleton<MediaSourceCache>;
+
+private:
+    //we keep a weak pointer to the model sources, if no other party is
+    //referencing the source, then it will be freed,
+    std::map<QString, QWeakPointer<MediaSourceModel>> m_cache;
+    QMutex m_mutex;
+};
+
+class DeviceSourceProvider : public QObject
+{
+    Q_OBJECT
+
+public:
+    DeviceSourceProvider(NetworkDeviceModel::SDCatType sdSource,
+                         const QString &sourceName,
+                         MainCtx* ctx,
+                         QObject *parent = nullptr);
+    virtual ~DeviceSourceProvider();
+
+    void init();
+
+    const std::vector<SharedMediaSourceModel>& getMediaSources() const;
+
+signals:
+    void failed();
+    void nameUpdated( QString name );
+    void itemsUpdated();
+
+private:
+    MainCtx* m_ctx = nullptr;
+    quint64 m_taskId = 0;
+
     NetworkDeviceModel::SDCatType m_sdSource;
     QString m_sourceName; // '*' -> all sources
     QString m_name; // source long name
 
-    NetworkDeviceItemSet m_items;
-
-    // destruction of listeners may cause destruction of source 'MediaSource'
-    // maintain a seperate reference of MediaSources to fix cyclic free
-    std::vector<MediaSourcePtr> m_mediaSources;
-
-    std::vector<std::unique_ptr<MediaTreeListener>> m_listeners;
+    std::vector<SharedMediaSourceModel> m_mediaSources;
 };

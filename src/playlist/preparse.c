@@ -88,13 +88,12 @@ on_subtree_added(input_item_t *media, input_item_node_t *subtree,
 }
 
 static void
-on_preparse_ended(input_item_t *media,
-                  enum input_item_preparse_status status, void *userdata)
+on_preparse_ended(input_item_t *media, int status, void *userdata)
 {
     VLC_UNUSED(media); /* retrieved by subtree->p_item */
     vlc_playlist_t *playlist = userdata;
 
-    if (status != ITEM_PREPARSE_DONE)
+    if (status != VLC_SUCCESS)
         return;
 
     vlc_playlist_Lock(playlist);
@@ -105,50 +104,56 @@ on_preparse_ended(input_item_t *media,
     vlc_playlist_Unlock(playlist);
 }
 
-static const struct vlc_metadata_cbs preparser_callbacks = {
-    .on_preparse_ended = on_preparse_ended,
+static const input_item_parser_cbs_t preparser_callbacks = {
+    .on_ended = on_preparse_ended,
     .on_subtree_added = on_subtree_added,
 };
-
-void
-vlc_playlist_Preparse(vlc_playlist_t *playlist, input_item_t *input,
-                      bool parse_subitems)
-{
-#ifdef TEST_PLAYLIST
-    VLC_UNUSED(playlist);
-    VLC_UNUSED(input);
-    VLC_UNUSED(preparser_callbacks);
-#else
-    assert(playlist->parser != NULL);
-
-    input_item_meta_request_option_t options =
-        META_REQUEST_OPTION_SCOPE_LOCAL | META_REQUEST_OPTION_FETCH_LOCAL;
-    if (parse_subitems)
-        options |= META_REQUEST_OPTION_PARSE_SUBITEMS;
-
-    vlc_preparser_Push(playlist->parser, input, options,
-                       &preparser_callbacks, playlist, -1, NULL);
-#endif
-}
 
 void
 vlc_playlist_AutoPreparse(vlc_playlist_t *playlist, input_item_t *input,
                           bool parse_subitems)
 {
-    if (playlist->auto_preparse && !input_item_IsPreparsed(input))
+#ifdef TEST_PLAYLIST
+    VLC_UNUSED(preparser_callbacks);
+#endif
+
+    if (playlist->parser != NULL && !input_item_IsPreparsed(input))
     {
         switch (playlist->recursive)
         {
-            case VLC_PLAYLIST_RECURSIVE_NONE:
+            case VLC_PLAYLIST_PREPARSING_ENABLED:
                 parse_subitems = false;
                 break;
-            case VLC_PLAYLIST_RECURSIVE_COLLAPSE:
+            case VLC_PLAYLIST_PREPARSING_COLLAPSE:
                 break;
-            case VLC_PLAYLIST_RECURSIVE_EXPAND:
+            case VLC_PLAYLIST_PREPARSING_RECURSIVE:
                 parse_subitems = true;
                 break;
             default: vlc_assert_unreachable();
         }
-        vlc_playlist_Preparse(playlist, input, parse_subitems);
+
+        bool input_net;
+        enum input_item_type_e input_type = input_item_GetType(input, &input_net);
+
+        if (input_net)
+            return;
+
+        switch (input_type)
+        {
+            case ITEM_TYPE_NODE:
+            case ITEM_TYPE_FILE:
+            case ITEM_TYPE_DIRECTORY:
+            case ITEM_TYPE_PLAYLIST:
+                break;
+            default:
+                return;
+        }
+
+        int options = VLC_PREPARSER_TYPE_PARSE | VLC_PREPARSER_TYPE_FETCHMETA_LOCAL;
+        if (parse_subitems)
+            options |= VLC_PREPARSER_OPTION_SUBITEMS;
+
+        vlc_preparser_Push(playlist->parser, input, options,
+                           &preparser_callbacks, playlist);
     }
 }

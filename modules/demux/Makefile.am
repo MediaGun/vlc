@@ -34,6 +34,9 @@ demux_LTLIBRARIES += librawdv_plugin.la
 librawvid_plugin_la_SOURCES = demux/rawvid.c
 demux_LTLIBRARIES += librawvid_plugin.la
 
+libg64rtp_plugin_la_SOURCES = demux/g64rtp.c
+demux_LTLIBRARIES += libg64rtp_plugin.la
+
 libau_plugin_la_SOURCES = demux/au.c
 demux_LTLIBRARIES += libau_plugin.la
 
@@ -228,10 +231,10 @@ libmp4_plugin_la_SOURCES = demux/mp4/mp4.c demux/mp4/mp4.h \
                            demux/mp4/qt_palette.h \
                            demux/mp4/essetup.c \
                            demux/mp4/meta.c demux/mp4/meta.h \
-                           demux/mp4/mpeg4.h \
                            demux/mp4/coreaudio.h \
                            demux/av1_unpack.h \
                            demux/asf/asfpacket.c demux/asf/asfpacket.h \
+			   packetizer/mpeg4systems.h \
                            packetizer/iso_color_tables.h \
                            meta_engine/ID3Genres.h
 libmp4_plugin_la_LIBADD = libvlc_mp4.la

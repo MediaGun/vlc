@@ -35,7 +35,7 @@ vlc_tests += {
     'link_with' : [libvlc, libvlccore],
 }
 
-if gcrypt_dep.found()
+if gcrypt_dep.found() and get_option('update-check').allowed()
     vlc_tests += {
         'name' : 'test_src_crypto_update',
         'sources' : files('crypto/update.c'),
@@ -46,6 +46,7 @@ if gcrypt_dep.found()
     }
 endif
 
+if not(host_system == 'windows')
 vlc_tests += {
     'name' : 'test_src_input_stream',
     'sources' : files('input/stream.c'),
@@ -62,6 +63,7 @@ vlc_tests += {
     'c_args' : ['-DTEST_NET'],
     'module_depends' : vlc_plugins_targets.keys()
 }
+endif
 
 vlc_tests += {
     'name' : 'test_src_input_stream_fifo',
@@ -71,8 +73,16 @@ vlc_tests += {
 }
 
 vlc_tests += {
-    'name' : 'test_src_input_thumbnail',
-    'sources' : files('input/thumbnail.c'),
+    'name' : 'test_src_preparser_thumbnail',
+    'sources' : files('preparser/thumbnail.c'),
+    'suite' : ['src', 'test_src'],
+    'link_with' : [libvlc, libvlccore],
+    'module_depends' : ['demux_mock', 'rawvideo']
+}
+
+vlc_tests += {
+    'name' : 'test_src_preparser_thumbnail_to_files',
+    'sources' : files('preparser/thumbnail_to_files.c'),
     'suite' : ['src', 'test_src'],
     'link_with' : [libvlc, libvlccore],
     'module_depends' : ['demux_mock', 'rawvideo']

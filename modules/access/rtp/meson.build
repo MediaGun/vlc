@@ -4,20 +4,23 @@ rtp_lib = static_library('rtp',
     install: false,
     pic: true)
 
-if libgcrypt_dep.found()
+if gcrypt_dep.found()
     srtp_lib = static_library('srtp',
                     files('srtp.c', 'srtp.h'),
-                    dependencies: [libgcrypt_dep],
+                    dependencies: [gcrypt_dep],
                     include_directories: [vlc_include_dirs])
-    srtp_rtp_c_args = ['-DHAVE_SRTP']
+    srtp_dep = declare_dependency(
+        link_with: [srtp_lib],
+        include_directories: [include_directories('.')],
+        dependencies: [gcrypt_dep],
+        compile_args: ['-DHAVE_SRTP'])
 else
-    srtp_lib = []
-    srtp_rtp_c_args = []
+    srtp_dep = disabler()
 endif
 
 vlc_modules += {
     'name': 'rtp',
-    'sources': 
+    'sources':
         files(
             'input.c',
             'sdp.c',
@@ -27,9 +30,8 @@ vlc_modules += {
             'rtp.c',
             'rtp.h',
         ),
-    'dependencies': [socket_libs],
-    'link_with': [rtp_lib, srtp_lib],
-    'c_args': srtp_rtp_c_args,
+    'dependencies': [socket_libs, srtp_dep],
+    'link_with': [rtp_lib],
 }
 
 vlc_modules += {

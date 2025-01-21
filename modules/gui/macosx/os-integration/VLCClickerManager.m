@@ -25,16 +25,16 @@
 #import "imported/SPMediaKeyTap/SPMediaKeyTap.h"
 #import "imported/AppleRemote/AppleRemote.h"
 #import "main/VLCMain.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlaylistModel.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayQueueModel.h"
+#import "playqueue/VLCPlayerController.h"
 #import "os-integration/VLCSystemVolume.h"
 
 #import <vlc_configuration.h>
 
 @interface VLCClickerManager()
 {
-    VLCPlaylistController *_playlistController;
+    VLCPlayQueueController *_playQueueController;
     VLCPlayerController *_playerController;
 
     /* media key support */
@@ -54,8 +54,8 @@
 {
     self = [super init];
     if (self) {
-        _playlistController = VLCMain.sharedInstance.playlistController;
-        _playerController = [_playlistController playerController];
+        _playQueueController = VLCMain.sharedInstance.playQueueController;
+        _playerController = [_playQueueController playerController];
         NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
 
         /* init media key support */
@@ -68,12 +68,12 @@
                                    name:VLCConfigurationChangedNotification
                                  object:nil];
         [notificationCenter addObserver:self
-                               selector:@selector(playlistUpdated:)
-                                   name:VLCPlaylistItemsAdded
+                               selector:@selector(playQueueUpdated:)
+                                   name:VLCPlayQueueItemsAdded
                                  object:nil];
         [notificationCenter addObserver:self
-                               selector:@selector(playlistUpdated:)
-                                   name:VLCPlaylistItemsRemoved
+                               selector:@selector(playQueueUpdated:)
+                                   name:VLCPlayQueueItemsRemoved
                                  object:nil];
 
         /* init Apple Remote support */
@@ -118,7 +118,7 @@
         _mediaKeyController = [[SPMediaKeyTap alloc] initWithDelegate:self];
 
     VLCMain * const main = VLCMain.sharedInstance;
-    if (b_mediaKeySupport && (main.playlistController.playlistModel.numberOfPlaylistItems > 0)) {
+    if (b_mediaKeySupport && (main.playQueueController.playQueueModel.numberOfPlayQueueItems > 0)) {
         if (!b_mediaKeyTrapEnabled) {
             [self enableMediaKeySupport];
         }
@@ -149,13 +149,13 @@
     [_mediaKeyController stopWatchingMediaKeys];
 }
 
-- (void)playlistUpdated:(NSNotification *)aNotification
+- (void)playQueueUpdated:(NSNotification *)aNotification
 {
     if (!_mediaKeyController) {
         return;
     }
 
-    BOOL numberOfMediaLargerThanZero = [[VLCMain.sharedInstance.playlistController playlistModel] numberOfPlaylistItems] > 0;
+    BOOL numberOfMediaLargerThanZero = VLCMain.sharedInstance.playQueueController.playQueueModel.numberOfPlayQueueItems > 0;
 
     if (b_mediaKeyTrapEnabled && !numberOfMediaLargerThanZero) {
         [self disableMediaKeySupport];
@@ -180,7 +180,7 @@
 
         if ((keyCode == NX_KEYTYPE_FAST || keyCode == NX_KEYTYPE_NEXT) && !b_mediakeyJustJumped) {
             if (keyState == 0 && keyRepeat == 0) {
-                [_playlistController playNextItem];
+                [_playQueueController playNextItem];
             } else if (keyRepeat == 1) {
                 [_playerController jumpForwardShort];
                 b_mediakeyJustJumped = YES;
@@ -192,7 +192,7 @@
 
         if ((keyCode == NX_KEYTYPE_REWIND || keyCode == NX_KEYTYPE_PREVIOUS) && !b_mediakeyJustJumped) {
             if (keyState == 0 && keyRepeat == 0) {
-                [_playlistController playPreviousItem];
+                [_playQueueController playPreviousItem];
             } else if (keyRepeat == 1) {
                 [_playerController jumpBackwardShort];
                 b_mediakeyJustJumped = YES;
@@ -282,13 +282,13 @@
             if (config_GetInt("macosx-appleremote-prevnext"))
                 [_playerController jumpForwardShort];
             else
-                [_playlistController playNextItem];
+                [_playQueueController playNextItem];
             break;
         case kRemoteButtonLeft:
             if (config_GetInt("macosx-appleremote-prevnext"))
                 [_playerController jumpBackwardShort];
             else
-                [_playlistController playPreviousItem];
+                [_playQueueController playPreviousItem];
             break;
         case kRemoteButtonRight_Hold:
         case kRemoteButtonLeft_Hold:

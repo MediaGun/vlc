@@ -1,9 +1,9 @@
 project('VLC', ['c', 'cpp'],
     version: '4.0.0-dev',
     default_options: ['c_std=gnu17', 'cpp_std=c++17'],
-    meson_version: '>=0.60.0')
+    meson_version: '>=1.1.0')
 
-vlc_copyright_years = '1996-2018'
+vlc_copyright_years = '1996-2024'
 vlc_version_codename = 'Otto Chriek'
 
 # LibVLC library (ABI) version
@@ -102,6 +102,25 @@ if host_system == 'darwin'
     add_languages('objc', native: false)
 endif
 
+if host_machine.cpu_family().startswith('x86')
+    if add_languages('nasm', native: false, required: false)
+        vlc_nasm_args = []
+        if host_machine.cpu_family() == 'x86'
+            vlc_nasm_args += ['-DARCH_X86_64=0']
+            if host_system in ['darwin', 'windows']
+                vlc_nasm_args += ['-DPREFIX']
+            endif
+        else
+            vlc_nasm_args += ['-DARCH_X86_64=1']
+            if host_system == 'darwin'
+                vlc_nasm_args += ['-DPREFIX']
+            endif
+        endif
+        add_project_arguments(vlc_nasm_args, language: ['nasm'])
+        cdata.set('HAVE_X86ASM', 1)
+    endif
+endif
+
 # Rust build system
 cargo_bin = find_program('cargo', required: get_option('rust'))
 
@@ -139,6 +158,9 @@ subdir('buildsystem/simd_checks')
 
 # zlib library
 z_dep = dependency('zlib', required: false)
+if z_dep.found()
+    cdata.set('HAVE_ZLIB', 1)
+endif
 
 # Math library
 m_lib = cc.find_library('m', required: false)
@@ -148,6 +170,14 @@ dl_lib = cc.find_library('dl', required: false)
 
 # iconv library
 iconv_dep = dependency('iconv', required: false)
+if not iconv_dep.found()
+    # check in contribs
+    if cc.has_function('iconv_open', prefix: vlc_conf_prefix + '#include <iconv.h>',
+                       dependencies: [contrib_dep, cc.find_library('iconv', dirs: contrib_libdir, required: false)])
+        iconv_dep = declare_dependency(
+            dependencies: [contrib_dep, cc.find_library('iconv', dirs: contrib_libdir)])
+    endif
+endif
 iconv_const_test = '''
     #include <stddef.h>
     #include <iconv.h>
@@ -160,7 +190,7 @@ if iconv_dep.found()
     cdata.set('HAVE_ICONV', 1)
 
     # Check if iconv() prototype uses const
-    if cc.compiles(iconv_const_test, name: 'Test iconv() for const-using prototype')
+    if cc.compiles(iconv_const_test, name: 'Test iconv() for const-using prototype', dependencies: iconv_dep)
         cdata.set('ICONV_CONST', 'const')
     else
         cdata.set('ICONV_CONST', '')
@@ -235,18 +265,15 @@ check_c_headers = [
     ['valgrind/valgrind.h'],
     ['X11/Xlib.h'],
     ['xlocale.h'],
-    ['zlib.h'],
+    ['zlib.h', { 'args' : [contrib_inc_args] }],
     ['wordexp.h'],
+    ['dxgidebug.h'],
     ['GL/wglew.h',
         { 'prefix' : ['#include <windows.h>', '#include <GL/glew.h>'],
           'args' : [contrib_inc_args] }],
 ]
 
-check_cpp_headers = [
-    ['dcomp.h',
-        { 'prefix' : ['#include <windows.h>'],
-          'args' : [contrib_inc_args]}],
-]
+check_cpp_headers = []
 
 foreach header : check_c_headers
     header_kwargs = header.get(1, {})
@@ -316,7 +343,6 @@ endif
 have_mingw = false
 have_win_desktop = false
 have_win_store = false
-mingw_libs = []
 libcom_cppflags = []
 
 if host_system == 'windows'
@@ -346,11 +372,6 @@ windows_version_test = '''
         cdata.set(d.get(0), d.get(1))
         vlc_conf_prefix = vlc_conf_prefix + '#define @0@ @1@\n'.format(d.get(0), d.get(1))
     endforeach
-
-    # Check for HAVE_PROCESS_MITIGATION_IMAGE_LOAD_POLICY type
-    if cc.has_type('PROCESS_MITIGATION_IMAGE_LOAD_POLICY', prefix: '#include <winnt.h>')
-        cdata.set('HAVE_PROCESS_MITIGATION_IMAGE_LOAD_POLICY', 1)
-    endif
 
     mingw_check = '''
     #ifndef __MINGW32__
@@ -409,16 +430,6 @@ ucrt_version_test = '''
             vlc_conf_prefix = vlc_conf_prefix + '#define @0@ @1@\n'.format(d.get(0), d.get(1))
         endforeach
 
-        # Check for the need to link to the mingwex lib for MinGW-w64 32bit
-        mingwex_lib = cc.find_library('mingwex', required: false)
-
-        if mingwex_lib.found() and not cc.find_library('mingw32', required: false).found()
-            mingw_libs += mingwex_lib
-        endif
-
-        # TODO: enable when meson 0.63 is required
-        # add_project_dependencies(mingw_libs, language: ['c', 'cpp'])
-
         # fno-strict-aliasing is necessary for WRL and IID_PPV_ARGS to work safely
         # MSVC doesn't have this option but doesn't do pointer aliasing, so it
         # should work too
@@ -452,8 +463,7 @@ ucrt_version_test = '''
     if get_option('winstore_app')
         have_win_store = true
         windowsappcompat_lib = cc.find_library('windowsappcompat')
-        # TODO: enable when meson 0.63 is required
-        # add_project_dependencies(windowsappcompat_lib, language: ['c', 'cpp'])
+        add_project_dependencies(windowsappcompat_lib, language: ['c', 'cpp'])
     else
         have_win_desktop = true
     endif
@@ -475,9 +485,6 @@ add_project_arguments(cc.get_supported_arguments([
     '-Wformat-security',
     '-Wduplicated-branches',
     '-Wduplicated-cond',
-]), language: ['c', 'cpp'])
-
-add_project_arguments(cc.get_supported_arguments([
     '-Wbad-function-cast',
     '-Wwrite-strings',
     '-Wmissing-prototypes',
@@ -489,19 +496,33 @@ add_project_arguments(cc.get_supported_arguments([
     '-pipe'
 ]), language: ['c'])
 
+add_project_arguments(cpp.get_supported_arguments([
+    '-Wextra',
+    '-Wsign-compare',
+    '-Wundef',
+    '-Wpointer-arith',
+    '-Wvolatile-register-var',
+    '-Wformat',
+    '-Wformat-security',
+    '-Wduplicated-branches',
+    '-Wduplicated-cond',
+]), language: ['cpp'])
+
 if get_option('extra_checks')
     add_project_arguments(cc.get_supported_arguments([
         '-Werror=missing-field-initializers',
         '-Werror=format',
-        '-Werror=return-mismatch'
-    ]), language: ['c', 'cpp'])
-    add_project_arguments(cc.get_supported_arguments([
+        '-Werror=return-mismatch',
         '-Werror=incompatible-pointer-types',
         '-Werror=restrict',
         '-Werror=int-conversion',
         '-Werror=implicit-int',
         '-Werror=declaration-missing-parameter-type'
     ]), language: ['c'])
+    add_project_arguments(cpp.get_supported_arguments([
+        '-Werror=missing-field-initializers',
+        '-Werror=format',
+    ]), language: ['cpp'])
 endif
 
 if get_option('branch_protection') \
@@ -523,7 +544,10 @@ add_project_arguments(cc.first_supported_argument(['-Werror-implicit-function-de
 # Check if other libs are needed
 #
 rt_lib = []
-possible_rt_libs = ['rt', 'pthread']
+possible_rt_libs = ['rt']
+if host_system != 'windows'
+    possible_rt_libs += ['pthread']
+endif
 foreach l : possible_rt_libs
     possible_rt_lib_lib = cc.find_library(l, required: false)
     if possible_rt_lib_lib.found() and \
@@ -871,19 +895,16 @@ endif
 
 # Check for struct sockaddr_storage type
 # Define it to `sockaddr` if missing
-have_sockaddr_storage = cc.has_type('struct sockaddr_storage', prefix: '#include <sys/socket.h>')
-
-if not have_sockaddr_storage
-    have_sockaddr_storage = cc.has_type('struct sockaddr_storage', prefix: '#include <winsock2.h>')
+sockaddr_prefix = '#include <sys/types.h>\n'
+if host_system == 'windows'
+    sockaddr_prefix += '#include <winsock2.h>'
+else
+    sockaddr_prefix += '#include <sys/socket.h>'
 endif
 
+have_sockaddr_storage = cc.has_type('struct sockaddr_storage', prefix: sockaddr_prefix)
 if not have_sockaddr_storage
     cdata.set('sockaddr_storage', 'sockaddr')
-endif
-
-# Check for struct ss_family type
-# Define it to `sa_family` if missing
-if not cc.has_type('struct ss_family', prefix: '#include <sys/socket.h>')
     cdata.set('ss_family', 'sa_family')
 endif
 
@@ -953,7 +974,7 @@ cdata.set('PACKAGE_VERSION_MAJOR',      vlc_version_major)
 cdata.set('PACKAGE_VERSION_MINOR',      vlc_version_minor)
 cdata.set('PACKAGE_VERSION_REVISION',   vlc_version_revision)
 cdata.set('PACKAGE_VERSION_EXTRA',      vlc_version_extra)
-cdata.set('PACKAGE_VERSION_DEV',        vlc_version_type)
+cdata.set_quoted('PACKAGE_VERSION_DEV', vlc_version_type)
 
 cdata.set('LIBVLC_ABI_MAJOR', libvlc_abi_version_major)
 cdata.set('LIBVLC_ABI_MINOR', libvlc_abi_version_minor)
@@ -992,7 +1013,9 @@ cdata.set_quoted('PKGDATADIR', pkgdatadir_path)
 cdata.set_quoted('LOCALEDIR', localedir_path)
 
 # Enable stream outputs
-cdata.set('ENABLE_SOUT', get_option('stream_outputs'))
+if get_option('stream_outputs')
+    cdata.set('ENABLE_SOUT', 1)
+endif
 
 # Enable VLM
 if get_option('videolan_manager')
@@ -1004,15 +1027,23 @@ endif
 
 # Allow running as root
 # (useful for people running on embedded platforms)
-cdata.set('ALLOW_RUN_AS_ROOT', get_option('run_as_root'))
+if get_option('run_as_root')
+    cdata.set('ALLOW_RUN_AS_ROOT', 1)
+endif
 
 # Optimize for memory usage vs speed
-cdata.set('OPTIMIZE_MEMORY', get_option('optimize_memory'))
+if get_option('optimize_memory')
+    cdata.set('OPTIMIZE_MEMORY', 1)
+endif
 
 # Allow binary package maintainer to pass a custom string
 # to avoid cache problem
 if get_option('binary_version') != ''
     cdata.set_quoted('DISTRO_VERSION', get_option('binary_version'))
+endif
+
+if get_option('css_engine').allowed()
+    cdata.set('HAVE_CSS', 1)
 endif
 
 
@@ -1033,7 +1064,12 @@ if get_option('default_monospace_font_family') != ''
     cdata.set_quoted('DEFAULT_MONOSPACE_FAMILY', get_option('default_monospace_font_family'))
 endif
 
-gcrypt_dep = dependency('libgcrypt', required: get_option('libgcrypt'))
+gcrypt_dep = dependency('libgcrypt',
+                         version: '>= 1.6.0',
+                         required: get_option('libgcrypt'))
+if gcrypt_dep.found()
+    cdata.set('HAVE_GCRYPT', 1)
+endif
 
 # Flex/Bison support
 # This defines the `bison_gen` and `flex_gen` generator variables to be used
@@ -1051,11 +1087,6 @@ if flex.found() and bison.found()
         output: '@PLAINNAME@.yy.c',
         arguments: ['-o', '@OUTPUT@', '@INPUT@'])
 endif
-
-# Generate config.h
-configure_file(input: 'config.h.meson',
-  output: 'config.h',
-  configuration: cdata)
 
 # Some missing functions are implemented in compat
 subdir('compat')
@@ -1075,9 +1106,16 @@ subdir('bin')
 # VLC plugins
 subdir('modules')
 
-# Integration and non-regression tests, some unittest are there too but the
-# modules/, src/ and lib/ folders should be favoured for those.
-subdir('test')
+# Generate config.h
+configure_file(input: 'config.h.meson',
+  output: 'config.h',
+  configuration: cdata)
+
+if (get_option('tests').allowed())
+    # Integration and non-regression tests, some unittest are there too but the
+    # modules/, src/ and lib/ folders should be favoured for those.
+    subdir('test')
+endif
 
 if get_option('rust').allowed()
     warning('''

@@ -39,8 +39,8 @@
 #import "main/CompatibilityFixes.h"
 #import "panels/dialogs/VLCPopupPanelController.h"
 #import "panels/dialogs/VLCTextfieldPanelController.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 #import "windows/video/VLCVideoOutputProvider.h"
 
 NSString *VLCAudioEffectsEqualizerValuesKey = @"EQValues";
@@ -119,7 +119,7 @@ static inline void enableTextField(NSTextField *const __unsafe_unretained textFi
     self = [super initWithWindowNibName:@"AudioEffects"];
     if (self) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            self->_playerController = VLCMain.sharedInstance.playlistController.playerController;
+            self->_playerController = VLCMain.sharedInstance.playQueueController.playerController;
 
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             if ([defaults boolForKey:@"AudioEffectApplyProfileOnStartup"])

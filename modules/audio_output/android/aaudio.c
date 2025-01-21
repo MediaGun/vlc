@@ -33,7 +33,6 @@
 
 #include "device.h"
 #include "dynamicsprocessing_jni.h"
-#include "../../video_output/android/env.h"
 
 #include <aaudio/AAudio.h>
 
@@ -81,6 +80,10 @@ struct sys
     /* Number of bytes to write before sending a timing report */
     size_t timing_report_delay_bytes;
     vlc_tick_t first_pts;
+
+    /* Channel reordering */
+    uint8_t chans_to_reorder;
+    uint8_t chan_table[AOUT_CHAN_MAX];
 };
 
 /* dlopen/dlsym symbols */
@@ -91,6 +94,7 @@ static struct {
     void                  (*AAudioStreamBuilder_setDeviceId)(AAudioStreamBuilder *, int32_t);
     void                  (*AAudioStreamBuilder_setFormat)(AAudioStreamBuilder *, aaudio_format_t);
     void                  (*AAudioStreamBuilder_setChannelCount)(AAudioStreamBuilder *, int32_t);
+    void                  (*AAudioStreamBuilder_setChannelMask)(AAudioStreamBuilder *, aaudio_channel_mask_t);
     void                  (*AAudioStreamBuilder_setDataCallback)(AAudioStreamBuilder *, AAudioStream_dataCallback, void *);
     void                  (*AAudioStreamBuilder_setErrorCallback)(AAudioStreamBuilder *, AAudioStream_errorCallback,  void *);
     void                  (*AAudioStreamBuilder_setPerformanceMode)(AAudioStreamBuilder *, aaudio_performance_mode_t);
@@ -142,10 +146,10 @@ LoadSymbols(aout_stream_t *stream)
         goto end;
     }
 
-#define AAUDIO_DLSYM(name) \
+#define AAUDIO_DLSYM(name, critical) \
     do { \
         void *sym = dlsym(vt.handle, #name); \
-        if (unlikely(!sym)) { \
+        if (unlikely(!sym) && critical) { \
             msg_Err(stream, "Failed to load symbol "#name); \
             init_state = 0; \
             goto end; \
@@ -153,30 +157,31 @@ LoadSymbols(aout_stream_t *stream)
         *(void **) &vt.name = sym; \
     } while(0)
 
-    AAUDIO_DLSYM(AAudio_createStreamBuilder);
-    AAUDIO_DLSYM(AAudio_convertResultToText);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setChannelCount);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setDeviceId);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setFormat);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setDataCallback);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setErrorCallback);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setPerformanceMode);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setSessionId);
-    AAUDIO_DLSYM(AAudioStreamBuilder_setUsage);
-    AAUDIO_DLSYM(AAudioStreamBuilder_openStream);
-    AAUDIO_DLSYM(AAudioStreamBuilder_delete);
-    AAUDIO_DLSYM(AAudioStream_requestStart);
-    AAUDIO_DLSYM(AAudioStream_requestStop);
-    AAUDIO_DLSYM(AAudioStream_requestPause);
-    AAUDIO_DLSYM(AAudioStream_requestFlush);
-    AAUDIO_DLSYM(AAudioStream_getDeviceId);
-    AAUDIO_DLSYM(AAudioStream_getSampleRate);
-    AAUDIO_DLSYM(AAudioStream_getTimestamp);
-    AAUDIO_DLSYM(AAudioStream_write);
-    AAUDIO_DLSYM(AAudioStream_close);
-    AAUDIO_DLSYM(AAudioStream_getState);
-    AAUDIO_DLSYM(AAudioStream_waitForStateChange);
-    AAUDIO_DLSYM(AAudioStream_getSessionId);
+    AAUDIO_DLSYM(AAudio_createStreamBuilder, true);
+    AAUDIO_DLSYM(AAudio_convertResultToText, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setChannelCount, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setChannelMask, false);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setDeviceId, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setFormat, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setDataCallback, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setErrorCallback, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setPerformanceMode, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setSessionId, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_setUsage, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_openStream, true);
+    AAUDIO_DLSYM(AAudioStreamBuilder_delete, true);
+    AAUDIO_DLSYM(AAudioStream_requestStart, true);
+    AAUDIO_DLSYM(AAudioStream_requestStop, true);
+    AAUDIO_DLSYM(AAudioStream_requestPause, true);
+    AAUDIO_DLSYM(AAudioStream_requestFlush, true);
+    AAUDIO_DLSYM(AAudioStream_getDeviceId, true);
+    AAUDIO_DLSYM(AAudioStream_getSampleRate, true);
+    AAUDIO_DLSYM(AAudioStream_getTimestamp, true);
+    AAUDIO_DLSYM(AAudioStream_write, true);
+    AAUDIO_DLSYM(AAudioStream_close, true);
+    AAUDIO_DLSYM(AAudioStream_getState, true);
+    AAUDIO_DLSYM(AAudioStream_waitForStateChange, true);
+    AAUDIO_DLSYM(AAudioStream_getSessionId, true);
 #undef AAUDIO_DLSYM
 
     init_state = 1;
@@ -506,6 +511,31 @@ CloseAAudioStream(aout_stream_t *stream)
     sys->as = NULL;
 }
 
+static aaudio_channel_mask_t
+VLCMaskToAaudio(uint16_t vlc_mask)
+{
+    aaudio_channel_mask_t mask = 0;
+    if (vlc_mask & AOUT_CHAN_CENTER)
+        mask |= AAUDIO_CHANNEL_FRONT_CENTER;
+    if (vlc_mask & AOUT_CHAN_LEFT)
+        mask |= AAUDIO_CHANNEL_FRONT_LEFT;
+    if (vlc_mask & AOUT_CHAN_RIGHT)
+        mask |= AAUDIO_CHANNEL_FRONT_RIGHT;
+    if (vlc_mask & AOUT_CHAN_REARCENTER)
+        mask |= AAUDIO_CHANNEL_BACK_CENTER;
+    if (vlc_mask & AOUT_CHAN_REARLEFT)
+        mask |= AAUDIO_CHANNEL_BACK_LEFT;
+    if (vlc_mask & AOUT_CHAN_REARRIGHT)
+        mask |= AAUDIO_CHANNEL_BACK_RIGHT;
+    if (vlc_mask & AOUT_CHAN_MIDDLELEFT)
+        mask |= AAUDIO_CHANNEL_SIDE_LEFT;
+    if (vlc_mask & AOUT_CHAN_MIDDLERIGHT)
+        mask |= AAUDIO_CHANNEL_SIDE_RIGHT;
+    if (vlc_mask & AOUT_CHAN_LFE)
+        mask |= AAUDIO_CHANNEL_LOW_FREQUENCY;
+    return mask;
+}
+
 static int
 OpenAAudioStream(aout_stream_t *stream)
 {
@@ -521,7 +551,23 @@ OpenAAudioStream(aout_stream_t *stream)
     }
 
     vt.AAudioStreamBuilder_setFormat(builder, sys->cfg.format);
-    vt.AAudioStreamBuilder_setChannelCount(builder, sys->fmt.i_channels);
+
+    uint32_t chans_out[AOUT_CHAN_MAX];
+    AndroidDevice_GetChanOrder(sys->fmt.i_physical_channels, chans_out,
+                               AOUT_CHAN_MAX );
+    sys->chans_to_reorder =
+        aout_CheckChannelReorder(NULL, chans_out,
+                                 sys->fmt.i_physical_channels,
+                                 sys->chan_table );
+
+    if (vt.AAudioStreamBuilder_setChannelMask != NULL)
+    {
+        aaudio_channel_mask_t mask =
+            VLCMaskToAaudio(sys->fmt.i_physical_channels);
+        vt.AAudioStreamBuilder_setChannelMask(builder, mask);
+    }
+    else
+        vt.AAudioStreamBuilder_setChannelCount(builder, sys->fmt.i_channels);
 
     /* Setup the session-id */
     vt.AAudioStreamBuilder_setSessionId(builder, sys->cfg.session_id);
@@ -571,6 +617,22 @@ PrepareAudioFormat(aout_stream_t *stream, audio_sample_format_t *fmt)
     if (sys->cfg.session_id == 0)
         sys->cfg.session_id = AAUDIO_SESSION_ID_ALLOCATE;
 
+    if (vt.AAudioStreamBuilder_setChannelMask == NULL)
+    {
+        /* Without the proper setChannelMask API, support only mono, stereo,
+         * 5.1 and 7.1 */
+        unsigned channels = aout_FormatNbChannels( &sys->fmt );
+        if (channels > 7)
+            sys->fmt.i_physical_channels = AOUT_CHANS_7_1;
+        else if (channels > 5)
+            sys->fmt.i_physical_channels = AOUT_CHANS_5_1;
+        else if (channels == 1)
+            sys->fmt.i_physical_channels = AOUT_CHAN_LEFT;
+        else
+            sys->fmt.i_physical_channels = AOUT_CHANS_STEREO;
+        aout_FormatPrepare(fmt);
+    }
+
     if (fmt->i_format == VLC_CODEC_S16N)
         sys->cfg.format = AAUDIO_FORMAT_PCM_I16;
     else
@@ -615,6 +677,11 @@ Play(aout_stream_t *stream, vlc_frame_t *frame, vlc_tick_t date)
     }
 
     assert(sys->as);
+
+    if (sys->chans_to_reorder > 0)
+       aout_ChannelReorder(frame->p_buffer, frame->i_buffer,
+                           sys->chans_to_reorder, sys->chan_table,
+                           sys->fmt.i_format );
 
     vlc_mutex_lock(&sys->lock);
 
@@ -816,13 +883,17 @@ static int
 Start(aout_stream_t *stream, audio_sample_format_t *fmt,
       enum android_audio_device_type adev)
 {
-    (void) adev;
-
     if (!AOUT_FMT_LINEAR(fmt))
         return VLC_EGENERIC;
 
     if (LoadSymbols(stream) != VLC_SUCCESS)
         return VLC_EGENERIC;
+
+    if (adev == ANDROID_AUDIO_DEVICE_STEREO)
+    {
+        fmt->i_physical_channels = AOUT_CHANS_STEREO;
+        aout_FormatPrepare(fmt);
+    }
 
     struct sys *sys = stream->sys = malloc(sizeof(*sys));
     if (unlikely(sys == NULL))

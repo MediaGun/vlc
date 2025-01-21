@@ -1,6 +1,6 @@
 # libdav1d
 
-DAV1D_VERSION := 1.4.3
+DAV1D_VERSION := 1.5.0
 DAV1D_URL := $(VIDEOLAN)/dav1d/$(DAV1D_VERSION)/dav1d-$(DAV1D_VERSION).tar.xz
 
 PKGS += dav1d
@@ -21,6 +21,6 @@ dav1d: dav1d-$(DAV1D_VERSION).tar.xz .sum-dav1d
 
 .dav1d: dav1d crossfile.meson
 	$(MESONCLEAN)
-	$(HOSTVARS_MESON) $(MESON) $(DAV1D_CONF)
+	$(MESON) $(DAV1D_CONF)
 	+$(MESONBUILD)
 	touch $@

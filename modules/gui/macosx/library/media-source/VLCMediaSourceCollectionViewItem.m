@@ -31,9 +31,11 @@
 #import "library/VLCLibraryMenuController.h"
 #import "library/VLCLibraryImageCache.h"
 
+#import "library/media-source/VLCMediaSourceDataSource.h"
+
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayQueueController.h"
 
 #import "views/VLCImageView.h"
 #import "views/VLCTrackingView.h"
@@ -64,6 +66,7 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
     self.annotationTextField.font = [NSFont systemFontOfSize:NSFont.systemFontSize weight:NSFontWeightBold];
     self.annotationTextField.textColor = NSColor.VLClibraryAnnotationColor;
     self.annotationTextField.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor;
+    self.highlightBox.borderColor = NSColor.VLCAccentColor;
 
     if (@available(macOS 10.14, *)) {
         [NSApplication.sharedApplication addObserver:self
@@ -109,13 +112,20 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
     _mediaTitleTextField.stringValue = @"";
     _annotationTextField.hidden = YES;
     _mediaImageView.image = nil;
-    _addToPlaylistButton.hidden = NO;
+    _addToPlayQueueButton.hidden = NO;
+    _highlightBox.hidden = YES;
 }
 
 - (void)setRepresentedInputItem:(VLCInputItem *)representedInputItem
 {
     _representedInputItem = representedInputItem;
     [self updateRepresentation];
+}
+
+- (void)setSelected:(BOOL)selected
+{
+    super.selected = selected;
+    _highlightBox.hidden = !selected;
 }
 
 - (void)updateRepresentation
@@ -125,8 +135,14 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
         return;
     }
 
-    _mediaTitleTextField.stringValue = _representedInputItem.name;
-    [VLCLibraryImageCache thumbnailForInputItem:self->_representedInputItem withCompletion:^(NSImage * const thumbnail) {
+    VLCInputItem * const inputItem = _representedInputItem;
+    _mediaTitleTextField.stringValue = inputItem.name;
+
+    [VLCLibraryImageCache thumbnailForInputItem:inputItem
+                                 withCompletion:^(NSImage * const thumbnail) {
+        if (self->_representedInputItem != inputItem) {
+            return;
+        }
         self->_mediaImageView.image = thumbnail;
     }];
 
@@ -156,38 +172,57 @@ NSString *VLCMediaSourceCellIdentifier = @"VLCLibraryCellIdentifier";
 
 - (IBAction)playInstantly:(id)sender
 {
-    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
+    [VLCMain.sharedInstance.playQueueController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:YES];
 }
 
-- (IBAction)addToPlaylist:(id)sender
+- (IBAction)addToPlayQueue:(id)sender
 {
-    [VLCMain.sharedInstance.playlistController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:NO];
+    [VLCMain.sharedInstance.playQueueController addInputItem:_representedInputItem.vlcInputItem atPosition:-1 startPlayback:NO];
 }
 
--(void)mouseDown:(NSEvent *)theEvent
-{
-    if (theEvent.modifierFlags & NSControlKeyMask) {
-        if (!_menuController) {
-            _menuController = [[VLCLibraryMenuController alloc] init];
-        }
-
-        [_menuController setRepresentedInputItems:@[_representedInputItem]];
-        [_menuController popupMenuWithEvent:theEvent forView:self.view];
-    }
-
-    [super mouseDown:theEvent];
-}
-
-- (void)rightMouseDown:(NSEvent *)theEvent
+- (void)openContextMenu:(NSEvent *)event
 {
     if (!_menuController) {
         _menuController = [[VLCLibraryMenuController alloc] init];
     }
 
-    [_menuController setRepresentedInputItems:@[_representedInputItem]];
-    [_menuController popupMenuWithEvent:theEvent forView:self.view];
+    NSCollectionView * const collectionView = self.collectionView;
+    VLCMediaSourceDataSource * const dataSource =
+        (VLCMediaSourceDataSource *)collectionView.dataSource;
+    NSParameterAssert(dataSource != nil);
+    NSSet<NSIndexPath *> * const indexPaths = collectionView.selectionIndexPaths;
+    NSArray<VLCInputItem *> * const selectedInputItems =
+        [dataSource mediaSourceInputItemsAtIndexPaths:indexPaths];
+    const NSInteger mediaSourceItemIndex = [selectedInputItems indexOfObjectPassingTest:^BOOL(
+        VLCInputItem * const inputItem, const NSUInteger idx, BOOL * const stop
+    ) {
+        return [inputItem.MRL isEqualToString:_representedInputItem.MRL];
+    }];
+    NSArray<VLCInputItem *> *items = nil;
 
-    [super rightMouseDown:theEvent];
+    if (mediaSourceItemIndex == NSNotFound) {
+        items = @[_representedInputItem];
+    } else {
+        items = selectedInputItems;
+    }
+
+    _menuController.representedInputItems = items;
+    [_menuController popupMenuWithEvent:event forView:self.view];
+}
+
+-(void)mouseDown:(NSEvent *)event
+{
+    if (event.modifierFlags & NSControlKeyMask) {
+        [self openContextMenu:event];
+    }
+
+    [super mouseDown:event];
+}
+
+- (void)rightMouseDown:(NSEvent *)event
+{
+    [self openContextMenu:event];
+    [super rightMouseDown:event];
 }
 
 @end

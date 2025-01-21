@@ -32,8 +32,8 @@
 #import "main/CompatibilityFixes.h"
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "windows/video/VLCMainVideoViewController.h"
 #import "windows/video/VLCVideoOutputProvider.h"
@@ -127,7 +127,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     o_temp_view = [[NSView alloc] init];
     [o_temp_view setAutoresizingMask:NSViewHeightSizable | NSViewWidthSizable];
 
-    _playerController = VLCMain.sharedInstance.playlistController.playerController;
+    _playerController = VLCMain.sharedInstance.playQueueController.playerController;
     _videoViewController = [[VLCMainVideoViewController alloc] init];
 
     [self mediaMetadataChanged:nil];
@@ -144,16 +144,16 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
 
 - (void)mediaMetadataChanged:(NSNotification *)aNotification
 {
-    VLCPlaylistController *playlistController = VLCMain.sharedInstance.playlistController;
-    VLCInputItem *inputItem = [playlistController currentlyPlayingInputItem];
+    VLCPlayQueueController * const playQueueController = VLCMain.sharedInstance.playQueueController;
+    VLCInputItem * const inputItem = [playQueueController currentlyPlayingInputItem];
     if (inputItem == NULL || _playerController.playerState == VLC_PLAYER_STATE_STOPPED) {
         [self setTitle:_NS("VLC media player")];
         self.representedURL = nil;
         return;
     }
 
-    NSString *title = inputItem.title;
-    NSString *nowPlaying = inputItem.nowPlaying;
+    NSString * const title = inputItem.title;
+    NSString * const nowPlaying = inputItem.nowPlaying;
     if (nowPlaying) {
         [self setTitle:[NSString stringWithFormat:@"%@ — %@", title, nowPlaying]];
     } else {
@@ -370,7 +370,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
         [o_fullscreen_window setFullscreen: YES];
         [o_fullscreen_window setAcceptsMouseMovedEvents:YES];
 
-        /* Make sure video view gets visible in case the playlist was visible before */
+        /* Make sure video view gets visible in case the play queue was visible before */
         b_video_view_was_hidden = [_videoViewController.view isHidden];
         [_videoViewController.view setHidden: NO];
         _videoViewController.view.translatesAutoresizingMaskIntoConstraints = YES;

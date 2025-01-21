@@ -3,6 +3,12 @@
 /* Define to 1 to allow running VLC as root (uid 0). */
 #mesondefine ALLOW_RUN_AS_ROOT
 
+/* Define to 1 if AVX inline assembly is available. */
+#mesondefine CAN_COMPILE_AVX
+
+/* Define to 1 if AVX2 inline assembly is available. */
+#mesondefine CAN_COMPILE_AVX2
+
 /* Define to 1 if SSE2 inline assembly is available. */
 #mesondefine CAN_COMPILE_SSE2
 
@@ -61,6 +67,12 @@
 /* Define to 1 if you have the `aligned_alloc' function. */
 #mesondefine HAVE_ALIGNED_ALLOC
 
+/* AMD HQScaler supported */
+#mesondefine HAVE_AMF_SCALER
+
+/* Define if libaribb24 is available. */
+#mesondefine HAVE_ARIBB24
+
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #mesondefine HAVE_ARPA_INET_H
 
@@ -76,12 +88,18 @@
 /* Support for __attribute__((packed)) for structs */
 #mesondefine HAVE_ATTRIBUTE_PACKED
 
+/* Define to 1 if AVX2 intrinsics are available. */
+#mesondefine HAVE_AVX2_INTRINSICS
+
 /* Define to 1 if you have the `backtrace' function. */
 #mesondefine HAVE_BACKTRACE
 
 /* Defined to 1 if the qsort_r() prototype contradicts the upcoming POSIX
    standard. */
 #mesondefine HAVE_BROKEN_QSORT_R
+
+/* Define if CSS engine is built */
+#mesondefine HAVE_CSS
 
 /* Define to 1 if C++ headers define locale_t */
 #mesondefine HAVE_CXX_LOCALE_T
@@ -94,6 +112,9 @@
 
 /* Define to 1 if you have the `dup3' function. */
 #mesondefine HAVE_DUP3
+
+/* Define to 1 if you have the <dxgidebug.h> header file. */
+#mesondefine HAVE_DXGIDEBUG_H
 
 /* Define to 1 if you have the `eventfd' function. */
 #mesondefine HAVE_EVENTFD
@@ -130,6 +151,9 @@
 
 /* Define to 1 if you have the <sys/auxv.h> header file */
 #mesondefine HAVE_SYS_AUXV_H
+
+/* Defined if having gcrypt */
+#mesondefine HAVE_GCRYPT
 
 /* Define to 1 if you have the `getauxval' function. */
 #mesondefine HAVE_GETAUXVAL
@@ -195,6 +219,12 @@
 
 
 
+/* Define to 1 if you have the <libavcodec/d3d11va.h> header file. */
+#mesondefine HAVE_LIBAVCODEC_D3D11VA_H
+
+/* Define to 1 if you have the <libavcodec/dxva2.h> header file. */
+#mesondefine HAVE_LIBAVCODEC_DXVA2_H
+
 /* TODO: Properly check for the avformat header
  */
 #define HAVE_LIBAVFORMAT_AVFORMAT_H 1
@@ -214,6 +244,9 @@
 /* Define to 1 if you have the `localtime_r' function. */
 #mesondefine HAVE_LOCALTIME_R
 
+/* Define to 1 if you have the lrintf function */
+#mesondefine HAVE_LRINTF
+
 /* Define to 1 if the system has the type `max_align_t'. */
 #mesondefine HAVE_MAX_ALIGN_T
 
@@ -232,6 +265,8 @@
 /* Define to 1 if you have the `mmap' function. */
 #mesondefine HAVE_MMAP
 
+/* Define to 1 if you have the <mpc/mpcdec.h> header file. */
+#mesondefine HAVE_MPC_MPCDEC_H
 
 /* Define to 1 if you have the NANF function */
 #mesondefine HAVE_NANF
@@ -269,9 +304,8 @@
 /* Define to 1 if you have the `posix_memalign' function. */
 #mesondefine HAVE_POSIX_MEMALIGN
 
-/* Define to 1 if the system has the type
-   `PROCESS_MITIGATION_IMAGE_LOAD_POLICY'. */
-#mesondefine HAVE_PROCESS_MITIGATION_IMAGE_LOAD_POLICY
+/* Define to 1 if using libprojectM 2.x */
+#mesondefine HAVE_PROJECTM2
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #mesondefine HAVE_PTHREAD_H
@@ -426,8 +460,14 @@
 /* Define to 1 if you have the `writev' function. */
 #mesondefine HAVE_WRITEV
 
+/* Use external asm on x86. */
+#mesondefine HAVE_X86ASM
+
 /* Define to 1 if you have the <xlocale.h> header file. */
 #mesondefine HAVE_XLOCALE_H
+
+/* Define to 1 if you have zlib. */
+#mesondefine HAVE_ZLIB
 
 /* Define to 1 if you have the <zlib.h> header file. */
 #mesondefine HAVE_ZLIB_H
@@ -551,7 +591,7 @@
 // #undef ZVBI_COMPILED
 
 /* Define to 64 for large files support. */
-#mesondefine _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
 
 /* Alias fdatasync() to fsync() if missing. */
 #mesondefine fdatasync

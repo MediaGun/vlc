@@ -78,4 +78,24 @@
     }
 }
 
+- (NSArray<NSLayoutConstraint *> *)applyConstraintsToFillSuperview
+{
+    NSAssert(self.superview, @"View must have a valid superview when applying fill constraints!");
+    return [self.superview constraintsToFillView:self activate:YES];
+}
+
+- (NSArray<NSLayoutConstraint *> *)constraintsToFillView:(NSView *)view activate:(BOOL)activate
+{
+    NSArray<NSLayoutConstraint *> * const constraints = @[
+        [self.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+        [self.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+        [self.topAnchor constraintEqualToAnchor:view.topAnchor],
+        [self.bottomAnchor constraintEqualToAnchor:view.bottomAnchor]
+    ];
+    if (activate) {
+        [NSLayoutConstraint activateConstraints:constraints];
+    }
+    return constraints;
+}
+
 @end

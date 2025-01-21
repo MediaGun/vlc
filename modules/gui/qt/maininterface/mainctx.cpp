@@ -35,7 +35,6 @@
 #include "compositor.hpp"
 #include "util/renderer_manager.hpp"
 #include "util/csdbuttonmodel.hpp"
-#include "util/workerthreadset.hpp"
 
 #include "widgets/native/customwidgets.hpp"               // qtEventToVLCKey, QVLCStackedWidget
 #include "util/qt_dirs.hpp"                     // toNativeSeparators
@@ -62,6 +61,8 @@
 #include <QUrl>
 #include <QDate>
 #include <QMimeData>
+#include <QClipboard>
+#include <QInputDialog>
 
 #include <QQmlProperty>
 #include <QQmlContext>
@@ -70,6 +71,10 @@
 #include <QScreen>
 
 #include <QOperatingSystemVersion>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QStyleHints>
+#endif
 
 #ifdef _WIN32
 #include <QFileInfo>
@@ -135,6 +140,31 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
 
     settings = getSettings();
     m_colorScheme = new ColorSchemeModel(this);
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    connect(m_colorScheme, &ColorSchemeModel::currentChanged, qGuiApp, [colorScheme = m_colorScheme]() {
+        QStyleHints *const styleHints = qGuiApp->styleHints();
+        if (unlikely(!styleHints))
+            return;
+
+        Qt::ColorScheme scheme;
+        switch (colorScheme->currentScheme())
+        {
+        case ColorSchemeModel::ColorScheme::Day:
+            scheme = Qt::ColorScheme::Light;
+            break;
+        case ColorSchemeModel::ColorScheme::Night:
+            scheme = Qt::ColorScheme::Dark;
+            break;
+        case ColorSchemeModel::ColorScheme::System:
+        default:
+            styleHints->unsetColorScheme();
+            return;
+        }
+
+        styleHints->setColorScheme(scheme);
+    });
+#endif
 
     m_sort = new SortCtx(this);
     m_search = new SearchCtx(this);
@@ -222,7 +252,14 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
         QMetaObject::invokeMethod(m_medialib, &MediaLib::reload, Qt::QueuedConnection);
     }
 
-    m_preparser = libvlc_GetMainPreparser(libvlc);
+    const struct vlc_preparser_cfg cfg = []{
+        struct vlc_preparser_cfg cfg{};
+        cfg.types = VLC_PREPARSER_TYPE_PARSE;
+        cfg.max_parser_threads = 1;
+        cfg.timeout = 0;
+        return cfg;
+    }();
+    m_network_preparser = vlc_preparser_New(VLC_OBJECT(libvlc), &cfg);
 
 #ifdef UPDATE_CHECK
     /* Checking for VLC updates */
@@ -256,13 +293,15 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
         }
     }
 #endif
+
+    m_threadRunner = new ThreadRunner();
 }
 
 MainCtx::~MainCtx()
 {
-    RendererManager::killInstance();
-
     /* Save states */
+
+    m_threadRunner->destroy();
 
     settings->beginGroup("MainWindow");
     settings->setValue( "pl-dock-status", b_playlistDocked );
@@ -297,6 +336,9 @@ MainCtx::~MainCtx()
 
     if (m_medialib)
         delete m_medialib;
+
+    if (m_network_preparser)
+        vlc_preparser_Delete(m_network_preparser);
 
     p_intf->p_mi = NULL;
 }
@@ -385,6 +427,8 @@ void MainCtx::loadPrefs(const bool callSignals)
     loadFromVLCOption(m_pinOpacity, "qt-fs-opacity", &MainCtx::pinOpacityChanged);
 
     loadFromVLCOption(m_safeArea, "qt-safe-area", &MainCtx::safeAreaChanged);
+
+    loadFromVLCOption(m_mouseHideTimeout, "mouse-hide-timeout", &MainCtx::mouseHideTimeoutChanged);
 }
 
 void MainCtx::loadFromSettingsImpl(const bool callSignals)
@@ -560,14 +604,9 @@ inline void MainCtx::initSystray()
         m_systray = std::make_unique<VLCSystray>(this);
 }
 
-WorkerThreadSet* MainCtx::workersThreads() const
+ThreadRunner* MainCtx::threadRunner() const
 {
-    if (!m_workersThreads)
-    {
-        m_workersThreads.reset( new WorkerThreadSet );
-    }
-
-    return m_workersThreads.get();
+    return m_threadRunner;
 }
 
 QUrl MainCtx::folderMRL(const QString &fileMRL) const
@@ -737,7 +776,7 @@ VideoSurfaceProvider* MainCtx::getVideoSurfaceProvider() const
  * Events stuff
  ************************************************************************/
 
-bool MainCtx::onWindowClose( QWindow* )
+void MainCtx::onWindowClose( QWindow* )
 {
     PlaylistController* playlistController = p_intf->p_mainPlaylistController;
     PlayerController* playerController = p_intf->p_mainPlayerController;
@@ -755,12 +794,10 @@ bool MainCtx::onWindowClose( QWindow* )
             }
         });
         playlistController->stop();
-        return false;
     }
     else
     {
         emit askToQuit(); /* ask THEDP to quit, so we have a unique method */
-        return true;
     }
 }
 
@@ -792,6 +829,66 @@ void MainCtx::emitRaise()
 VLCVarChoiceModel* MainCtx::getExtraInterfaces()
 {
     return m_extraInterfaces;
+}
+
+bool MainCtx::pasteFromClipboard()
+{
+    assert(qApp);
+    const QClipboard *const clipboard = qApp->clipboard();
+    if (Q_UNLIKELY(!clipboard))
+        return false;
+    const QMimeData *mimeData = clipboard->mimeData(QClipboard::Selection);
+    if (!mimeData || !mimeData->hasUrls())
+        mimeData = clipboard->mimeData(QClipboard::Clipboard);
+
+    if (Q_UNLIKELY(!mimeData))
+        return false;
+
+    QList<QUrl> urlList = mimeData->urls();
+    QString text = mimeData->text();
+
+    if (urlList.count() > 1 || text.contains('\n'))
+    {
+        // NOTE: The reason that mime data for `text/uri-list` is not used
+        //       directly as the placeholder of the input dialog instead of
+        //       re-constructing is to decode the urls in the list.
+        QString placeholder;
+
+        if (urlList.isEmpty())
+        {
+            placeholder = std::move(text);
+        }
+        else
+        {
+            for (const auto& i : urlList)
+                placeholder += i.toString(QUrl::PrettyDecoded) + '\n';
+            placeholder.chop(1);
+        }
+
+        bool ok = false;
+        const QString ret = QInputDialog::getMultiLineText(nullptr,
+                                                           qtr("Paste from clipboard"),
+                                                           qtr("Do you want to enqueue the following URLs into the playlist?"),
+                                                           placeholder,
+                                                           &ok);
+        if (!ok)
+            return false;
+
+        for (const auto& i : QStringView(ret).split('\n'))
+        {
+            if (i.length() > 0)
+                THEMPL->append(i.trimmed().toString(), false);
+        }
+
+        return true;
+    }
+    else if ((urlList.count() == 1) || mimeData->hasText())
+    {
+        THEDP->openUrlDialog();
+        return true;
+    }
+
+    return false;
 }
 
 /*****************************************************************************

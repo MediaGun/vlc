@@ -64,7 +64,7 @@ T.Control {
 
     hoverEnabled: true
 
-    verticalPadding: VLCStyle.playlistDelegate_verticalPadding
+    verticalPadding: VLCStyle.margin_xxxsmall
 
     leftPadding: VLCStyle.margin_normal
 
@@ -74,6 +74,8 @@ T.Control {
                             implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
                              implicitContentHeight + topPadding + bottomPadding)
+
+    height: Math.round(implicitHeight)
 
     ListView.delayRemove: dragHandler.active
 
@@ -200,29 +202,25 @@ T.Control {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: VLCStyle.margin_large
-            spacing: VLCStyle.margin_xsmall
+            spacing: VLCStyle.margin_xxxsmall
 
             Widgets.ListLabel {
                 id: textInfo
 
-                Layout.fillHeight: true
                 Layout.fillWidth: true
 
                 font.weight: model.isCurrent ? Font.Bold : Font.DemiBold
-                text: model.title
+                text: model.title || qsTr("Unknown Title")
                 color: theme.fg.primary
-                verticalAlignment: Text.AlignTop
             }
 
             Widgets.ListSubtitleLabel {
                 id: textArtist
 
-                Layout.fillHeight: true
                 Layout.fillWidth: true
 
-                text: model.artist || qsTr("Unknown Artist")
+                text: model.artist
                 color: theme.fg.primary
-                verticalAlignment: Text.AlignBottom
             }
         }
 
@@ -279,6 +277,8 @@ T.Control {
         DragHandler {
             id: dragHandler
 
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
+
             target: null
 
             grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
@@ -320,5 +320,7 @@ T.Control {
     Widgets.ListViewExt.VerticalDropAreaLayout {
         id: dropAreaLayout
         anchors.fill: parent
+
+        view: delegate.view
     }
 }

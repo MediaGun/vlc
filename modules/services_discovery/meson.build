@@ -33,7 +33,7 @@ if mtp_dep.found()
 endif
 
 # UPnP Plugin (Intel SDK)
-upnp_dep = dependency('libupnp', required: get_option('upnp'))
+upnp_dep = dependency('libupnp', 'UPNP', required: get_option('upnp'))
 if upnp_dep.found()
 
     upnp_darwin_deps = []
@@ -84,7 +84,7 @@ if xcb_dep.found()
 endif
 
 # Windows drive discovery
-if host_system == 'windows'
+if host_system == 'windows' and have_win_desktop
     vlc_modules += {
         'name' : 'windrive',
         'sources' : files('windrive.c')

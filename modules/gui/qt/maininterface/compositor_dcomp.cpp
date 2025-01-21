@@ -37,8 +37,6 @@
 #include <QtGui/qpa/qplatformnativeinterface.h>
 #include <QtCore/private/qsystemlibrary_p.h>
 
-#if __has_include(<dxgi1_6.h>)
-
 #if __has_include(<d3d11_1.h>)
 #define QRhiD3D11_ACTIVE
 #include <QtGui/private/qrhid3d11_p.h>
@@ -49,8 +47,6 @@
 #if (QT_VERSION < QT_VERSION_CHECK(6, 7, 0)) || defined(QRHI_D3D12_AVAILABLE)
 #define QRhiD3D12_ACTIVE
 #endif
-#endif
-
 #endif
 
 #if !defined(QRhiD3D11_ACTIVE) && !defined(QRhiD3D12_ACTIVE)
@@ -106,6 +102,8 @@ CompositorDirectComposition::CompositorDirectComposition( qt_intf_t* p_intf,  QO
 
 CompositorDirectComposition::~CompositorDirectComposition()
 {
+    //m_acrylicSurface should be released before the RHI context is destroyed
+    assert(!m_acrylicSurface);
     destroyMainInterface();
 }
 
@@ -213,19 +211,18 @@ void CompositorDirectComposition::setup()
 
     m_dcompDevice->Commit();
 
-    if (!m_blurBehind)
+    if (!m_mainCtx->hasAcrylicSurface())
     {
         if (var_InheritBool(m_intf, "qt-backdrop-blur"))
         {
             try
             {
-                m_acrylicSurface = new CompositorDCompositionAcrylicSurface(m_intf, this, m_mainCtx, m_dcompDevice);
+                m_acrylicSurface = std::make_unique<CompositorDCompositionAcrylicSurface>(m_intf, this, m_mainCtx, m_dcompDevice);
             }
             catch (const std::exception& exception)
             {
                 if (const auto what = exception.what())
                     msg_Warn(m_intf, "%s", what);
-                delete m_acrylicSurface.data();
             }
         }
     }
@@ -273,8 +270,19 @@ bool CompositorDirectComposition::makeMainInterface(MainCtx* mainCtx)
                 m_setupStateCond.notify_all();
             }, static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::DirectConnection));
 
-    m_quickView->show();
+    // Qt "terminates the application" by default if there is no connection made to the signal
+    // QQuickWindow::sceneGraphError(). We need to do the same, because by the time the error
+    // is reported, it will likely be too late (`makeMainInterface()` already returned true,
+    // which is the latest point recovery is still possible) to recover from that error and
+    // the interface will remain unfunctional. It was proposed to wait here until the scene
+    // graph is done, but that was not changed in order not to slow down the application
+    // start up.
+    connect(quickViewPtr,
+            &QQuickWindow::sceneGraphError,
+            m_mainCtx,
+            &MainCtx::askToQuit);
 
+    m_quickView->show();
     return true;
 }
 
@@ -303,6 +311,7 @@ void CompositorDirectComposition::destroyMainInterface()
 
 void CompositorDirectComposition::unloadGUI()
 {
+    m_acrylicSurface.reset();
     m_interfaceWindowHandler.reset();
     m_quickView.reset();
     commonGUIDestroy();
@@ -314,7 +323,7 @@ bool CompositorDirectComposition::setupVoutWindow(vlc_window_t *p_wnd, VoutDestr
         QMutexLocker lock(&m_setupStateLock);
         while (m_setupState == SetupState::Uninitialized)
         {
-            const bool ret = m_setupStateCond.wait(&m_setupStateLock, QDeadlineTimer(2500));
+            const bool ret = m_setupStateCond.wait(&m_setupStateLock);
             if (!ret)
                 return false;
         }
@@ -393,7 +402,7 @@ bool CompositorDirectComposition::eventFilter(QObject *watched, QEvent *event)
             static_cast<QPlatformSurfaceEvent *>(event)->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
         {
             m_videoVisual.Reset();
-            delete m_acrylicSurface.data();
+            m_acrylicSurface.reset();
             // Just in case root visual deletes its children
             // when it is deleted: (Qt's UI visual should be
             // deleted by Qt itself)

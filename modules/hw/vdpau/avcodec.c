@@ -131,21 +131,26 @@ static void Close(vlc_va_t *va, AVCodecContext* ctx)
     free(sys);
 }
 
-static const struct vlc_va_operations ops = { Lock, Close, };
+static const struct vlc_va_operations ops =
+{
+    .get = Lock,
+    .close = Close,
+};
 
 const struct vlc_video_context_operations vdpau_vctx_ops = {
     NULL,
 };
 
-static int Open(vlc_va_t *va, AVCodecContext *avctx, enum AVPixelFormat hwfmt, const AVPixFmtDescriptor *desc,
-                const es_format_t *fmt_in, vlc_decoder_device *dec_device,
-                video_format_t *fmt_out, vlc_video_context **vtcx_out)
+static int Open(vlc_va_t *va, struct vlc_va_cfg *cfg)
 {
+    AVCodecContext *avctx = cfg->avctx;
+    enum AVPixelFormat hwfmt = cfg->hwfmt;
+    vlc_decoder_device *dec_device = cfg->dec_device;
+    video_format_t *fmt_out = cfg->video_fmt_out;
+
     if ( hwfmt != AV_PIX_FMT_VDPAU || GetVDPAUOpaqueDevice(dec_device) == NULL)
         return VLC_EGENERIC;
 
-    (void) fmt_in;
-    (void) desc;
     void *func;
     VdpStatus err;
     VdpChromaType type, *chroma;
@@ -226,7 +231,7 @@ static int Open(vlc_va_t *va, AVCodecContext *avctx, enum AVPixelFormat hwfmt, c
         return VLC_ENOMEM;
     }
 
-    *vtcx_out = sys->vctx;
+    cfg->vctx_out = sys->vctx;
     va->ops = &ops;
     return VLC_SUCCESS;
 

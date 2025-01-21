@@ -22,6 +22,7 @@
 
 #import "VLCRoundedCornerTextField.h"
 #import "extensions/NSColor+VLCAdditions.h"
+#import "extensions/NSFont+VLCAdditions.h"
 
 const CGFloat VLCRoundedCornerTextFieldLightCornerRadius = 3.;
 const CGFloat VLCRoundedCornerTextFieldStrongCornerRadius = 10.;
@@ -46,12 +47,27 @@ const CGFloat VLCRoundedCornerTextFieldStrongCornerRadius = 10.;
     return self;
 }
 
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        [self setupCustomAppearance];
+    }
+    return self;
+}
+
 - (void)setupCustomAppearance
 {
+    self.drawsBackground = NO;
     self.wantsLayer = YES;
     self.layer.cornerRadius = VLCRoundedCornerTextFieldLightCornerRadius;
     self.layer.masksToBounds = YES;
     self.layer.backgroundColor = NSColor.VLClibraryAnnotationBackgroundColor.CGColor;
+    self.font = NSFont.VLCLibraryItemAnnotationFont;
+    self.textColor = NSColor.VLClibraryAnnotationColor;
+    self.alignment = NSTextAlignmentCenter;
+    self.bezeled = NO;
+    self.editable = NO;
 }
 
 - (void)setBackgroundColor:(NSColor *)backgroundColor
@@ -66,15 +82,6 @@ const CGFloat VLCRoundedCornerTextFieldStrongCornerRadius = 10.;
         self.layer.cornerRadius = VLCRoundedCornerTextFieldStrongCornerRadius;
     } else {
         self.layer.cornerRadius = VLCRoundedCornerTextFieldLightCornerRadius;
-    }
-}
-
-- (void)setStringValue:(NSString *)stringValue
-{
-    if (stringValue != nil) {
-        [super setStringValue:[NSString stringWithFormat:@" %@ ", stringValue]];
-    } else {
-        [super setStringValue:@""];
     }
 }
 

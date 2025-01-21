@@ -26,6 +26,9 @@ ToolTipExt {
     margins: 0
     padding: VLCStyle.margin_xxsmall
 
+    height: implicitHeight + background.arrowHeight
+    bottomInset: height - implicitHeight
+
     x: _x
     y: pos.y - (implicitHeight + arrowArea.implicitHeight + VLCStyle.dp(7.5))
 
@@ -36,6 +39,8 @@ ToolTipExt {
         border.color: pointingTooltip.colorContext.border
         color: pointingTooltip.colorContext.bg.primary
         radius: VLCStyle.dp(6, VLCStyle.scale)
+
+        readonly property real arrowHeight: arrow.implicitHeight + border.width
 
         Item {
             id: arrowArea
@@ -54,7 +59,8 @@ ToolTipExt {
                 id: arrow
 
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.horizontalCenterOffset: _x - pointingTooltip.x
+                anchors.horizontalCenterOffset: (pointingTooltip.popupType === 1 /* Popup.Window */) ? 0
+                                                                                                     : (pointingTooltip._x - pointingTooltip.x)
                 anchors.verticalCenter: parent.top
 
                 implicitWidth: VLCStyle.dp(10, VLCStyle.scale)

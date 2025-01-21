@@ -178,7 +178,6 @@ libvlccore_sources_base = files(
     'input/stream_filter.c',
     'input/stream_memory.c',
     'input/subtitles.c',
-    'input/thumbnailer.c',
     'input/var.c',
     'audio_output/aout_internal.h',
     'audio_output/common.c',
@@ -368,6 +367,15 @@ elif host_system == 'linux'
     else
         libvlccore_sources += 'posix/getaddrinfo.c'
     endif
+endif
+
+if get_option('update-check').allowed()
+    if not gcrypt_dep.found()
+        error('libgcrypt is required for update checking system')
+    endif
+    libvlccore_sources += [ 'misc/update.c', 'misc/update_crypto.c' ]
+    vlccore_cargs += '-DUPDATE_CHECK'
+    libvlccore_deps += gcrypt_dep
 endif
 
 libvlccore = library(

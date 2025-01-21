@@ -33,8 +33,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (readwrite, weak) IBOutlet NSTableView *tableView;
 @property (readonly) NSArrayController *chaptersArrayController;
+@property (readwrite, nonatomic) NSTextField *counterLabel;
 
 - (instancetype)initWithLibraryWindow:(VLCLibraryWindow *)libraryWindow;
+
+- (IBAction)tableViewAction:(id)sender;
 
 @end
 

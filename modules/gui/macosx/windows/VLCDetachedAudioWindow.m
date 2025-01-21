@@ -29,8 +29,8 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "views/VLCTrackingView.h"
 #import "views/VLCBottomBarView.h"
@@ -55,47 +55,14 @@
     [self.contentView addSubview:self.decorativeView 
                       positioned:NSWindowBelow
                       relativeTo:self.overlayView];
-    [self.contentView addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:self.decorativeView
-                                     attribute:NSLayoutAttributeTop
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.contentView
-                                     attribute:NSLayoutAttributeTop
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:self.decorativeView
-                                     attribute:NSLayoutAttributeBottom
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.contentView
-                                     attribute:NSLayoutAttributeBottom
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:self.decorativeView
-                                     attribute:NSLayoutAttributeLeft
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.contentView
-                                     attribute:NSLayoutAttributeLeft
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:self.decorativeView
-                                     attribute:NSLayoutAttributeRight
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.contentView
-                                     attribute:NSLayoutAttributeRight
-                                    multiplier:1.
-                                      constant:0.
-        ],
-    ]];
+    [self.decorativeView applyConstraintsToFillSuperview];
 }
 
 - (void)awakeFromNib
 {
     self.title = @"";
 
-    _playerController = VLCMain.sharedInstance.playlistController.playerController;
+    _playerController = VLCMain.sharedInstance.playQueueController.playerController;
 
     VLCTrackingView * const trackingView = self.contentView;
     trackingView.viewToHide = self.overlayView;

@@ -8,6 +8,30 @@ vlc_modules += {
     'sources' : files('data.c')
 }
 
+decklink_dep = disabler()
+if get_option('decklink').allowed()
+decklink_cpp_args = []
+if host_system == 'windows'
+    decklink_cpp_args += libcom_cppflags
+endif
+# TODO allow providing a custom location for the DeckLink SDK
+if contrib_dir != ''
+    decklink_dep = declare_dependency(
+        link_args: '-L' + contrib_libdir,
+        compile_args: [f'-I@contrib_incdir@/decklink'])
+    if not cpp.check_header('DeckLinkAPI.h', dependencies: [ decklink_dep ])
+        decklink_dep = disabler()
+    endif
+endif
+vlc_modules += {
+    'name' : 'decklink',
+    'sources' : files('decklink.cpp', 'sdi.c', 'sdi.h', 'vlc_decklink.h'),
+    'dependencies' : [dl_lib, decklink_dep],
+    'cpp_args' : decklink_cpp_args,
+    'enabled' : decklink_dep.found(),
+}
+endif
+
 # Filesystem access module
 vlc_modules += {
     'name' : 'filesystem',
@@ -106,6 +130,7 @@ vlc_modules += {
     'dependencies' : [ksuser_lib],
     'enabled' : get_option('wasapi')
       .require(host_system == 'windows', error_message: 'WASAPI requires Windows')
+      .disable_auto_if(have_win_store)
       .allowed() and ksuser_lib.found()
 }
 
@@ -168,6 +193,18 @@ if (get_option('linsys')
     endif
 endif
 
+live555_dep = dependency('live555', version: '>= 2011.12.23', required: get_option('live555'))
+# TODO support without pkg-config
+vlc_modules += {
+    'name' : 'live555',
+    'sources' : files('live555.cpp', 'live555_dtsgen.h',
+                      'mms/asf.c', 'mms/asf.h',
+                      'mms/buffer.c', 'mms/buffer.h',
+                      '../codec/opus_header.c', '../codec/opus_header.h'),
+    'dependencies' : [live555_dep, socket_libs],
+    'enabled' : live555_dep.found(),
+}
+
 # Shared memory frame buffer capture
 vlc_modules += {
     'name' : 'shm',
@@ -208,7 +245,6 @@ endif
 if get_option('vcd_module')
     vcd_cdda_flags = []
 
-    # TODO: Add gcrypt dependency if it's present
     libcddb_dep = dependency('libcddb', version: '>= 0.9.5', required: get_option('libcddb'))
     if libcddb_dep.found()
         vcd_cdda_flags += '-DHAVE_LIBCDDB'
@@ -226,7 +262,7 @@ if get_option('vcd_module')
         needed_vcd_unix_headers_present = false
     endif
 
-    if (needed_vcd_unix_headers_present or 
+    if (needed_vcd_unix_headers_present or
         host_system in ['windows'] or have_osx)
 
         vcd_cdda_darwin_deps = []
@@ -243,7 +279,7 @@ if get_option('vcd_module')
             ),
             'c_args' : vcd_cdda_flags,
             'link_with' : vlc_json_lib,
-            'dependencies' : [libcddb_dep, vcd_cdda_darwin_deps]
+            'dependencies' : [libcddb_dep, vcd_cdda_darwin_deps, gcrypt_dep]
         }
 
         vlc_modules += {
@@ -289,7 +325,7 @@ endif
 libbluray_dep = dependency('libbluray', version: '>= 1.1.0', required: get_option('bluray'))
 if libbluray_dep.found()
     vlc_modules += {
-        'name' : 'bluray',
+        'name' : 'libbluray',
         'sources' : files('bluray.c'),
         'dependencies' : [libbluray_dep]
     }
@@ -328,7 +364,7 @@ if host_system == 'linux'
     endif
 endif
 
-if host_system == 'windows'
+if host_system == 'windows' and have_win_desktop
     strmiids_lib = cc.find_library('strmiids', required: true)
     vlc_modules += {
         'name' : 'dtv',
@@ -339,16 +375,55 @@ if host_system == 'windows'
         'dependencies' : [strmiids_lib],
         'cpp_args' : libcom_cppflags
     }
+
+    vlc_modules += {
+        'name' : 'dshow',
+        'sources' : files(
+            'dshow/dshow.cpp',
+            'dshow/filter.cpp',
+            'dshow/crossbar.cpp',
+        ),
+        'dependencies' : [ksuser_lib, strmiids_lib],
+        'cpp_args' : libcom_cppflags,
+        'enabled' : ksuser_lib.found() and have_win_desktop
+    }
 endif
 
+# vlc_access_cache helper lib
+vlc_access_cache_lib = static_library(
+    'vlc_access_cache',
+    files('cache.c',),
+    include_directories: [vlc_include_dirs],
+    pic: true,
+    install: false
+)
 
 ## Network stream access modules
+
+# Smb v1
+libdsm_dep = dependency('libdsm', version: '>= 0.2.0', required: get_option('dsm'))
+vlc_modules += {
+    'name' : 'dsm',
+    'sources' : files('dsm/access.c', 'dsm/sd.c', 'smb_common.h'),
+    'dependencies' : [libdsm_dep],
+    'link_with' : [vlc_access_cache_lib],
+    'enabled' : libdsm_dep.found(),
+}
 
 # FTP
 vlc_modules += {
     'name' : 'ftp',
     'sources' : files('ftp.c'),
     'dependencies' : [socket_libs]
+}
+
+# SFTP
+libssh2_dep = dependency('libssh2', required: get_option('libssh2'))
+vlc_modules += {
+    'name' : 'sftp',
+    'sources' : files('sftp.c'),
+    'dependencies' : [libssh2_dep],
+    'enabled': libssh2_dep.found() and get_option('sftp').allowed(),
 }
 
 # Gopher
@@ -367,6 +442,15 @@ vlc_modules += {
 
 # New HTTP(S)
 subdir('http')
+
+# Network file sharing
+nfs_dep = dependency('libnfs', version: '>= 1.10.0', required: get_option('nfs'))
+vlc_modules += {
+    'name' : 'nfs',
+    'sources' : files('nfs.c'),
+    'dependencies' : [nfs_dep, socket_libs],
+    'enabled' : nfs_dep.found(),
+}
 
 # TCP
 vlc_modules += {
@@ -390,7 +474,7 @@ vlc_modules += {
 }
 
 # Windows UNC
-if host_system == 'windows'
+if host_system == 'windows' and not have_win_store
     mpr_lib = cc.find_library('mpr', required: true)
     netapi32_lib = cc.find_library('netapi32', required: true)
 
@@ -407,7 +491,8 @@ if avformat_dep.found()
         'name' : 'avio',
         'sources' : files('avio.c'),
         'dependencies' : [avutil_dep, avformat_dep, m_lib],
-        'link_args' : symbolic_linkargs
+        'link_args' : symbolic_linkargs,
+        'enabled' : not get_option('merge-ffmpeg')
     }
 endif
 
@@ -418,6 +503,18 @@ vlc_modules += {
     'dependencies' : [socket_libs, threads_dep]
 }
 
+# MMS
+vlc_modules += {
+    'name' : 'access_mms',
+    'sources' : files(
+        'mms/mms.c',
+        'mms/mmsh.c',
+        'mms/mmstu.c',
+        'mms/buffer.c',
+        'mms/asf.c',
+    ),
+    'dependencies' : [socket_libs]
+}
 
 ## Misc
 

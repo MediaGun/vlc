@@ -725,8 +725,8 @@ int rtp_packetize_xiph_config( sout_stream_id_sys_t *id, const char *fmtp,
     size_t len = end - start;
 
     char *b64 = malloc(len + 1);
-    if(!b64)
-        return VLC_EGENERIC;
+    if (unlikely(b64 == NULL))
+        return VLC_ENOMEM;
 
     memcpy(b64, start, len);
     b64[len] = '\0';
@@ -752,6 +752,11 @@ int rtp_packetize_xiph_config( sout_stream_id_sys_t *id, const char *fmtp,
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 18 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            free(p_orig);
+            return VLC_ENOMEM;
+        }
 
         unsigned fragtype, numpkts;
         if (i_count == 1)
@@ -806,6 +811,11 @@ static int rtp_packetize_xiph( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 18 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         unsigned fragtype, numpkts;
         if (i_count == 1)
@@ -862,6 +872,11 @@ static int rtp_packetize_mpa( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 16 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, (i == i_count - 1)?1:0, in->i_pts );
@@ -940,6 +955,12 @@ static int rtp_packetize_mpv( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 16 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
+
         /* MBZ:5 T:1 TR:10 AN:1 N:1 S:1 B:1 E:1 P:3 FBV:1 BFC:3 FFV:1 FFC:3 */
         uint32_t      h = ( i_temporal_ref << 16 )|
                           ( b_sequence_start << 13 )|
@@ -992,6 +1013,11 @@ static int rtp_packetize_ac3( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 14 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, (i == i_count - 1)?1:0, in->i_pts );
@@ -1023,6 +1049,11 @@ static int rtp_packetize_eac3(sout_stream_id_sys_t *id, block_t *in)
         bool last = i == (frag_count - 1);
         size_t len = last ? in->i_buffer : mtu;
         block_t *out = block_Alloc(14 + len);
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         rtp_packetize_common(id, out, false, in->i_pts);
         out->p_buffer[12] = frame_type;
@@ -1065,6 +1096,11 @@ static int rtp_packetize_split( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 12 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, (i == i_count - 1),
@@ -1166,6 +1202,11 @@ static int rtp_packetize_mp4a_latm( sout_stream_id_sys_t *id, block_t *in )
         if( i != 0 )
             latmhdrsize = 0;
         out = block_Alloc( 12 + latmhdrsize + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, ((i == i_count - 1) ? 1 : 0),
@@ -1275,6 +1316,11 @@ static int rtp_packetize_h263( sout_stream_id_sys_t *id, block_t *in )
     {
         int      i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( RTP_H263_PAYLOAD_START + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
         b_p_bit = (i == 0) ? 1 : 0;
         h = ( b_p_bit << 10 )|
             ( b_v_bit << 9  )|
@@ -1324,6 +1370,10 @@ rtp_packetize_h264_nal( sout_stream_id_sys_t *id,
     {
         /* Single NAL unit packet */
         block_t *out = block_Alloc( 12 + i_data );
+        if (unlikely(out == NULL))
+        {
+            return VLC_ENOMEM;
+        }
         out->i_dts    = i_dts;
         out->i_length = i_length;
 
@@ -1347,6 +1397,10 @@ rtp_packetize_h264_nal( sout_stream_id_sys_t *id,
         {
             const int i_payload = __MIN( i_data, i_max-2 );
             block_t *out = block_Alloc( 12 + 2 + i_payload );
+            if (unlikely(out == NULL))
+            {
+                return VLC_ENOMEM;
+            }
             out->i_dts    = i_dts + i * i_length / i_count;
             out->i_length = i_length / i_count;
 
@@ -1378,9 +1432,13 @@ static int rtp_packetize_h264( sout_stream_id_sys_t *id, block_t *in )
     while( hxxx_annexb_iterate_next( &it, &p_nal, &i_nal ) )
     {
         /* TODO add STAP-A to remove a lot of overhead with small slice/sei/... */
-        rtp_packetize_h264_nal( id, p_nal, i_nal,
+        if (rtp_packetize_h264_nal( id, p_nal, i_nal,
                 (in->i_pts != VLC_TICK_INVALID ? in->i_pts : in->i_dts), in->i_dts,
-                it.p_head + 3 >= it.p_tail, in->i_length * i_nal / in->i_buffer );
+                it.p_head + 3 >= it.p_tail, in->i_length * i_nal / in->i_buffer ))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
     }
 
     block_Release(in);
@@ -1403,6 +1461,10 @@ rtp_packetize_h265_nal( sout_stream_id_sys_t *id,
     {
         /* Single NAL unit packet */
         block_t *out = block_Alloc( 12 + i_data );
+        if (unlikely(out == NULL))
+        {
+            return VLC_ENOMEM;
+        }
         out->i_dts    = i_dts;
         out->i_length = i_length;
 
@@ -1428,6 +1490,10 @@ rtp_packetize_h265_nal( sout_stream_id_sys_t *id,
         {
             const size_t i_payload = __MIN( i_data, i_max-3 );
             block_t *out = block_Alloc( 12 + 3 + i_payload );
+            if (unlikely(out == NULL))
+            {
+                return VLC_ENOMEM;
+            }
             out->i_dts    = i_dts + i * i_length / i_count;
             out->i_length = i_length / i_count;
 
@@ -1459,9 +1525,13 @@ static int rtp_packetize_h265( sout_stream_id_sys_t *id, block_t *in )
     size_t i_nal;
     while( hxxx_annexb_iterate_next( &it, &p_nal, &i_nal ) )
     {
-        rtp_packetize_h265_nal( id, p_nal, i_nal,
+        if (rtp_packetize_h265_nal( id, p_nal, i_nal,
                 (in->i_pts != VLC_TICK_INVALID ? in->i_pts : in->i_dts), in->i_dts,
-                it.p_head + 3 >= it.p_tail, in->i_length * i_nal / in->i_buffer );
+                it.p_head + 3 >= it.p_tail, in->i_length * i_nal / in->i_buffer ))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
     }
 
     block_Release(in);
@@ -1482,6 +1552,11 @@ static int rtp_packetize_amr( sout_stream_id_sys_t *id, block_t *in )
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 14 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, ((i == i_count - 1)?1:0),
@@ -1592,6 +1667,11 @@ static int rtp_packetize_spx( sout_stream_id_sys_t *id, block_t *in )
       Allow for 12 extra bytes of RTP header.
     */
     p_out = block_Alloc( 12 + i_payload_size );
+    if (unlikely(p_out == NULL))
+    {
+        block_Release(in);
+        return VLC_ENOMEM;
+    }
 
     if ( i_payload_padding )
     {
@@ -1648,6 +1728,11 @@ static int rtp_packetize_g726( sout_stream_id_sys_t *id, block_t *in, int i_pad 
     {
         int           i_payload = __MIN( i_max, i_data );
         block_t *out = block_Alloc( 12 + i_payload );
+        if (unlikely(out == NULL))
+        {
+            block_Release(in);
+            return VLC_ENOMEM;
+        }
 
         /* rtp common header */
         rtp_packetize_common( id, out, 0,

@@ -28,6 +28,7 @@
 #include <vlc_modules.h>
 #include <vlc/vlc.h>
 
+#include <vlc_preparser.h>
 #include <vlc_interface.h>
 
 #include <stdarg.h>
@@ -78,6 +79,11 @@ libvlc_instance_t * libvlc_new( int argc, const char *const *argv )
     p_new->p_libvlc_int = p_libvlc_int;
     vlc_atomic_rc_init( &p_new->ref_count );
     p_new->p_callback_list = NULL;
+
+    vlc_mutex_init(&p_new->lazy_init_lock);
+    p_new->parser = NULL;
+    p_new->thumbnailer = NULL;
+
     return p_new;
 
 error:
@@ -99,6 +105,12 @@ void libvlc_release( libvlc_instance_t *p_instance )
     if(vlc_atomic_rc_dec( &p_instance->ref_count ))
     {
         libvlc_Quit( p_instance->p_libvlc_int );
+
+        if (p_instance->parser != NULL)
+            vlc_preparser_Delete(p_instance->parser);
+        if (p_instance->thumbnailer != NULL)
+            vlc_preparser_Delete(p_instance->thumbnailer);
+
         libvlc_InternalCleanup( p_instance->p_libvlc_int );
         libvlc_InternalDestroy( p_instance->p_libvlc_int );
         free( p_instance );
@@ -233,6 +245,58 @@ libvlc_module_description_t *libvlc_video_filter_list_get( libvlc_instance_t *p_
 int64_t libvlc_clock(void)
 {
     return US_FROM_VLC_TICK(vlc_tick_now());
+}
+
+vlc_preparser_t *libvlc_get_preparser(libvlc_instance_t *instance)
+{
+    vlc_mutex_lock(&instance->lazy_init_lock);
+    vlc_preparser_t *parser = instance->parser;
+
+    if (parser == NULL)
+    {
+        /* Temporary: the 2 following variables will be configured directly
+         * with future libvlc_parser API */
+        int max_threads = var_InheritInteger(instance->p_libvlc_int, "preparse-threads");
+        if (max_threads < 1)
+            max_threads = 1;
+
+        vlc_tick_t default_timeout =
+            VLC_TICK_FROM_MS(var_InheritInteger(instance->p_libvlc_int, "preparse-timeout"));
+        if (default_timeout < 0)
+            default_timeout = 0;
+
+        const struct vlc_preparser_cfg cfg = {
+            .types = VLC_PREPARSER_TYPE_PARSE | VLC_PREPARSER_TYPE_FETCHMETA_ALL,
+            .max_parser_threads = max_threads,
+            .timeout = default_timeout,
+        };
+
+        parser = instance->parser =
+            vlc_preparser_New(VLC_OBJECT(instance->p_libvlc_int), &cfg);
+    }
+    vlc_mutex_unlock(&instance->lazy_init_lock);
+
+    return parser;
+}
+
+vlc_preparser_t *libvlc_get_thumbnailer(libvlc_instance_t *instance)
+{
+    vlc_mutex_lock(&instance->lazy_init_lock);
+    vlc_preparser_t *thumb = instance->thumbnailer;
+
+    if (thumb == NULL)
+    {
+        const struct vlc_preparser_cfg cfg = {
+            .types = VLC_PREPARSER_TYPE_THUMBNAIL,
+            .timeout = 0,
+        };
+
+        thumb = instance->thumbnailer =
+            vlc_preparser_New(VLC_OBJECT(instance->p_libvlc_int), &cfg);
+    }
+    vlc_mutex_unlock(&instance->lazy_init_lock);
+
+    return thumb;
 }
 
 const char vlc_module_name[] = "libvlc";

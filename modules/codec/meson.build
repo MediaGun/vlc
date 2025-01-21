@@ -41,7 +41,7 @@ vlc_modules += {
 }
 
 # faad decoder plugin
-faad_lib = cc.find_library('faad', required: get_option('faad'))
+faad_lib = dependency('faad2', required: get_option('faad'))
 vlc_modules += {
     'name' : 'faad',
     'sources' : files('faad.c'),
@@ -102,7 +102,18 @@ vlc_modules += {
 }
 
 # libmad codec
-mad_dep = dependency('mad', required: get_option('mad'))
+if get_option('mad').allowed()
+mad_dep = disabler()
+# TODO add support for a custom folder for libmad
+if cc.check_header('mad.h')
+    mad_dep = cc.find_library('mad')
+elif cc.check_header('mad.h', dependencies: contrib_dep )
+    if cc.find_library('mad', dirs: contrib_libdir).found()
+        mad_dep = declare_dependency(
+            dependencies: [cc.find_library('mad', dirs: contrib_libdir), contrib_dep])
+    endif
+endif
+endif
 vlc_modules += {
     'name' : 'mad',
     'sources' : files('mad.c'),
@@ -175,7 +186,7 @@ vlc_modules += {
 }
 
 # JPEG codec
-jpeg_dep = dependency('libjpeg', required: get_option('jpeg'))
+jpeg_dep = dependency('libjpeg', 'libjpeg-turbo', required: get_option('jpeg'))
 vlc_modules += {
     'name' : 'jpeg',
     'sources' : files('jpeg.c'),
@@ -261,12 +272,22 @@ vlc_modules += {
 
 # aribsub
 aribb24_dep = dependency('aribb24', version: '>= 1.0.1', required: get_option('aribsub'))
+if aribb24_dep.found()
+    cdata.set('HAVE_ARIBB24', 1)
+endif
 vlc_modules += {
     'name' : 'aribsub',
     'sources' : files('arib/aribsub.c'),
     'dependencies' : [aribb24_dep],
-    'cpp_args' : ['-DHAVE_ARIBB24'],
     'enabled' : aribb24_dep.found()
+}
+
+libaribcaption_dep = dependency('libaribcaption', 'aribcaption', required: get_option('aribcaption'))
+vlc_modules += {
+    'name' : 'aribcaption',
+    'sources' : files('arib/libaribcaption.c'),
+    'dependencies' : [libaribcaption_dep],
+    'enabled' : libaribcaption_dep.found()
 }
 
 # scte18 decoder
@@ -388,20 +409,22 @@ if get_option('css_engine').require(flex.found() and bison.found(),
         webvtt_bison_files,
     ]
 
-    # CSS parser test
-    css_parser_test = executable('css_parser_test',
-        files(
-            'webvtt/css_test.c',
-            'webvtt/css_parser.c'
-        ),
-        webvtt_lex_files, webvtt_bison_files,
-        link_with: [vlc_libcompat],
-        dependencies: [libvlccore_dep],
-        include_directories: [
-            vlc_include_dirs,
-            include_directories('webvtt')])
+    if (get_option('tests').allowed())
+        # CSS parser test
+        css_parser_test = executable('css_parser_test',
+            files(
+                'webvtt/css_test.c',
+                'webvtt/css_parser.c'
+            ),
+            webvtt_lex_files, webvtt_bison_files,
+            link_with: [vlc_libcompat],
+            dependencies: [libvlccore_dep],
+            include_directories: [
+                vlc_include_dirs,
+                include_directories('webvtt')])
 
-    test('css_parser', css_parser_test, suite: 'css_parser')
+        test('css_parser', css_parser_test, suite: 'css_parser')
+    endif
 
 endif
 
@@ -413,10 +436,10 @@ vlc_modules += {
 
 ## Xiph.org codecs
 
-ogg_dep = dependency('ogg', required: get_option('ogg'))
+ogg_dep = dependency('ogg', 'Ogg', required: get_option('ogg'))
 
 # FLAC codec
-flac_dep = dependency('flac', required: get_option('flac'))
+flac_dep = dependency('flac', 'FLAC', required: get_option('flac'))
 vlc_modules += {
     'name' : 'flac',
     'sources' : files('flac.c'),
@@ -473,8 +496,17 @@ vlc_modules += {
     'enabled' : daaladec_dep.found() and daalaenc_dep.found(),
 }
 
+# Speex codec plugin
+speex_dep = dependency('speex', version: '>= 1.0.5', required: get_option('speex'))
+vlc_modules += {
+    'name' : 'speex',
+    'sources' : files('speex.c'),
+    'dependencies' : [speex_dep],
+    'enabled' : speex_dep.found(),
+}
+
 # Vorbis codec
-vorbis_dep    = dependency('vorbis', version: '>= 1.1', required: get_option('vorbis'))
+vorbis_dep    = dependency('vorbis', 'Vorbis', version: '>= 1.1', required: get_option('vorbis'))
 vorbisenc_dep = dependency('vorbisenc', version: '>= 1.1', required: get_option('vorbis'))
 vlc_modules += {
     'name' : 'vorbis',
@@ -508,12 +540,6 @@ if host_system == 'darwin'
             'videotoolbox/dpb.h',
             'videotoolbox/pacer.c',
             'videotoolbox/pacer.h',
-            'hxxx_helper.c',
-            '../packetizer/hxxx_nal.c',
-            '../packetizer/hxxx_sei.c',
-            '../packetizer/h264_slice.c',
-            '../packetizer/h264_nal.c',
-            '../packetizer/hevc_nal.c'
         ),
         'dependencies' : [
             frameworks['VideoToolbox'],
@@ -521,19 +547,13 @@ if host_system == 'darwin'
             frameworks['CoreMedia'],
             frameworks['CoreVideo'],
         ],
-        'link_with' : [libvlc_vtutils],
+        'link_with' : [hxxxhelper_lib, libvlc_vtutils],
     }
 
     vlc_modules += {
         'name' : 'videotoolbox_enc',
         'sources' : files(
             'videotoolbox/encoder.c',
-            'hxxx_helper.c',
-            '../packetizer/hxxx_nal.c',
-            '../packetizer/hxxx_sei.c',
-            '../packetizer/h264_slice.c',
-            '../packetizer/h264_nal.c',
-            '../packetizer/hevc_nal.c'
         ),
         'dependencies' : [
             frameworks['VideoToolbox'],
@@ -541,7 +561,7 @@ if host_system == 'darwin'
             frameworks['CoreMedia'],
             frameworks['CoreVideo'],
         ],
-        'link_with' : [libvlc_vtutils],
+        'link_with' : [hxxxhelper_lib, libvlc_vtutils],
     }
 
 endif
@@ -565,7 +585,19 @@ if get_option('stream_outputs')
     avcodec_extra_sources += 'avcodec/encoder.c'
 endif
 
-# TODO: Implement the merge-ffmpeg option
+avcodec_deps = [ avutil_dep, avcodec_dep ]
+avcodec_cargs = []
+if get_option('merge-ffmpeg')
+    avcodec_extra_sources += [
+        '../demux/avformat/demux.c',
+        '../access/avio.c',
+        '../packetizer/avparser.c' ]
+    avcodec_deps += [ avformat_dep, m_lib ]
+    avcodec_cargs += '-DMERGE_FFMPEG'
+    if get_option('stream_outputs')
+        avcodec_extra_sources += '../demux/avformat/mux.c'
+    endif
+endif
 
 vlc_modules += {
     'name' : 'avcodec',
@@ -580,7 +612,8 @@ vlc_modules += {
             '../packetizer/av1.h',
             avcodec_extra_sources
     ),
-    'dependencies' : [avutil_dep, avcodec_dep],
+    'dependencies' : avcodec_deps,
+    'c_args' : avcodec_cargs,
     'link_with' : [libavcodec_common],
     'link_args' : symbolic_linkargs,
     'enabled' : avcodec_dep.found(),
@@ -605,52 +638,77 @@ vlc_modules += {
         libva_dep.found()
 }
 
-
 if host_system == 'windows'
-    d3d11_common_lib = static_library('d3d11_common',
-        files(
-            '../video_chroma/d3d11_fmt.cpp',
-            '../video_chroma/dxgi_fmt.c',
-            ),
-        include_directories: [vlc_include_dirs],
-        cpp_args : libcom_cppflags,
-        pic: true,
-        install: false,
-        dependencies: [
-            cc.find_library('dxguid'),
-            cc.find_library('wbemuuid'),
-            cc.find_library('uuid'),
-        ]
-    )
-    d3d9_common_lib = static_library('d3d9_common',
-        files(
-            '../video_chroma/d3d9_fmt.c',
-            '../video_chroma/dxgi_fmt.c',
-            ),
-        include_directories: [vlc_include_dirs],
-        pic: true,
-        install: false
-    )
-
-    mft_deps = [ cc.find_library('mfplat') ]
-    if get_option('winstore_app')
-        mft_deps += [ cc.find_library('d3d11') ]
-    endif
+    mft_deps = [ cc.find_library('mfplat'), cc.find_library('d3d11') ]
     vlc_modules += {
         'name' : 'mft',
         'sources' : files(
                 'mft.cpp',
                 'mft_d3d.cpp',
                 'mft_d3d11.cpp',
-                'hxxx_helper.c',
-                '../packetizer/hxxx_nal.c',
-                '../packetizer/hxxx_sei.c',
-                '../packetizer/h264_slice.c',
-                '../packetizer/h264_nal.c',
-                '../packetizer/hevc_nal.c'
             ),
-        'link_with' : [ d3d11_common_lib ],
+        'link_with' : [ hxxxhelper_lib, d3d11_common_lib ],
+        'cpp_args' : libcom_cppflags,
         'dependencies' : mft_deps
+    }
+
+    if (get_option('d3d11va').
+        enable_auto_if(cc.check_header('libavcodec/d3d11va.h', args: [contrib_inc_args]))
+        .allowed())
+        cdata.set('HAVE_LIBAVCODEC_D3D11VA_H', 1)
+        vlc_modules += {
+            'name' : 'd3d11va',
+            'sources' : files(
+                    'avcodec/d3d11va.c',
+                    'avcodec/directx_va.c',
+                    'avcodec/va_surface.c',
+                    '../packetizer/h264_nal.c',
+                    '../packetizer/hevc_nal.c',
+                    'avcodec/dxva_blocklist.c',
+                ),
+            'cpp_args' : libcom_cppflags,
+            'link_with' : [ d3d11_common_lib ],
+            'include_directories' : [
+                vlc_include_dirs,
+                include_directories('avcodec')
+            ],
+            'dependencies' : [avcodec_dep, avutil_dep],
+        }
+    endif
+
+    if (get_option('dxva2').
+        enable_auto_if(cc.check_header('libavcodec/dxva2.h', args: [contrib_inc_args]))
+        .allowed() and have_win_desktop)
+        cdata.set('HAVE_LIBAVCODEC_DXVA2_H', 1)
+        vlc_modules += {
+            'name' : 'dxva2',
+            'sources' : files(
+                    'avcodec/dxva2.c',
+                    'avcodec/directx_va.c',
+                    'avcodec/va_surface.c',
+                    '../packetizer/h264_nal.c',
+                    '../packetizer/hevc_nal.c',
+                    'avcodec/dxva_blocklist.c',
+                ),
+            'link_with' : [ d3d9_common_lib ],
+            'include_directories' : [
+                vlc_include_dirs,
+                include_directories('avcodec')
+            ],
+            'dependencies' : [avcodec_dep, avutil_dep],
+        }
+    endif
+
+    vlc_modules += {
+        'name' : 'dmo',
+        'sources' : files(
+                'dmo/dmo.c',
+                'dmo/buffer.c',
+            ),
+        'dependencies': [
+            cc.find_library('uuid'),
+        ],
+        'enabled' : have_win_desktop,
     }
 endif
 
@@ -764,21 +822,27 @@ vlc_modules += {
 # VP8/VP9 with alpha pseudo-decoder
 vpx_alpha_sources = files('vpx_alpha.c')
 vpx_alpha_with = [ ]
+vpx_alpha_deps = [ ]
+vpx_alpha_cxx_args = [ ]
 if host_system == 'windows'
     vpx_alpha_sources += files('alpha_d3d11.cpp')
     vpx_alpha_with += [ d3d11_common_lib ]
+    vpx_alpha_deps += [ cc.find_library('d3d11') ]
+    vpx_alpha_cxx_args += libcom_cppflags
 endif
 vlc_modules += {
     'name' : 'vpx_alpha',
     'sources' : vpx_alpha_sources,
-    'link_with' : vpx_alpha_with
+    'link_with' : vpx_alpha_with,
+    'dependencies' : [vpx_alpha_deps],
+    'cpp_args' : vpx_alpha_cxx_args,
 }
 
 # libaom AV1 codec
 aom_dep = dependency('aom', required: get_option('aom'))
 vlc_modules += {
     'name' : 'aom',
-    'sources' : files('aom.c'),
+    'sources' : files('aom.c', '../packetizer/av1_obu.c'),
     'dependencies' : [aom_dep],
     'enabled' : aom_dep.found(),
 }
@@ -813,11 +877,18 @@ vlc_modules += {
     'enabled' : dav1d_dep.found(),
 }
 
+# tests
+vlc_modules += {
+    'name': 'hxxxhelper_testdec',
+    'sources': files('hxxx_helper_testdec.c'),
+    'link_with' : [hxxxhelper_lib],
+    'include_directories': [vlc_include_dirs],
+}
 
 ## Hardware encoders
 
 # QSV encoder
-qsv_dep = dependency('libmfx', required: get_option('mfx'))
+qsv_dep = dependency('vpl', required: get_option('vpl'))
 vlc_modules += {
     'name' : 'qsv',
     'sources' : files('qsv.c'),

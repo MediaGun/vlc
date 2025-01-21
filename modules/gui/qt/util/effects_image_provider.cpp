@@ -228,7 +228,7 @@ QImage EffectsImageProvider::requestImage(const QString &id, QSize *size, const 
         const QUrlQuery query(url);
 
         std::unique_ptr<IEffect> effect;
-        switch (static_cast<EffectsImageProvider::Effect>(effectMetaEnum.keyToValue(url.path().toLatin1())))
+        switch (static_cast<EffectsImageProvider::Effect>(effectMetaEnum.keyToValue(url.path().toLatin1().constData())))
         {
         case EffectsImageProvider::RectDropShadow:
             effect = std::make_unique<RectDropShadowEffect>(queryToVariantMap(query));
@@ -256,6 +256,17 @@ QImage EffectsImageProvider::requestImage(const QString &id, QSize *size, const 
     return effect;
 }
 
+QObject *EffectsImageProvider::instance(QQmlEngine *engine, QJSEngine *)
+{
+    assert(engine);
+    QQmlImageProviderBase* provider = engine->imageProvider(providerId);
+    if (!provider)
+        return nullptr;
+    assert(dynamic_cast<EffectsImageProvider*>(provider));
+    engine->setObjectOwnership(provider, QQmlEngine::ObjectOwnership::CppOwnership);
+    return provider;
+}
+
 QUrl EffectsImageProvider::url(Effect effect, const QVariantMap &properties)
 {
     static const auto effectMetaEnum = QMetaEnum::fromType<EffectsImageProvider::Effect>();
@@ -264,7 +275,7 @@ QUrl EffectsImageProvider::url(Effect effect, const QVariantMap &properties)
     // image://
     url.setScheme(QStringLiteral("image"));
     // image://{id} -> image://effects
-    url.setAuthority(QLatin1String(providerId), QUrl::ParsingMode::StrictMode);
+    url.setAuthority(providerId, QUrl::ParsingMode::StrictMode);
     // image://{id}/{effectType} -> image://effects/DropShadow
     url.setPath(QString("/%1").arg(effectMetaEnum.valueToKey(effect)), QUrl::ParsingMode::StrictMode);
 

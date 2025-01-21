@@ -37,8 +37,8 @@ FocusScope {
     //margin to apply
     property int bottomMargin: 0
     property int topMargin: 0
-    property int leftMargin: VLCStyle.margin_normal + leftPadding
-    property int rightMargin: VLCStyle.margin_normal + rightPadding
+    property int leftMargin: VLCStyle.layout_left_margin + leftPadding
+    property int rightMargin: VLCStyle.layout_right_margin + rightPadding
 
     property int leftPadding: 0
     property int rightPadding: 0
@@ -375,7 +375,13 @@ FocusScope {
         const dirty = (Date.now() - _anchoredIdxUpdate) > VLCStyle.duration_veryLong
 
         if (dirty || (_anchoredIdx < 0) || (_anchoredIdx >= _count)) {
-            _anchoredIdx = _currentRange?.[0] ?? 0
+            const range = _currentRange || [0, 0]
+
+            if (expandIndex >= range[0] && expandIndex < range[1])
+                _anchoredIdx = expandIndex
+            else
+                _anchoredIdx = range[0]
+
             const item = _getItem(_anchoredIdx)
             _anchoredIdxFraction = (item.y - flickable.contentY) / cellHeight
         }
@@ -776,8 +782,6 @@ FocusScope {
         }
 
         TapHandler {
-            acceptedDevices: PointerDevice.Mouse
-
             acceptedButtons: Qt.LeftButton | Qt.RightButton
 
             grabPermissions: PointerHandler.TakeOverForbidden

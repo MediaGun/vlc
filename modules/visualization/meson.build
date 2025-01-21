@@ -6,6 +6,7 @@ vlc_modules += {
       'visual/window.c', 'visual/window.h',
       'visual/window_presets.h'),
     'dependencies' : [opengl_dep, m_lib],
+    'c_args' : [ contrib_inc_args ],
     'enabled' : opengl_dep.found(),
 }
 
@@ -19,22 +20,17 @@ vlc_modules += {
 }
 
 # projectM visualization plugin
-projectm_dep = dependency('libprojectM', version: '>= 2.0.0', required: false)
-projectm_args = []
-
-if projectm_dep.found()
-    projectm_args += '-DHAVE_PROJECTM2'
-else
-    projectm_dep = dependency('libprojectM', version: '< 2.0.0',
-        required: false)
+projectm_dep = dependency('libprojectM', required: get_option('projectm'))
+if projectm_dep.found() and projectm_dep.version().version_compare('>= 2.0.0')
+    cdata.set('HAVE_PROJECTM2',1)
 endif
 
 vlc_modules += {
     'name' : 'projectm',
     'sources' : files('projectm.cpp'),
     'dependencies' : [projectm_dep],
-    'cpp_args' : [projectm_args],
-    'enabled' : projectm_dep.found() and host_system != 'windows'
+    'cpp_args' : [ '-std=gnu++14' ],
+    'enabled' : projectm_dep.found()
 }
 
 # Visual visualization plugin

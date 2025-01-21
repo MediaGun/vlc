@@ -26,10 +26,10 @@
 
 #import "extensions/NSString+Helpers.h"
 #import "main/VLCMain.h"
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlaylistItem.h"
-#import "playlist/VLCPlaylistModel.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayQueueItem.h"
+#import "playqueue/VLCPlayQueueModel.h"
+#import "playqueue/VLCPlayerController.h"
 #import "library/VLCInputItem.h"
 
 #import "views/VLCBottomBarView.h"
@@ -64,7 +64,7 @@
     BOOL just_triggered_next;
     BOOL just_triggered_previous;
 
-    VLCPlaylistController *_playlistController;
+    VLCPlayQueueController *_playQueueController;
     VLCPlayerController *_playerController;
 }
 @end
@@ -75,8 +75,8 @@
 {
     [super awakeFromNib];
 
-    _playlistController = VLCMain.sharedInstance.playlistController;
-    _playerController = _playlistController.playerController;
+    _playQueueController = VLCMain.sharedInstance.playQueueController;
+    _playerController = _playQueueController.playerController;
 
     NSNotificationCenter *notificationCenter = NSNotificationCenter.defaultCenter;
     [notificationCenter addObserver:self
@@ -110,24 +110,32 @@
 
     _nativeFullscreenMode = var_InheritBool(getIntf(), "macosx-nativefullscreenmode");
 
-    [self.dropView setDrawBorder: NO];
+    self.dropView.drawBorder = NO;
 
-    [self.playButton setToolTip: _NS("Play")];
+    self.playButton.toolTip = _NS("Play");
     self.playButton.accessibilityLabel = self.playButton.toolTip;
 
-    [self.backwardButton setToolTip: _NS("Backward")];
+    self.backwardButton.toolTip = _NS("Backward");
     self.backwardButton.accessibilityLabel = _NS("Seek backward");
     self.backwardButton.accessibilityTitle = self.backwardButton.toolTip;
 
-    [self.forwardButton setToolTip: _NS("Forward")];
+    self.forwardButton.toolTip = _NS("Forward");
     self.forwardButton.accessibilityLabel = _NS("Seek forward");
     self.forwardButton.accessibilityTitle = self.forwardButton.toolTip;
 
-    [self.timeSlider setToolTip: _NS("Position")];
+    self.jumpBackwardButton.toolTip = _NS("Jump backwards");
+    self.jumpBackwardButton.accessibilityLabel = _NS("Jump backwards in current item");
+    self.jumpBackwardButton.accessibilityTitle = self.jumpBackwardButton.toolTip;
+
+    self.jumpForwardButton.toolTip = _NS("Jump forwards");
+    self.jumpForwardButton.accessibilityLabel = _NS("Jump forwards in current item");
+    self.jumpForwardButton.accessibilityTitle = self.jumpForwardButton.toolTip;
+
+    self.timeSlider.toolTip = _NS("Position");
     self.timeSlider.accessibilityLabel = _NS("Playback position");
     self.timeSlider.accessibilityTitle = self.timeSlider.toolTip;
 
-    [self.fullscreenButton setToolTip: _NS("Enter fullscreen")];
+    self.fullscreenButton.toolTip = _NS("Enter fullscreen");
     self.fullscreenButton.accessibilityLabel = self.fullscreenButton.toolTip;
 
     if (@available(macOS 11.0, *)) {
@@ -149,6 +157,31 @@
                                       accessibilityDescription:_NS("Muted")];
         _unmutedVolumeImage = [NSImage imageWithSystemSymbolName:@"speaker.wave.3.fill"
                                         accessibilityDescription:_NS("Unmuted")];
+
+        const int64_t shortJumpSize = var_InheritInteger(getIntf(), "short-jump-size");
+        NSString * const shortJumpSizeString = [NSString stringWithFormat:@"%lli", shortJumpSize];
+        switch (shortJumpSize) {
+            case 90:
+            case 75:
+            case 60:
+            case 45:
+            case 30:
+            case 15:
+            case 10:
+            case 5:
+            {
+                NSString * const jumpForwardSymbolName =
+                    [NSString stringWithFormat:@"%@.arrow.trianglehead.clockwise",shortJumpSizeString];
+                NSString * const jumpBackwardSymbolName =
+                    [NSString stringWithFormat:@"%@.arrow.trianglehead.counterclockwise", shortJumpSizeString];
+                self.jumpForwardButton.image =
+                    [NSImage imageWithSystemSymbolName:jumpForwardSymbolName
+                              accessibilityDescription:_NS("Jump forward")];
+                self.jumpBackwardButton.image =
+                    [NSImage imageWithSystemSymbolName:jumpBackwardSymbolName
+                              accessibilityDescription:_NS("Jump backward")];
+            }
+        }
     } else {
         _playImage = imageFromRes(@"VLCPlayTemplate");
         _pressedPlayImage = imageFromRes(@"VLCPlayTemplate");
@@ -161,35 +194,34 @@
         _unmutedVolumeImage = imageFromRes(@"VLCVolumeOnTemplate");
     }
 
-    [self.backwardButton setImage: _backwardImage];
-    [self.backwardButton setAlternateImage: _backwardImage];
-    [self.forwardButton setImage: _forwardImage];
-    [self.forwardButton setAlternateImage: _forwardImage];
+    self.backwardButton.image = _backwardImage;
+    self.backwardButton.alternateImage = _backwardImage;
+    self.forwardButton.image = _forwardImage;
+    self.forwardButton.alternateImage = _forwardImage;
 
-    [self.fullscreenButton setImage: _fullscreenImage];
-    [self.fullscreenButton setAlternateImage: _fullscreenImage];
-    [self.playButton setImage: _playImage];
-    [self.playButton setAlternateImage: _pressedPlayImage];
+    self.fullscreenButton.image = _fullscreenImage;
+    self.fullscreenButton.alternateImage = _fullscreenImage;
+    self.playButton.image = _playImage;
+    self.playButton.alternateImage = _pressedPlayImage;
 
-    [self.timeSlider setHidden:NO];
+    self.timeSlider.hidden = NO;
 
-    NSString *volumeTooltip = [NSString stringWithFormat:_NS("Volume: %i %%"), 100];
-    [self.volumeSlider setToolTip: volumeTooltip];
+    self.volumeSlider.toolTip = [NSString stringWithFormat:_NS("Volume: %i %%"), 100];
     self.volumeSlider.accessibilityLabel = _NS("Volume");
 
-    [self.volumeSlider setMaxValue: VLCVolumeMaximum];
-    [self.volumeSlider setDefaultValue: VLCVolumeDefault];
+    self.volumeSlider.maxValue = VLCVolumeMaximum;
+    self.volumeSlider.defaultValue = VLCVolumeDefault;
 
-    [self.muteVolumeButton setToolTip: _NS("Mute")];
+    self.muteVolumeButton.toolTip = _NS("Mute");
     self.muteVolumeButton.accessibilityLabel = self.muteVolumeButton.toolTip;
 
-    [self.timeField setNeedsDisplay:YES];
+    self.timeField.needsDisplay = YES;
     [self.timeField setRemainingIdentifier:VLCTimeFieldDisplayTimeAsElapsed];
     self.trailingTimeField.isTimeRemaining = NO;
     self.timeField.accessibilityLabel = _NS("Playback time");
 
     self.trailingTimeField.isTimeRemaining = !self.timeField.isTimeRemaining;
-    [self.trailingTimeField setNeedsDisplay:YES];
+    self.trailingTimeField.needsDisplay = YES;
     [self.trailingTimeField setRemainingIdentifier:VLCTimeFieldDisplayTimeAsRemaining];
     self.trailingTimeField.isTimeRemaining = YES;
     self.trailingTimeField.accessibilityLabel = _NS("Playback time");
@@ -211,10 +243,10 @@
 
     [self playerStateUpdated:nil];
 
-    [_artworkImageView setCropsImagesToRoundedCorners:YES];
-    [_artworkImageView setImage:[NSImage imageNamed:@"noart"]];
-    [_artworkImageView setContentGravity:VLCImageViewContentGravityResize];
-    
+    self.artworkImageView.cropsImagesToRoundedCorners = YES;
+    self.artworkImageView.image = [NSImage imageNamed:@"noart"];
+    self.artworkImageView.contentGravity = VLCImageViewContentGravityResize;
+
     if (!NSClassFromString(@"PIPViewController")) {
         self.pipButtonWidthConstraint.constant = 0;
         self.pipButton.hidden = YES;
@@ -231,7 +263,7 @@
 
 - (CGFloat)height
 {
-    return [self.bottomBarView frame].size.height;
+    return self.bottomBarView.frame.size.height;
 }
 
 #pragma mark -
@@ -246,7 +278,7 @@
 {
     if (([NSDate timeIntervalSinceReferenceDate] - last_bwd_event) >= 0.35) {
         // seems like no further event occurred, so let's switch the playback item
-        [_playlistController playPreviousItem];
+        [_playQueueController playPreviousItem];
         just_triggered_previous = NO;
     }
 }
@@ -265,15 +297,13 @@
         [self performSelector:@selector(resetPreviousButton)
                    withObject: NULL
                    afterDelay:0.40];
-    } else {
-        if (([NSDate timeIntervalSinceReferenceDate] - last_fwd_event) > 0.16) {
-            // we just skipped 4 "continuous" events, otherwise we are too fast
-            [_playerController jumpBackwardExtraShort];
-            last_bwd_event = [NSDate timeIntervalSinceReferenceDate];
-            [self performSelector:@selector(resetBackwardSkip)
-                       withObject: NULL
-                       afterDelay:0.40];
-        }
+    } else if (([NSDate timeIntervalSinceReferenceDate] - last_fwd_event) > 0.16) {
+        // we just skipped 4 "continuous" events, otherwise we are too fast
+        [_playerController jumpBackwardExtraShort];
+        last_bwd_event = [NSDate timeIntervalSinceReferenceDate];
+        [self performSelector:@selector(resetBackwardSkip)
+                   withObject: NULL
+                   afterDelay:0.40];
     }
 }
 
@@ -281,7 +311,7 @@
 {
     if (([NSDate timeIntervalSinceReferenceDate] - last_fwd_event) >= 0.35) {
         // seems like no further event occurred, so let's switch the playback item
-        [_playlistController playNextItem];
+        [_playQueueController playNextItem];
         just_triggered_next = NO;
     }
 }
@@ -300,26 +330,34 @@
         [self performSelector:@selector(resetNextButton)
                    withObject: NULL
                    afterDelay:0.40];
-    } else {
-        if (([NSDate timeIntervalSinceReferenceDate] - last_fwd_event) > 0.16) {
-            // we just skipped 4 "continuous" events, otherwise we are too fast
-            [_playerController jumpForwardExtraShort];
-            last_fwd_event = [NSDate timeIntervalSinceReferenceDate];
-            [self performSelector:@selector(resetForwardSkip)
-                       withObject: NULL
-                       afterDelay:0.40];
-        }
+    } else if (([NSDate timeIntervalSinceReferenceDate] - last_fwd_event) > 0.16) {
+        // we just skipped 4 "continuous" events, otherwise we are too fast
+        [_playerController jumpForwardExtraShort];
+        last_fwd_event = [NSDate timeIntervalSinceReferenceDate];
+        [self performSelector:@selector(resetForwardSkip)
+                   withObject: NULL
+                   afterDelay:0.40];
     }
+}
+
+- (IBAction)jumpBackward:(id)sender
+{
+    [_playerController jumpBackwardShort];
+}
+
+- (IBAction)jumpForward:(id)sender
+{
+    [_playerController jumpForwardShort];
 }
 
 - (IBAction)timeSliderAction:(id)sender
 {
-    float newPosition;
-    NSEvent *theEvent = [NSApp currentEvent];
-    NSEventType theEventType = [theEvent type];
+    if (![sender respondsToSelector:@selector(floatValue)]) {
+        return;
+    }
 
-    switch (theEventType) {
-        case NSLeftMouseUp:
+    switch (NSApp.currentEvent.type) {
+        case NSEventTypeLeftMouseUp:
             /* Ignore mouse up, as this is a continuous slider and
              * when the user does a single click to a position on the slider,
              * the action is called twice, once for the mouse down and once
@@ -328,20 +366,18 @@
              * audio quirks.
              */
             return;
-        case NSLeftMouseDown:
-        case NSLeftMouseDragged:
-            newPosition = [sender floatValue];
+        case NSEventTypeLeftMouseDown:
+        case NSEventTypeLeftMouseDragged:
+        case NSEventTypeScrollWheel:
+        {
+            const float newPosition = [sender floatValue];
+            [_playerController setPositionFast:newPosition];
+            self.timeSlider.floatValue = newPosition;
             break;
-        case NSScrollWheel:
-            newPosition = [sender floatValue];
-            break;
-
+        }
         default:
             return;
     }
-
-    [_playerController setPositionFast:newPosition];
-    [self.timeSlider setFloatValue:newPosition];
 }
 
 - (IBAction)volumeAction:(id)sender
@@ -377,60 +413,36 @@
 
 - (void)updateTimeSlider:(NSNotification *)aNotification;
 {
-    VLCInputItem *inputItem = _playerController.currentMedia;
+    VLCInputItem * const inputItem = _playerController.currentMedia;
 
-    if (!inputItem) {
-        // Nothing playing
-        [self.timeSlider setKnobHidden:YES];
-        [self.timeSlider setFloatValue: 0.0];
-        [self.timeField setStringValue: @"00:00"];
-        [self.timeSlider setIndefinite:NO];
-        [self.timeSlider setEnabled:NO];
-        [self.timeSlider setHidden:YES];
-        return;
-    }
+    const BOOL validInputItem = inputItem != nil;
+    const vlc_tick_t duration = validInputItem ? inputItem.duration : -1;
+    NSString * const timeString =
+        [NSString stringWithDuration:duration currentTime:_playerController.time negative:NO];
+    NSString * const remainingTime =
+        [NSString stringWithDuration:duration currentTime:_playerController.time negative:YES];
+    const BOOL buffering = _playerController.playerState == VLC_PLAYER_STATE_STARTED;
 
-    [self.timeSlider setHidden:NO];
-    [self.timeSlider setKnobHidden:NO];
-    [self.timeSlider setFloatValue:_playerController.position];
+    self.timeSlider.hidden = !validInputItem;
+    self.timeSlider.enabled = duration >= 0 && !buffering && _playerController.seekable;
+    self.timeSlider.indefinite = buffering;
+    self.timeSlider.floatValue = validInputItem ? _playerController.position : 0.;
 
-    vlc_tick_t duration = inputItem.duration;
-    bool buffering = _playerController.playerState == VLC_PLAYER_STATE_STARTED;
-    if (duration == -1) {
-        // No duration, disable slider
-        [self.timeSlider setEnabled:NO];
-    } else if (buffering) {
-        [self.timeSlider setEnabled:NO];
-        [self.timeSlider setIndefinite:buffering];
-    } else {
-        [self.timeSlider setEnabled:_playerController.seekable];
-    }
-
-    NSString *timeString = [NSString stringWithDuration:duration
-                                            currentTime:_playerController.time
-                                               negative:NO];
-    NSString *remainingTime = [NSString stringWithDuration:duration
-                                               currentTime:_playerController.time
-                                                  negative:YES];
     [self.timeField setTime:timeString withRemainingTime:remainingTime];
-    [self.timeField setNeedsDisplay:YES];
     [self.trailingTimeField setTime:timeString withRemainingTime:remainingTime];
-    [self.trailingTimeField setNeedsDisplay:YES];
+    self.timeField.needsDisplay = YES;
+    self.trailingTimeField.needsDisplay = YES;
 }
 
 - (void)updateVolumeSlider:(NSNotification *)aNotification
 {
-    float f_volume = _playerController.volume;
-    BOOL b_muted = _playerController.mute;
+    const BOOL muted = _playerController.mute;
+    const float volume = muted ? 0. : _playerController.volume;
 
-    if (b_muted)
-        f_volume = 0.f;
-
-    [self.volumeSlider setFloatValue: f_volume];
-    NSString *volumeTooltip = [NSString stringWithFormat:_NS("Volume: %i %%"), (int)(f_volume * 100.0f)];
-    [self.volumeSlider setToolTip:volumeTooltip];
-
-    [self.volumeSlider setEnabled: !b_muted];
+    self.volumeSlider.enabled = !muted;
+    self.volumeSlider.floatValue = volume;
+    self.volumeSlider.toolTip =
+        [NSString stringWithFormat:_NS("Volume: %i %%"), (int)(volume * 100.)];
 }
 
 - (void)updateMuteVolumeButton:(NSNotification*)aNotification
@@ -440,73 +452,65 @@
 
 - (void)updateMuteVolumeButtonImage
 {
-    _muteVolumeButton.image = _playerController.mute ?
-        _mutedVolumeImage : _unmutedVolumeImage;
+    _muteVolumeButton.image = _playerController.mute ? _mutedVolumeImage : _unmutedVolumeImage;
 }
 
 - (void)playerStateUpdated:(NSNotification *)aNotification
 {
     if (_playerController.playerState == VLC_PLAYER_STATE_PLAYING) {
-        [self setPause];
+        [self updatePlayButtonWithPauseState];
     } else {
-        [self setPlay];
+        [self updatePlayButtonWithPlayState];
     }
 }
 
-- (void)updatePlaybackControls:(NSNotification *)aNotification
+- (void)updatePlaybackControls:(NSNotification *)notification
 {
-    bool b_seekable = _playerController.seekable;
-    bool b_chapters = [_playerController numberOfChaptersForCurrentTitle] > 0;
+    const BOOL seekable = _playerController.seekable;
+    const BOOL chapters = _playerController.numberOfChaptersForCurrentTitle > 0;
 
-    [self.timeSlider setEnabled: b_seekable];
+    self.timeSlider.enabled = seekable;
+    self.forwardButton.enabled = seekable || _playQueueController.hasNextPlayQueueItem || chapters;
+    self.backwardButton.enabled = seekable || _playQueueController.hasPreviousPlayQueueItem || chapters;
 
-    [self.forwardButton setEnabled: (b_seekable || _playlistController.hasNextPlaylistItem || b_chapters)];
-    [self.backwardButton setEnabled: (b_seekable || _playlistController.hasPreviousPlaylistItem || b_chapters)];
-    [self updateCurrentItemDisplayControls:aNotification];
+    [self updateCurrentItemDisplayControls:notification];
 }
 
-- (void)updateCurrentItemDisplayControls:(NSNotification *)aNotification
+- (void)updateCurrentItemDisplayControls:(NSNotification *)notification
 {
     VLCInputItem * const inputItem = _playerController.currentMedia;
-    if (!inputItem) {
-        return;
-    }
-
-    _playingItemDisplayField.stringValue = inputItem.name;
-
     VLCMediaLibraryMediaItem * const mediaItem =
         [VLCMediaLibraryMediaItem mediaItemForURL:_playerController.URLOfCurrentMediaItem];
-    if (!mediaItem) {
-        self.detailLabel.hidden = YES;
-    } else {
-        _detailLabel.hidden = 
-            [mediaItem.primaryDetailString isEqualToString:@""] ||
-            [mediaItem.primaryDetailString isEqualToString:mediaItem.durationString];
-        _detailLabel.stringValue = mediaItem.primaryDetailString;
-    }
+
+    self.playingItemDisplayField.stringValue = inputItem ? inputItem.name : _NS("No current item");
+    self.detailLabel.hidden =
+        mediaItem == nil ||
+        [mediaItem.primaryDetailString isEqualToString:@""] ||
+        [mediaItem.primaryDetailString isEqualToString:mediaItem.durationString];
+    self.detailLabel.stringValue = mediaItem.primaryDetailString;
 
     NSURL * const artworkURL = inputItem.artworkURL;
-
+    NSImage * const placeholderImage = [NSImage imageNamed:@"noart"];
     if (artworkURL) {
-        [_artworkImageView setImageURL:inputItem.artworkURL placeholderImage:[NSImage imageNamed:@"noart"]];
+        [self.artworkImageView setImageURL:inputItem.artworkURL placeholderImage:placeholderImage];
     } else {
-        _artworkImageView.image = [NSImage imageNamed:@"noart"];
+        self.artworkImageView.image = placeholderImage;
     }
 }
 
-- (void)setPause
+- (void)updatePlayButtonWithPauseState
 {
-    [self.playButton setImage: _pauseImage];
-    [self.playButton setAlternateImage: _pressedPauseImage];
-    [self.playButton setToolTip: _NS("Pause")];
+    self.playButton.image = _pauseImage;
+    self.playButton.alternateImage = _pressedPauseImage;
+    self.playButton.toolTip = _NS("Pause");
     self.playButton.accessibilityLabel = self.playButton.toolTip;
 }
 
-- (void)setPlay
+- (void)updatePlayButtonWithPlayState
 {
-    [self.playButton setImage: _playImage];
-    [self.playButton setAlternateImage: _pressedPlayImage];
-    [self.playButton setToolTip: _NS("Play")];
+    self.playButton.image = _playImage;
+    self.playButton.alternateImage = _pressedPlayImage;
+    self.playButton.toolTip = _NS("Play");
     self.playButton.accessibilityLabel = self.playButton.toolTip;
 }
 

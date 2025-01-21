@@ -1804,18 +1804,45 @@ bool matroska_segment_c::TrackInit( mkv_track_t * p_tk )
         }
         S_CASE("V_VP9") {
             vars.p_fmt->i_codec = VLC_CODEC_VP9;
-            if (vars.p_tk->b_has_alpha)
-                vars.p_fmt->i_level = 0x1000; // mark as containing alpha data
-            vars.p_fmt->b_packetized = false;
             vars.p_tk->b_pts_only = true;
 
             fill_extra_data( vars.p_tk, 0 );
+            if (vars.p_tk->fmt.i_extra)
+            {
+                const auto * VP9CodecFeatures = static_cast<const uint8_t*>(vars.p_tk->fmt.p_extra);
+                size_t remain = vars.p_tk->fmt.i_extra;
+                while (remain >= 3)
+                {
+                    uint8_t length = VP9CodecFeatures[1];
+                    switch (VP9CodecFeatures[0])
+                    {
+                        case 1: // Profile
+                            if (length == 1)
+                                vars.p_fmt->i_profile = VP9CodecFeatures[2];
+                            break;
+                        case 2: // Level
+                            if (length == 1)
+                                vars.p_fmt->i_level = VP9CodecFeatures[2];
+                            break;
+                        case 3: // Bit Depth
+                        case 4: // Chroma Subsampling
+                        default:
+                            break;
+                    }
+                    VP9CodecFeatures += 1 + 1 + length;
+                    remain -= 1 + 1 + length;
+                }
+            }
+            if (vars.p_tk->b_has_alpha)
+                vars.p_fmt->i_level = 0x1000; // mark as containing alpha data
         }
         S_CASE("V_AV1") {
             vars.p_fmt->i_codec = VLC_CODEC_AV1;
             vars.p_tk->b_pts_only = true;
 
             fill_extra_data( vars.p_tk, 0 );
+            if (vars.p_fmt->i_extra <= 4)
+                vars.p_fmt->b_packetized = false; // force full extradata by the packetizer
         }
         S_CASE("V_CAVS") {
             vars.p_fmt->i_codec = VLC_CODEC_CAVS;
@@ -2240,7 +2267,7 @@ bool matroska_segment_c::TrackInit( mkv_track_t * p_tk )
         }
         S_CASE("A_QUICKTIME/QDMC") {
             vars.p_fmt->i_cat   = AUDIO_ES;
-            vars.p_fmt->i_codec = VLC_FOURCC('Q','D','M','C');
+            vars.p_fmt->i_codec = VLC_CODEC_QDMC;
 
             fill_extra_data( vars.p_tk, 0 );
         }
@@ -2272,7 +2299,7 @@ bool matroska_segment_c::TrackInit( mkv_track_t * p_tk )
         }
         S_CASE("S_TEXT/USF") {
             ONLY_FMT(SPU);
-            vars.p_tk->fmt.i_codec = VLC_FOURCC( 'u', 's', 'f', ' ' );
+            vars.p_tk->fmt.i_codec = VLC_CODEC_USF;
             vars.p_tk->fmt.subs.psz_encoding = strdup( "UTF-8" );
             fill_extra_data( vars.p_tk, 0 );
         }

@@ -29,7 +29,7 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistItem.h"
+#import "playqueue/VLCPlayQueueItem.h"
 
 NSUInteger kVLCMaximumLibraryImageCacheSize = 50;
 uint32_t kVLCDesiredThumbnailWidth = 512;
@@ -162,10 +162,10 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
     }
 }
 
-+ (void)thumbnailForPlaylistItem:(VLCPlaylistItem *)playlistItem 
++ (void)thumbnailForPlayQueueItem:(VLCPlayQueueItem *)playQueueItem
                   withCompletion:(nonnull void (^)(const NSImage * _Nonnull))completionHandler
 {
-    return [VLCLibraryImageCache.sharedImageCache imageForInputItem:playlistItem.inputItem 
+    return [VLCLibraryImageCache.sharedImageCache imageForInputItem:playQueueItem.inputItem
                                                      withCompletion:completionHandler];
 }
 
@@ -176,7 +176,7 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
         ![libraryItem isKindOfClass:VLCMediaLibraryMediaItem.class]) {
 
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
-            NSMutableSet<NSImage *> * const itemImages = NSMutableArray.array;
+            NSMutableSet<NSImage *> * const itemImages = NSMutableSet.set;
 
             [libraryItem iterateMediaItemsWithBlock:^(VLCMediaLibraryMediaItem * const item) {
                 NSImage * const itemImage = [VLCLibraryImageCache thumbnailForLibraryItem:item];
@@ -187,10 +187,11 @@ const NSUInteger kVLCCompositeImageDefaultCompositedGridItemCount = 4;
             }];
 
             const NSSize size = NSMakeSize(kVLCDesiredThumbnailWidth, kVLCDesiredThumbnailHeight);
+            NSArray<NSImage *> * const itemImagesArray = itemImages.allObjects;
             NSArray<NSValue *> * const frames =
-                [NSImage framesForCompositeImageSquareGridWithImages:itemImages size:size gridItemCount:kVLCCompositeImageDefaultCompositedGridItemCount];
+                [NSImage framesForCompositeImageSquareGridWithImages:itemImagesArray size:size gridItemCount:kVLCCompositeImageDefaultCompositedGridItemCount];
             NSImage * const compositeImage =
-                [NSImage compositeImageWithImages:itemImages frames:frames size:size];
+                [NSImage compositeImageWithImages:itemImagesArray frames:frames size:size];
 
             dispatch_async(dispatch_get_main_queue(), ^{
                 completionHandler(compositeImage);

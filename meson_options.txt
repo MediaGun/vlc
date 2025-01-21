@@ -5,6 +5,11 @@ option('vlc',
     value : true,
     description : 'Build the VLC executable program.')
 
+option('tests',
+    type : 'feature',
+    value : 'auto',
+    description : 'Build the VLC test executables.')
+
 option('nls',
     type : 'feature',
     value : 'auto',
@@ -60,6 +65,11 @@ option('winstore_app',
     value : false,
     description : 'Build targeted for Windows Store apps')
 
+option('update-check',
+    type : 'feature',
+    value : 'disabled',
+    description : 'update checking system')
+
 option('rust',
     type : 'feature',
     value : 'disabled',
@@ -75,15 +85,19 @@ option('vendored_rust_deps',
     value : 'no',
     description : 'Should use vendored sources: `no`, `yes` or PATH_TO_VENDORED_SOURCES')
 
-# TODO: Missing pdb option, this should probably be solved in meson itself
+option('sse',
+    type : 'feature',
+    value : 'auto',
+    description : 'SSE (2-4) optimizations')
 
-# TODO: Missing ssp option
-# TODO: Missing sse option
-# TODO: Missing avx option
+option('avx',
+    type : 'feature',
+    value : 'auto',
+    description : 'AVX (1-2) optimizations')
+
 # TODO: Missing neon option
 # TODO: Missing sve option
 # TODO: Missing altivec option
-# TODO: Missing update-check option
 
 # Font options
 
@@ -140,6 +154,11 @@ option('qt_qml_debug',
     value: false,
     description: 'Enable/disable Qt QML debugger')
 
+option('skins2',
+    type : 'feature',
+    value : 'auto',
+    description : 'skins interface module support')
+
 option('dbus',
     type : 'feature',
     value : 'auto',
@@ -164,6 +183,11 @@ option('avcodec',
     type : 'feature',
     value : 'enabled',
     description : 'Enable/disable avcodec support')
+
+option('merge-ffmpeg',
+    type : 'boolean',
+    value : false,
+    description : 'merge FFmpeg-based plugins')
 
 option('libva',
     type: 'feature',
@@ -247,13 +271,13 @@ option('theoradec',
 
 option('daaladec',
     type : 'feature',
-    value : 'auto',
-    description : 'Enable/disable daaladec support')
+    value : 'disabled',
+    description : 'Enable/disable experimental daaladec support')
 
 option('daalaenc',
     type : 'feature',
-    value : 'auto',
-    description : 'Enable/disable daalaenc support')
+    value : 'disabled',
+    description : 'Enable/disable experimental daalaenc support')
 
 option('vorbis',
     type : 'feature',
@@ -315,10 +339,10 @@ option('twolame',
     value : 'auto',
     description : 'Enable/disable twolame support')
 
-option('mfx',
+option('vpl',
     type : 'feature',
     value : 'auto',
-    description : 'Enable/disable libmfx support')
+    description : 'Enable/disable libvpl support')
 
 option('spatialaudio',
     type : 'feature',
@@ -334,6 +358,11 @@ option('soxr',
     type : 'feature',
     value : 'auto',
     description : 'Enable/disable soxr support')
+
+option('speex',
+    type : 'feature',
+    value : 'auto',
+    description : 'Enable/disable speex support')
 
 option('speexdsp',
     type : 'feature',
@@ -409,6 +438,11 @@ option('libdvbpsi',
     type : 'feature',
     value : 'auto',
     description : 'Enable/disable libdvbpsi support')
+
+option('dvbcsa',
+    type : 'feature',
+    value : 'auto',
+    description : 'Enable/disable libdvbcsa support')
 
 option('aribb24',
     type : 'feature',
@@ -610,6 +644,16 @@ option('udev',
     value: 'auto',
     description: 'Linux udev services discovery')
 
+option('dsm',
+    type: 'feature',
+    value: 'auto',
+    description: 'SMB/CIFS access/sd support')
+
+option('live555',
+    type: 'feature',
+    value: 'auto',
+    description: 'RTSP input through live555')
+
 option('rist',
     type: 'feature',
     value: 'auto',
@@ -635,23 +679,104 @@ option('harfbuzz',
     value: 'auto',
     description: 'Harfbuzz support')
 
-# TODO: Missing live555
+option('d3d11va',
+    type: 'feature',
+    value: 'auto',
+    description: 'Direct3D11 avcodec support')
+
+option('dxva2',
+    type: 'feature',
+    value: 'auto',
+    description: 'DXVA2 avcodec support')
+
+option('amf_scaler',
+    type: 'feature',
+    value: 'auto',
+    description: 'AMF HQScaler support')
+
+option('amf_frc',
+    type: 'feature',
+    value: 'auto',
+    description: 'AMF Frame Doubler support')
+
+option('amf_vqenhancer',
+    type: 'feature',
+    value: 'auto',
+    description: 'AMF VQ Enhancer support')
+
+option('directx',
+    type: 'feature',
+    value: 'auto',
+    description: 'DirectX support')
+
+option('projectm',
+    type: 'feature',
+    value: 'auto',
+    description: 'projectM visualization plugin')
+
+option('libssh2',
+    type: 'feature',
+    value: 'auto',
+    description: 'libssh2 support')
+
+option('sftp',
+    type: 'feature',
+    value: 'auto',
+    description: 'SFTP file transfer via libssh2')
+
+option('archive',
+    type: 'feature',
+    value: 'auto',
+    description: 'libarchive support')
+
+option('aribb25',
+    type: 'feature',
+    value: 'auto',
+    description: 'ARIB STD-B25 support')
+
+option('aribcaption',
+    type: 'feature',
+    value: 'auto',
+    description: 'ARIB caption decoder/renderer support')
+
+option('gme',
+    type: 'feature',
+    value: 'auto',
+    description: 'Game Music Emu support')
+
+option('mpc',
+    type: 'feature',
+    value: 'auto',
+    description: 'libmpcdec support')
+
+option('sid',
+    type: 'feature',
+    value: 'auto',
+    description: 'C64 sid demux support')
+
+option('nvdec',
+    type: 'feature',
+    value: 'auto',
+    description: 'NVDEC decoder support')
+
+option('decklink',
+    type: 'feature',
+    value: 'auto',
+    description: 'DeckLink support')
+
+option('nfs',
+    type: 'feature',
+    value: 'auto',
+    description: 'support nfs protocol via libnfs')
+
 # TODO: Missing v4l2
-# TODO: Missing nvdec
-# TODO: Missing decklink
-# TODO: Missing gme
-# TODO: Missing sid
-# TODO: Missing mpc
 # TODO: Missing rpi-omxil
 # TODO: Missing gst-decode
 # TODO: Missing merge-ffmpeg
 # TODO: Missing libva
-# TODO: Missing dxva2
-# TODO: Missing d3d11va
 # TODO: Missing tremor
 # TODO: Missing x26410b
 # TODO: Missing vdpau
-# TODO: Missing directx
 # TODO: Missing kva
 # TODO: Missing mmal
 # TODO: Missing sndio
@@ -660,16 +785,12 @@ option('harfbuzz',
 # TODO: Missing kai
 # TODO: Missing qt-qml-cache
 # TODO: Missing qt-qml-debug
-# TODO: Missing skins2
 # TODO: Missing libtar
 # TODO: Missing macosx
 # TODO: Missing sparkle
 # TODO: Missing lirc
-# TODO: Missing projectm
 # TODO: Missing vsxu
 # TODO: Missing kwallet
 # TODO: Missing osx_notifications
-# TODO: Missing dsm
 # TODO: Missing asdcplib
-# TODO: Missing faad2
 # TODO: Missing chromecast

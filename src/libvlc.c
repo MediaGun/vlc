@@ -62,8 +62,8 @@
 #include <vlc_url.h>
 #include <vlc_modules.h>
 #include <vlc_media_library.h>
-#include <vlc_thumbnailer.h>
 #include <vlc_tracer.h>
+#include "player/player.h"
 
 #include "libvlc.h"
 
@@ -221,10 +221,6 @@ int libvlc_InternalInit( libvlc_int_t *p_libvlc, int i_argc,
             msg_Warn( p_libvlc, "Media library initialization failed" );
     }
 
-    priv->p_thumbnailer = vlc_thumbnailer_Create( VLC_OBJECT( p_libvlc ) );
-    if ( priv->p_thumbnailer == NULL )
-        msg_Warn( p_libvlc, "Failed to instantiate thumbnailer" );
-
     /*
      * Initialize hotkey handling
      */
@@ -234,9 +230,6 @@ int libvlc_InternalInit( libvlc_int_t *p_libvlc, int i_argc,
     /*
      * Meta data handling
      */
-    priv->parser = vlc_preparser_New(VLC_OBJECT(p_libvlc));
-    if( !priv->parser )
-        goto error;
 
     priv->media_source_provider = vlc_media_source_provider_New( VLC_OBJECT( p_libvlc ) );
     if( !priv->media_source_provider )
@@ -346,15 +339,9 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
 {
     libvlc_priv_t *priv = libvlc_priv (p_libvlc);
 
-    if (priv->parser != NULL)
-        vlc_preparser_Deactivate(priv->parser);
-
     /* Ask the interfaces to stop and destroy them */
     msg_Dbg( p_libvlc, "removing all interfaces" );
     intf_DestroyAll( p_libvlc );
-
-    if ( priv->p_thumbnailer )
-        vlc_thumbnailer_Release( priv->p_thumbnailer );
 
 #ifdef ENABLE_VLM
     /* Destroy VLM if created in libvlc_InternalInit */
@@ -375,9 +362,6 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
         free( pidfile );
     }
 #endif
-
-    if (priv->parser != NULL)
-        vlc_preparser_Delete(priv->parser);
 
     if (priv->main_playlist)
         vlc_playlist_Delete(priv->main_playlist);
@@ -454,9 +438,96 @@ static void GetFilenames( libvlc_int_t *p_vlc, unsigned n,
     }
 }
 
-vlc_preparser_t *
-libvlc_GetMainPreparser(libvlc_int_t *libvlc)
+static void
+PlaylistConfigureFromVariables(vlc_playlist_t *playlist, vlc_object_t *obj)
+{
+    enum vlc_playlist_playback_order order;
+    if (var_InheritBool(obj, "random"))
+        order = VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM;
+    else
+        order = VLC_PLAYLIST_PLAYBACK_ORDER_NORMAL;
+
+    /* repeat = repeat current; loop = repeat all */
+    enum vlc_playlist_playback_repeat repeat;
+    if (var_InheritBool(obj, "repeat"))
+        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_CURRENT;
+    else if (var_InheritBool(obj, "loop"))
+        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_ALL;
+    else
+        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_NONE;
+
+    enum vlc_playlist_media_stopped_action media_stopped_action;
+    if (var_InheritBool(obj, "play-and-exit"))
+        media_stopped_action = VLC_PLAYLIST_MEDIA_STOPPED_EXIT;
+    else if (var_InheritBool(obj, "play-and-stop"))
+        media_stopped_action = VLC_PLAYLIST_MEDIA_STOPPED_STOP;
+    else if (var_InheritBool(obj, "play-and-pause"))
+        media_stopped_action = VLC_PLAYLIST_MEDIA_STOPPED_PAUSE;
+    else
+        media_stopped_action = VLC_PLAYLIST_MEDIA_STOPPED_CONTINUE;
+
+    bool start_paused = var_InheritBool(obj, "start-paused");
+    bool playlist_cork = var_InheritBool(obj, "playlist-cork");
+
+    vlc_playlist_Lock(playlist);
+    vlc_playlist_SetPlaybackOrder(playlist, order);
+    vlc_playlist_SetPlaybackRepeat(playlist, repeat);
+    vlc_playlist_SetMediaStoppedAction(playlist, media_stopped_action);
+
+    vlc_player_t *player = vlc_playlist_GetPlayer(playlist);
+
+    /* the playlist and the player share the same lock, and this is not an
+     * implementation detail */
+    vlc_player_SetStartPaused(player, start_paused);
+    vlc_player_SetPauseOnCork(player, playlist_cork);
+
+    vlc_playlist_Unlock(playlist);
+}
+
+vlc_playlist_t *
+libvlc_GetMainPlaylist(libvlc_int_t *libvlc)
 {
     libvlc_priv_t *priv = libvlc_priv(libvlc);
-    return priv->parser;
+
+    vlc_mutex_lock(&priv->lock);
+    vlc_playlist_t *playlist = priv->main_playlist;
+    if (priv->main_playlist == NULL)
+    {
+        bool auto_preparse = var_InheritBool(libvlc, "auto-preparse");
+        enum vlc_playlist_preparsing rec = VLC_PLAYLIST_PREPARSING_DISABLED;
+        int max_threads = 1;
+        vlc_tick_t default_timeout = 0;
+
+        if (auto_preparse)
+        {
+            rec = VLC_PLAYLIST_PREPARSING_COLLAPSE;
+
+            char *rec_str = var_InheritString(libvlc, "recursive");
+            if (rec_str != NULL)
+            {
+                if (!strcasecmp(rec_str, "none"))
+                    rec = VLC_PLAYLIST_PREPARSING_ENABLED;
+                else if (!strcasecmp(rec_str, "expand"))
+                    rec = VLC_PLAYLIST_PREPARSING_RECURSIVE;
+                free(rec_str);
+            }
+            max_threads = var_InheritInteger(libvlc, "preparse-threads");
+            if (max_threads < 1)
+                max_threads = 1;
+
+            default_timeout =
+                VLC_TICK_FROM_MS(var_InheritInteger(libvlc, "preparse-timeout"));
+            if (default_timeout < 0)
+                default_timeout = 0;
+        }
+
+        playlist = priv->main_playlist = vlc_playlist_New(VLC_OBJECT(libvlc),
+                                                          rec, max_threads,
+                                                          default_timeout);
+        if (playlist)
+            PlaylistConfigureFromVariables(playlist, VLC_OBJECT(libvlc));
+    }
+    vlc_mutex_unlock(&priv->lock);
+
+    return playlist;
 }

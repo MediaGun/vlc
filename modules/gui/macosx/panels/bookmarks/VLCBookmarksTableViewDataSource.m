@@ -33,8 +33,10 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlayerController.h"
-#import "playlist/VLCPlaylistController.h"
+#import "playqueue/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+
+#import "views/VLCTimeFormatter.h"
 
 #import <vlc_media_library.h>
 
@@ -95,7 +97,7 @@ static void bookmarksLibraryCallback(void *p_data, const vlc_ml_event_t *p_event
 
 - (void)setup
 {
-    _playerController = VLCMain.sharedInstance.playlistController.playerController;
+    _playerController = VLCMain.sharedInstance.playQueueController.playerController;
     _mediaLibrary = vlc_ml_instance_get(getIntf());
     [self updateLibraryItemId];
 
@@ -223,18 +225,13 @@ static void bookmarksLibraryCallback(void *p_data, const vlc_ml_event_t *p_event
         bookmark.bookmarkDescription = newDescription;
     } else if ([columnIdentifier isEqualToString:VLCBookmarksTableViewTimeTableColumnIdentifier]) {
         NSString * const timeString = (NSString *)object;
-        NSArray * const components = [object componentsSeparatedByString:@":"];
-        const NSUInteger componentCount = [components count];
+        VLCTimeFormatter * const formatter = [[VLCTimeFormatter alloc] init];
+        NSString *error = nil;
+        NSNumber *time = nil;
+        [formatter getObjectValue:&time forString:timeString errorDescription:&error];
 
-        if (componentCount == 1) {
-            bookmark.bookmarkTime = ([[components firstObject] longLongValue]) * 1000;
-        } else if (componentCount == 2) {
-            bookmark.bookmarkTime = ([[components firstObject] longLongValue] * 60 +
-                                     [[components objectAtIndex:1] longLongValue]) * 1000;
-        } else if (componentCount == 3) {
-            bookmark.bookmarkTime = ([[components firstObject] longLongValue] * 3600 +
-                                     [[components objectAtIndex:1] longLongValue] * 60 +
-                                     [[components objectAtIndex:2] longLongValue]) * 1000;
+        if (error == nil) {
+            bookmark.bookmarkTime = time.longLongValue;
         } else {
             msg_Err(getIntf(), "Cannot set bookmark time as invalid string format for time was received");
         }

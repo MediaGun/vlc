@@ -24,48 +24,10 @@
 #include "qt.hpp"
 
 #include <QMenu>
+#include <QActionGroup>
 #include "medialibrary/mlrecentsmodel.hpp"
 
 class QAbstractListModel;
-
-class RendererAction : public QAction
-{
-    Q_OBJECT
-
-    public:
-        RendererAction( vlc_renderer_item_t * );
-        ~RendererAction();
-        vlc_renderer_item_t *getItem();
-
-    private:
-        vlc_renderer_item_t *p_item;
-};
-
-class RendererMenu : public QMenu
-{
-    Q_OBJECT
-
-public:
-    RendererMenu( QMenu *, qt_intf_t * );
-    virtual ~RendererMenu();
-    void reset();
-
-private slots:
-    void addRendererItem( vlc_renderer_item_t * );
-    void removeRendererItem( vlc_renderer_item_t * );
-    void updateStatus( int );
-    void RendererSelected( QAction* );
-
-private:
-    void addRendererAction( QAction * );
-    void removeRendererAction( QAction * );
-    static vlc_renderer_item_t* getMatchingRenderer( const QVariant &,
-                                                     vlc_renderer_item_t* );
-    QAction *status;
-    QActionGroup *group;
-    qt_intf_t *p_intf;
-};
-
 
 /*
  * Construct a menu from a QAbstractListModel with Qt::DisplayRole and Qt::CheckStateRole
@@ -74,12 +36,6 @@ class CheckableListMenu : public QMenu
 {
     Q_OBJECT
 public:
-    enum GroupingMode {
-        GROUPED_EXLUSIVE,
-        GROUPED_OPTIONAL,
-        UNGROUPED
-    };
-
     /**
      * @brief CheckableListMenu
      * @param title the title of the menu
@@ -87,20 +43,13 @@ public:
      * @param grouping whether the menu should use an ActionGroup or not
      * @param parent QObject parent
      */
-    CheckableListMenu(QString title, QAbstractListModel* model ,  GroupingMode grouping = UNGROUPED, QWidget *parent = nullptr);
+    CheckableListMenu(QString title, QAbstractListModel* model, QActionGroup::ExclusionPolicy grouping = QActionGroup::ExclusionPolicy::None, QWidget *parent = nullptr);
 
-private slots:
-    void onRowsAboutToBeRemoved(const QModelIndex &parent, int first, int last);
-    void onRowInserted(const QModelIndex &parent, int first, int last);
-    void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>());
-    void onModelAboutToBeReset();
-    void onModelReset();
-
-private:
-    QAbstractListModel* m_model;
-    GroupingMode m_grouping;
-    QActionGroup* m_actionGroup = nullptr;
+protected:
+    QAbstractListModel* m_model = nullptr;
 };
+
+class QQuickImageResponse;
 
 // NOTE: This class is a helper to populate and maintain a QMenu from an QAbstractListModel.
 class ListMenuHelper : public QObject
@@ -111,9 +60,12 @@ public:
     // NOTE: The model actions will be inserted before 'before' or at the end if it's NULL.
     ListMenuHelper(QMenu * menu, QAbstractListModel * model, QAction * before = nullptr,
                    QObject * parent = nullptr);
+    virtual ~ListMenuHelper();
 
 public: // Interface
     int count() const;
+
+    QActionGroup* getActionGroup() const;
 
 private slots:
     void onRowsInserted(const QModelIndex & parent, int first, int last);
@@ -127,11 +79,13 @@ private slots:
     void onTriggered(bool checked);
 
 signals:
-    void select(int index);
+    void select(int index, bool checked);
 
     void countChanged(int count);
 
 private:
+    void setIcon(QAction* action,  const QUrl& iconUrl);
+
     QMenu * m_menu = nullptr;
 
     QActionGroup * m_group = nullptr;
@@ -141,6 +95,8 @@ private:
     QList<QAction *> m_actions;
 
     QAction * m_before = nullptr;
+
+    std::unique_ptr<QQuickImageResponse> m_iconLoader;
 };
 
 /**
@@ -166,24 +122,41 @@ private:
     QString m_propertyName;
 };
 
+class RendererManager;
+class QProgressBar;
+class QLabel;
+class PlayerController;
+class RendererMenu : public QMenu
+{
+    Q_OBJECT
+
+public:
+    RendererMenu( QMenu* parent, qt_intf_t* intf, PlayerController* playerController );
+    virtual ~RendererMenu();
+
+private slots:
+    void updateStatus();
+
+protected:
+    QProgressBar* m_statusProgressBar;
+    QLabel* m_statusLabel;
+
+    QAction *m_statusAction;
+    QActionGroup *group;
+    qt_intf_t *p_intf;
+    RendererManager* m_renderManager = nullptr;
+};
+
+
 class RecentMenu : public QMenu
 {
     Q_OBJECT
 public:
     RecentMenu(MLRecentsModel* model, MediaLib* ml, QWidget *parent = nullptr);
 
-private slots:
-    void onRowsRemoved(const QModelIndex &parent, int first, int last);
-    void onRowInserted(const QModelIndex &parent, int first, int last);
-    void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>());
-    void onModelReset();
-
 private:
     MLRecentsModel* m_model = nullptr;
-    QAction* m_separator = nullptr;
     MediaLib* m_ml = nullptr;
-
-    QList<QAction *> m_actions;
 };
 
 class BookmarkMenu : public QMenu

@@ -33,6 +33,7 @@ class CSDButton : public QObject
     Q_PROPERTY(ButtonType type READ type CONSTANT)
     Q_PROPERTY(bool showHovered READ showHovered WRITE setShowHovered NOTIFY showHoveredChanged)
     Q_PROPERTY(QRect rect READ rect WRITE setRect NOTIFY rectChanged)
+    Q_PROPERTY(bool externalPressed READ externalPressed NOTIFY externalPressedChanged FINAL)
 
 public:
     enum ButtonType
@@ -63,6 +64,12 @@ public:
     const QRect &rect() const;
     void setRect(const QRect &newRect);
 
+    bool externalPressed() const;
+    void setExternalPressed();
+    void unsetExternalPressed();
+    void externalPress();
+    void externalRelease();
+
 public slots:
     // signals to perfrom action associated with button
     // actions are dependent on implmentation
@@ -74,27 +81,14 @@ signals:
     void rectChanged();
     void clicked();
     void doubleClicked();
+    void externalPressedChanged();
 
 private:
     const ButtonType m_type;
     bool m_showHovered = false;
     QRect m_rect;
+    bool m_externalPressed = false;
 };
-
-
-class SystemMenuButton : public CSDButton
-{
-    Q_OBJECT
-
-public:
-    SystemMenuButton(QObject *parent = nullptr) : CSDButton {SystemMenuButton::SystemMenu, parent} {}
-
-    Q_INVOKABLE virtual void showSystemMenu(const QPoint &windowpos) = 0;
-
-signals:
-    void systemMenuVisibilityChanged(bool visible);
-};
-
 
 class MainCtx;
 
@@ -104,17 +98,10 @@ class CSDButtonModel : public QObject
     Q_OBJECT
     Q_PROPERTY(QList<CSDButton *> windowCSDButtons READ windowCSDButtons CONSTANT)
 
-    Q_PROPERTY(CSDButton *systemMenuButton READ systemMenuButton CONSTANT)
-
 public:
     CSDButtonModel(MainCtx *mainCtx, QObject *parent = nullptr);
 
     QList<CSDButton *> windowCSDButtons() const;
-    CSDButton *systemMenuButton() const;
-
-    // set by internal implmentation
-    // all the actions are also handled by implementation
-    void setSystemMenuButton(std::shared_ptr<SystemMenuButton> button);
 
 private slots:
     void minimizeButtonClicked();
@@ -126,9 +113,6 @@ private:
 
     // CSD window action buttons i.e minimize, maximize, close
     QList<CSDButton *> m_windowCSDButtons;
-
-    // sysmenu button, available on windows only
-    std::shared_ptr<SystemMenuButton> m_systemMenuButton = nullptr;
 };
 
 

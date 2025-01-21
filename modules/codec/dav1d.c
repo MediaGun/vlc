@@ -115,14 +115,14 @@ static vlc_fourcc_t FindVlcChroma(const Dav1dPicture *img)
         img->seq_hdr->pri == DAV1D_COLOR_PRI_BT709 &&
         img->seq_hdr->trc == DAV1D_TRC_SRGB )
     {
-        if( img->seq_hdr->hbd < 0 || img->seq_hdr->hbd >= (int)ARRAY_SIZE(chroma_table_rgb) )
+        if( img->seq_hdr->hbd >= (int)ARRAY_SIZE(chroma_table_rgb) )
             return 0;
         return chroma_table_rgb[img->seq_hdr->hbd];
     }
 
     if( img->seq_hdr->layout < 0 || img->seq_hdr->layout >= (int)ARRAY_SIZE(chroma_table) )
         return 0;
-    if( img->seq_hdr->hbd < 0 || img->seq_hdr->hbd >= (int)ARRAY_SIZE(chroma_table[0]) )
+    if( img->seq_hdr->hbd >= (int)ARRAY_SIZE(chroma_table[0]) )
         return 0;
 
     return chroma_table[img->seq_hdr->layout][img->seq_hdr->hbd];
@@ -474,7 +474,7 @@ static int OpenDecoder(vlc_object_t *p_this)
     av1_OBU_sequence_header_t *sequence_hdr = NULL;
     if (dec->fmt_in->i_extra > 4)
     {
-        // in ISOBMFF/WebM/Matroska the first 4 bytes are from the AV1CodecConfigurationBox
+        // in ISOBMFF/WebM/Matroska the first 4 bytes are from the AV1CodecConfigurationRecord
         // and then one or more OBU
         const uint8_t *obu_start = ((const uint8_t*) dec->fmt_in->p_extra) + 4;
         int obu_size = dec->fmt_in->i_extra - 4;

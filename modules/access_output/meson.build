@@ -18,7 +18,14 @@ vlc_modules += {
     'sources' : files('http.c')
 }
 
-# TODO: Add HAVE_GCRYPT + livehttp
+# liveHTTP
+gpg_error_dep = cc.find_library('gpg-error', dirs: contrib_libdir, required: false)
+vlc_modules += {
+    'name' : 'access_output_livehttp',
+    'sources' : files('livehttp.c'),
+    'dependencies' : [ gcrypt_dep, gpg_error_dep ],
+    'enabled' : gcrypt_dep.found() and gpg_error_dep.found(),
+}
 
 # Shout (Icecast and old Shoutcast)
 shout_dep = dependency('shout', version: '>= 2.1', required: get_option('shout'))
@@ -32,7 +39,7 @@ endif
 
 # HTTP PUT
 vlc_modules += {
-    'name' : 'access_output_http_put',
+    'name' : 'access_http_put',
     'sources' : files('http-put.c'),
     'include_directories' : include_directories('../access/http'),
     'link_with' : [vlc_http_lib]

@@ -183,11 +183,9 @@ typedef struct libvlc_priv_t
     vlc_keystore      *p_memory_keystore; ///< memory keystore
     intf_thread_t *interfaces;  ///< Linked-list of interfaces
     vlc_playlist_t *main_playlist;
-    struct vlc_preparser_t *parser; ///< Input item meta data handler
     vlc_media_source_provider_t *media_source_provider;
     vlc_actions_t *actions; ///< Hotkeys handler
     struct vlc_medialibrary_t *p_media_library; ///< Media library instance
-    struct vlc_thumbnailer_t *p_thumbnailer; ///< Lazily instantiated media thumbnailer
     struct vlc_tracer *tracer; ///< Tracer callbacks
 
     /* Exit callback */
@@ -202,6 +200,9 @@ static inline libvlc_priv_t *libvlc_priv (libvlc_int_t *libvlc)
 int intf_InsertItem(libvlc_int_t *, const char *mrl, unsigned optc,
                     const char * const *optv, unsigned flags);
 void intf_DestroyAll( libvlc_int_t * );
+
+vlc_playlist_t *
+libvlc_GetMainPlaylist(libvlc_int_t *libvlc);
 
 /*
  * Variables stuff

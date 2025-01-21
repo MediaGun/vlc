@@ -37,8 +37,8 @@
 #import "panels/VLCBookmarksWindowController.h"
 #import "panels/VLCTrackSynchronizationWindowController.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "windows/video/VLCAspectRatioRetainingVideoWindow.h"
 #import "windows/video/VLCMainVideoViewController.h"
@@ -451,7 +451,7 @@ static int WindowFloatOnTop(vlc_object_t *obj,
 - (VLCVoutView *)setupVoutForWindow:(vlc_window_t *)p_wnd
       withProposedVideoViewPosition:(NSRect)videoViewPosition
 {
-    _playerController = VLCMain.sharedInstance.playlistController.playerController;
+    _playerController = VLCMain.sharedInstance.playQueueController.playerController;
     VLCVideoWindowCommon *newVideoWindow = [self setupVideoWindow];
     VLCVoutView *voutView = newVideoWindow.videoViewController.voutView;
 
@@ -640,6 +640,11 @@ static int WindowFloatOnTop(vlc_object_t *obj,
     [[main libraryWindow] setWindowLevel:i_level];
 
     [NSNotificationCenter.defaultCenter postNotificationName:VLCWindowShouldUpdateLevel object:self userInfo:@{VLCWindowLevelKey : @(_currentWindowLevel)}];
+}
+
+- (VLCVideoWindowCommon *)videoWindowForVoutView:(VLCVoutView *)voutView
+{
+    return [self.voutWindows objectForKey:[NSValue valueWithPointer:voutView.voutWindow]];
 }
 
 #pragma mark -

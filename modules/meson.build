@@ -156,7 +156,7 @@ opengles_dep = frameworks['OpenGLES']
 # WASAPI-related dependency
 ksuser_lib = cc.find_library('ksuser',
                              has_headers: ['audioclient.h'],
-                             required: host_system == 'windows' and get_option('wasapi'))
+                             required: host_system == 'windows' and get_option('wasapi').enabled())
 
 # Helper libraries for modules
 # These are helper libraries used by some modules
@@ -186,7 +186,7 @@ avcodec_dep  = dependency('libavcodec', version: '>= 58.54.100', required: get_o
 avutil_dep   = dependency('libavutil', version: '>= 56.31.100', required: false)
 
 # Freetype, used by text_renderer and ASS access
-freetype_dep = dependency('freetype2', required: get_option('freetype'))
+freetype_dep = dependency('freetype2', 'freetype', required: get_option('freetype'))
 
 # ZVBI, used by Linsys SDI access and VBI/Teletext decoders
 zvbi_dep = dependency('zvbi-0.2', version: '>= 0.2.28', required: false)
@@ -194,12 +194,24 @@ zvbi_dep = dependency('zvbi-0.2', version: '>= 0.2.28', required: false)
 # rsvg, used by SVG codec and text renderer
 rsvg_dep = dependency('librsvg-2.0', version: '>= 2.9.0', required: get_option('rsvg'))
 
-# libgcrypt, used by rtp, access, stream_out
-libgcrypt_dep = dependency('libgcrypt',
-                            version: '>= 1.6.0',
-                            required: get_option('libgcrypt'))
 # Rust support
 cargo_bin = find_program('cargo', required: get_option('rust'))
+
+# hxxx common helper lib
+hxxxhelper_lib = static_library(
+    'hxxxhelper',
+    files(
+        'codec/hxxx_helper.c',
+        'packetizer/hxxx_nal.c',
+        'packetizer/hxxx_sei.c',
+        'packetizer/h264_slice.c',
+        'packetizer/h264_nal.c',
+        'packetizer/hevc_nal.c',
+    ),
+    include_directories: [vlc_include_dirs],
+    pic: true,
+    install: false
+)
 
 # JSON library
 json_bison_files = bison_gen.process('demux/json/grammar.y')
@@ -215,6 +227,16 @@ vlc_json_lib = static_library('vlc_json',
     install: false,
     pic: true
 )
+
+# deinterlace common helper lib
+deinterlacecommon_lib = static_library(
+    'deinterlace_common',
+    files('video_filter/deinterlace/common.c'),
+    include_directories: [vlc_include_dirs],
+    pic: true,
+    install: false
+)
+
 
 # Array that holds all enabled VLC module dicts
 vlc_modules = []
@@ -271,6 +293,9 @@ subdir('services_discovery')
 # stream output modules
 subdir('stream_out')
 
+# stream extractor modules
+subdir('stream_extractor')
+
 # stream filter modules
 subdir('stream_filter')
 
@@ -286,6 +311,9 @@ subdir('video_filter')
 # video output modules
 subdir('video_output')
 
+# hardware modules
+subdir('hw')
+
 # video splitter modules
 subdir('video_splitter')
 
@@ -294,6 +322,11 @@ subdir('visualization')
 
 # lua module
 subdir('lua')
+
+# muxer modules
+if get_option('stream_outputs')
+    subdir('mux')
+endif
 
 # Qt check executable
 # This has to be declared here as it needs to end up
@@ -344,6 +377,7 @@ foreach module : vlc_modules
         'c_args',
         'cpp_args',
         'objc_args',
+        'nasm_args',
         'extra_files',
         'enabled',
     ]
@@ -380,6 +414,7 @@ foreach module : vlc_modules
         c_args: [module.get('c_args', []), common_args],
         cpp_args: [module.get('cpp_args', []), common_args],
         objc_args: [module.get('objc_args', []), common_args],
+        nasm_args: [module.get('nasm_args', []), []],
         extra_files: module.get('extra_files', []),
         build_by_default: true,
         install: true,
@@ -405,7 +440,7 @@ if get_option('rust').enabled()
         '3': ['-C', 'opt-level=3'],
         's': ['-C', 'opt-level=s'],
     }
-    
+
     print_static_libs_rustc = run_command([cargo_rustc_static_libs, cargo_bin],
         check: true, capture: true)
     rust_common_link_args = print_static_libs_rustc.stdout().split()
@@ -414,7 +449,7 @@ if get_option('rust').enabled()
     # meson where array += element is not equal to array += array
     rust_flags = get_option('extra_rust_flags')
     rust_flags += rust_optimization_args[get_option('optimization')]
-    
+
     cargo_target_dir = join_paths(meson.current_build_dir(), 'cargo_target')
 
     extra_cargo_args = []

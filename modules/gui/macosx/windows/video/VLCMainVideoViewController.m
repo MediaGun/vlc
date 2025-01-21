@@ -23,6 +23,7 @@
 
 #import "VLCMainVideoViewController.h"
 
+#import "extensions/NSView+VLCAdditions.h"
 #import "extensions/NSWindow+VLCAdditions.h"
 
 #import "library/VLCInputItem.h"
@@ -34,8 +35,8 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "views/VLCBottomBarView.h"
 
@@ -67,10 +68,7 @@
     [super viewWillAppear];
 
     if (self.view.superview) {
-        [self.view.superview.topAnchor constraintEqualToAnchor:self.view.topAnchor].active = YES;
-        [self.view.superview.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor].active = YES;
-        [self.view.superview.leftAnchor constraintEqualToAnchor:self.view.leftAnchor].active = YES;
-        [self.view.superview.rightAnchor constraintEqualToAnchor:self.view.rightAnchor].active = YES;
+        [self.view applyConstraintsToFillSuperview];
     }
 }
 
@@ -83,12 +81,14 @@
 {
     NSTimer *_hideControlsTimer;
     NSLayoutConstraint *_returnButtonBottomConstraint;
-    NSLayoutConstraint *_playlistButtonBottomConstraint;
+    NSLayoutConstraint *_playQueueButtonBottomConstraint;
     PIPViewController *_pipViewController;
     PIPVoutViewController *_voutViewController;
 
     BOOL _isFadingIn;
 }
+
+@property NSWindow *retainedWindow;
 @end
 
 @implementation VLCMainVideoViewController
@@ -137,44 +137,12 @@
 {
     _audioDecorativeView = [VLCMainVideoViewAudioMediaDecorativeView fromNibWithOwner:self];
     _audioDecorativeView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:_audioDecorativeView
-                                     attribute:NSLayoutAttributeTop
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.view
-                                     attribute:NSLayoutAttributeTop
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:_audioDecorativeView
-                                     attribute:NSLayoutAttributeBottom
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.view
-                                     attribute:NSLayoutAttributeBottom
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:_audioDecorativeView
-                                     attribute:NSLayoutAttributeLeft
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.view
-                                     attribute:NSLayoutAttributeLeft
-                                    multiplier:1.
-                                      constant:0.
-        ],
-        [NSLayoutConstraint constraintWithItem:_audioDecorativeView
-                                     attribute:NSLayoutAttributeRight
-                                     relatedBy:NSLayoutRelationEqual
-                                        toItem:self.view
-                                     attribute:NSLayoutAttributeRight
-                                    multiplier:1.
-                                      constant:0.
-        ],
-    ]];
 
-    [self.view addSubview:_audioDecorativeView positioned:NSWindowAbove relativeTo:_voutView];
+    _bottomButtonStackViewConstraint =
+        [self.bottomBarView.topAnchor constraintEqualToAnchor:self.centralControlsStackView.bottomAnchor];
+
     VLCPlayerController * const controller =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     [self updateDecorativeViewVisibilityOnControllerChange:controller];
 }
 
@@ -194,7 +162,7 @@
     _autohideControls = YES;
 
     [self setDisplayLibraryControls:NO];
-    [self updatePlaylistToggleState];
+    [self updatePlayQueueToggleState];
     [self updateLibraryControls];
 
     _returnButtonBottomConstraint = [NSLayoutConstraint constraintWithItem:_returnButton
@@ -204,16 +172,16 @@
                                                                  attribute:NSLayoutAttributeBottom
                                                                 multiplier:1.
                                                                   constant:0];
-    _playlistButtonBottomConstraint = [NSLayoutConstraint constraintWithItem:_playlistButton
-                                                                   attribute:NSLayoutAttributeBottom
-                                                                   relatedBy:NSLayoutRelationEqual
-                                                                      toItem:_fakeTitleBar
-                                                                   attribute:NSLayoutAttributeBottom
-                                                                  multiplier:1.
-                                                                    constant:0];
+    _playQueueButtonBottomConstraint = [NSLayoutConstraint constraintWithItem:_playQueueButton
+                                                                    attribute:NSLayoutAttributeBottom
+                                                                    relatedBy:NSLayoutRelationEqual
+                                                                       toItem:_fakeTitleBar
+                                                                    attribute:NSLayoutAttributeBottom
+                                                                   multiplier:1.
+                                                                     constant:0];
 
     _returnButtonBottomConstraint.active = NO;
-    _playlistButtonBottomConstraint.active = NO;
+    _playQueueButtonBottomConstraint.active = NO;
 
     [self setupAudioDecorativeView];
     [self.controlsBar update];
@@ -232,13 +200,40 @@
         VLCInputItem * const inputItem = controller.currentMedia;
         decorativeViewVisible = inputItem != nil && controller.videoTracks.count == 0;
     }
-    _audioDecorativeView.hidden = !decorativeViewVisible;
+
+    NSView * const targetView = decorativeViewVisible ? self.audioDecorativeView : self.voutView;
+    self.voutContainingView.subviews = @[targetView];
+    [targetView applyConstraintsToFillSuperview];
 
     if (decorativeViewVisible) {
         [self setAutohideControls:NO];
+        self.centerButtonStackInViewConstraint.active = NO;
+        self.bottomButtonStackViewConstraint.active = YES;
+        self.prevButtonSizeConstraint.constant = VLCLibraryUIUnits.smallPlaybackControlButtonSize;
+        self.playButtonSizeConstraint.constant = VLCLibraryUIUnits.smallPlaybackControlButtonSize;
+        self.nextButtonSizeConstraint.constant = VLCLibraryUIUnits.smallPlaybackControlButtonSize;
+        [self applyAudioDecorativeViewForegroundCoverArtViewConstraints];
     } else {
         [self setAutohideControls:YES];
+        self.bottomButtonStackViewConstraint.active = NO;
+        self.centerButtonStackInViewConstraint.active = YES;
+        self.prevButtonSizeConstraint.constant = VLCLibraryUIUnits.mediumPlaybackControlButtonSize;
+        self.playButtonSizeConstraint.constant = VLCLibraryUIUnits.largePlaybackControlButtonSize;
+        self.nextButtonSizeConstraint.constant = VLCLibraryUIUnits.mediumPlaybackControlButtonSize;
     }
+}
+
+- (void)applyAudioDecorativeViewForegroundCoverArtViewConstraints
+{
+    if (![self.voutContainingView.subviews containsObject:self.audioDecorativeView]) {
+        return;
+    }
+
+    NSView * const foregroundCoverArtView = self.audioDecorativeView.foregroundCoverArtView;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.centralControlsStackView.topAnchor constraintGreaterThanOrEqualToAnchor:foregroundCoverArtView.bottomAnchor constant:VLCLibraryUIUnits.largeSpacing],
+        [self.fakeTitleBar.bottomAnchor constraintLessThanOrEqualToAnchor:foregroundCoverArtView.topAnchor constant:-VLCLibraryUIUnits.largeSpacing]
+    ]];
 }
 
 - (void)playerCurrentMediaItemChanged:(NSNotification *)notification
@@ -307,7 +302,7 @@
     return [_centralControlsStackView mouse:mousePos inRect:_centralControlsStackView.frame] ||
         [_controlsBar.bottomBarView mouse:mousePos inRect: _controlsBar.bottomBarView.frame] ||
         [_returnButton mouse:mousePos inRect: _returnButton.frame] ||
-        [_playlistButton mouse:mousePos inRect: _playlistButton.frame];
+        [_playQueueButton mouse:mousePos inRect: _playQueueButton.frame];
 }
 
 - (void)stopAutohideTimer
@@ -378,7 +373,7 @@
 - (void)showControls
 {
     [self stopAutohideTimer];
-    [self updatePlaylistToggleState];
+    [self updatePlayQueueToggleState];
     [self updateLibraryControls];
 
     if (!_autohideControls) {
@@ -401,17 +396,17 @@
     _displayLibraryControls = displayLibraryControls;
 
     _returnButton.hidden = !displayLibraryControls;
-    _playlistButton.hidden = !displayLibraryControls;
+    _playQueueButton.hidden = !displayLibraryControls;
 }
 
-- (void)updatePlaylistToggleState
+- (void)updatePlayQueueToggleState
 {
     // TODO: Rename playlist stuff
     VLCLibraryWindow * const libraryWindow = (VLCLibraryWindow*)self.view.window;
     if (libraryWindow != nil && _displayLibraryControls) {
         NSView * const sidebarView =
             libraryWindow.splitViewController.multifunctionSidebarViewController.view;
-        self.playlistButton.state = [libraryWindow.mainSplitView isSubviewCollapsed:sidebarView] ?
+        self.playQueueButton.state = [libraryWindow.mainSplitView isSubviewCollapsed:sidebarView] ?
             NSControlStateValueOff : NSControlStateValueOn;
     }
 }
@@ -458,9 +453,9 @@
     _fakeTitleBarHeightConstraint.constant = windowFullscreen ? 0 : windowTitlebarHeight;
 
     _returnButtonTopConstraint.constant = buttonTopSpace;
-    _playlistButtonTopConstraint.constant = buttonTopSpace;
+    _playQueueButtonTopConstraint.constant = buttonTopSpace;
     _returnButtonBottomConstraint.active = placeInFakeToolbar;
-    _playlistButtonBottomConstraint.active = placeInFakeToolbar;
+    _playQueueButtonBottomConstraint.active = placeInFakeToolbar;
 
     NSControlSize buttonSize = NSControlSizeRegular;
 
@@ -474,64 +469,80 @@
         buttonSize = NSControlSizeMini;
     }
 
-    NSControlSize previousButtonSize = _playlistButton.controlSize;
+    NSControlSize previousButtonSize = _playQueueButton.controlSize;
     _returnButton.controlSize = buttonSize;
-    _playlistButton.controlSize = buttonSize;
+    _playQueueButton.controlSize = buttonSize;
 
     // HACK: Upon changing the control size the actual highlight of toggled/hovered buttons doesn't change
     // properly, at least for recessed buttons. This is most obvious on the toggleable playlist button.
     // So reset the state and then retoggle once done.
     if (previousButtonSize != buttonSize) {
-        NSControlStateValue returnButtonControlState = _returnButton.state;
-        NSControlStateValue playlistButtonControlState = _playlistButton.state;
+        const NSControlStateValue returnButtonControlState = _returnButton.state;
+        const NSControlStateValue playQueueButtonControlState = _playQueueButton.state;
         _returnButton.state = NSControlStateValueOff;
-        _playlistButton.state = NSControlStateValueOff;
+        _playQueueButton.state = NSControlStateValueOff;
         _returnButton.state = returnButtonControlState;
-        _playlistButton.state = playlistButtonControlState;
+        _playQueueButton.state = playQueueButtonControlState;
     }
 
-    const CGFloat realButtonSpace = (windowTitlebarHeight - _playlistButton.cell.cellSize.height) / 2;
+    const CGFloat realButtonSpace = (windowTitlebarHeight - _playQueueButton.cell.cellSize.height) / 2;
     const NSRect windowButtonBox = [self windowButtonsRect];
 
     _returnButtonLeadingConstraint.constant = placeInFakeToolbar ? windowButtonBox.size.width + VLCLibraryUIUnits.mediumSpacing + realButtonSpace : VLCLibraryUIUnits.largeSpacing;
-    _playlistButtonTrailingConstraint.constant = placeInFakeToolbar ? realButtonSpace: VLCLibraryUIUnits.largeSpacing;
+    _playQueueButtonTrailingConstraint.constant = placeInFakeToolbar ? realButtonSpace: VLCLibraryUIUnits.largeSpacing;
 
     _overlayView.drawGradientForTopControls = !placeInFakeToolbar;
     [_overlayView setNeedsDisplay:YES];
 }
 
-- (void)pictureInPictureChanged:(VLCPlayerController *)playerController {
-    if (_voutViewController)
+- (BOOL)pipIsActive
+{
+    return _voutViewController != nil;
+}
+
+- (void)pictureInPictureChanged:(VLCPlayerController *)playerController
+{
+    if (self.pipIsActive) {
         return;
-    [self.view.window orderOut:self.view.window];
+    }
+
+    NSWindow * const window = self.view.window;
+    [window orderOut:window];
+    self.retainedWindow = window;
+
     _voutViewController = [PIPVoutViewController new];
-    _voutViewController.view = _voutView;
+    _voutViewController.view = self.voutContainingView;
     VLCPlayerController * const controller =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     _pipViewController.playing = controller.playerState == VLC_PLAYER_STATE_PLAYING;
     
-    VLCInputItem *item = controller.currentMedia;
+    VLCInputItem * const item = controller.currentMedia;
     input_item_t * const p_input = item.vlcInputItem;
     vlc_mutex_lock(&p_input->lock);
     const struct input_item_es *item_es;
-    vlc_vector_foreach_ref(item_es, &p_input->es_vec)
-    {
-        if (item_es->es.i_cat != VIDEO_ES)
+    vlc_vector_foreach_ref(item_es, &p_input->es_vec) {
+        if (item_es->es.i_cat != VIDEO_ES) {
             continue;
-        const video_format_t *fmt = &item_es->es.video;
+        }
+        const video_format_t * const fmt = &item_es->es.video;
         unsigned int width = fmt->i_visible_width;
         unsigned int height = fmt->i_visible_height;
-        if (fmt->i_sar_num && fmt->i_sar_den)
+        if (fmt->i_sar_num && fmt->i_sar_den) {
             height = (height * fmt->i_sar_den) / fmt->i_sar_num;
+        }
         _pipViewController.aspectRatio = CGSizeMake(width, height);
         break;
     }
     vlc_mutex_unlock(&p_input->lock);
-    _pipViewController.title = self.view.window.title;
+    _pipViewController.title = window.title;
     [_pipViewController presentViewControllerAsPictureInPicture:_voutViewController];
+    
+    if ([window isKindOfClass:VLCLibraryWindow.class]) {
+        [self returnToLibrary:self];
+    }
 }
 
-- (IBAction)togglePlaylist:(id)sender
+- (IBAction)togglePlayQueue:(id)sender
 {
     VLCLibraryWindow * const libraryWindow = (VLCLibraryWindow*)self.view.window;
     if (libraryWindow != nil) {
@@ -548,29 +559,38 @@
 }
 #pragma mark - PIPViewControllerDelegate
 
-- (BOOL)pipShouldClose:(PIPViewController *)pip {
+- (BOOL)pipShouldClose:(PIPViewController *)pip
+{
     return YES;
 }
 
-- (void)pipWillClose:(PIPViewController *)pip {
-    [_voutView removeFromSuperview];
-    [_voutContainingView addSubview:_voutView];
-    [_voutContainingView.topAnchor constraintEqualToAnchor:_voutView.topAnchor].active = YES;
-    [_voutContainingView.bottomAnchor constraintEqualToAnchor:_voutView.bottomAnchor].active = YES;
-    [_voutContainingView.leftAnchor constraintEqualToAnchor:_voutView.leftAnchor].active = YES;
-    [_voutContainingView.rightAnchor constraintEqualToAnchor:_voutView.rightAnchor].active = YES;
+- (void)pipWillClose:(PIPViewController *)pip
+{
+    NSWindow * const window = self.retainedWindow;
+    pip.replacementWindow = window;
+    pip.replacementRect = self.view.frame;
+    if ([window isKindOfClass:VLCLibraryWindow.class]) {
+        [(VLCLibraryWindow *)window enableVideoPlaybackAppearance];
+    }
+    [window makeKeyAndOrderFront:window];
+    self.retainedWindow = nil;
+}
+
+- (void)pipDidClose:(PIPViewController *)pip
+{
+    [self.voutContainingView removeFromSuperview];
+    [self.view addSubview:self.voutContainingView
+               positioned:NSWindowBelow
+               relativeTo:self.mainControlsView];
+    [self.voutContainingView applyConstraintsToFillSuperview];
     _voutViewController = nil;
-    pip.replacementWindow = self.view.window;
-    pip.replacementRect = self.voutContainingView.frame;
+    [self applyAudioDecorativeViewForegroundCoverArtViewConstraints];
 }
 
-- (void)pipDidClose:(PIPViewController *)pip {
-    [self.view.window orderFront:self.view.window];
-}
-
-- (void)pipActionPlay:(PIPViewController *)pip {
+- (void)pipActionPlay:(PIPViewController *)pip
+{
     VLCPlayerController * const controller =
-    VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     if (controller.playerState == VLC_PLAYER_STATE_PAUSED) {
         [controller resume];
     } else {
@@ -578,15 +598,17 @@
     }
 }
 
-- (void)pipActionStop:(PIPViewController *)pip {
+- (void)pipActionStop:(PIPViewController *)pip
+{
     VLCPlayerController * const controller =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     [controller pause];
 }
 
-- (void)pipActionPause:(PIPViewController *)pip {
+- (void)pipActionPause:(PIPViewController *)pip
+{
     VLCPlayerController * const controller =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
     [controller pause];
 }
 

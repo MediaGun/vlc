@@ -24,9 +24,12 @@
 #include "input_models.hpp"
 #include "util/varchoicemodel.hpp"
 #include "util/shared_input_item.hpp"
+#include "util/renderer_manager.hpp"
 
 #include <QTimer>
 #include <QUrl>
+
+typedef struct vlc_preparser_t vlc_preparser_t;
 
 class PlayerControllerPrivate {
     Q_DISABLE_COPY(PlayerControllerPrivate)
@@ -74,6 +77,7 @@ public:
 public:
     qt_intf_t           *p_intf;
     vlc_player_t            *m_player;
+    vlc_preparser_t         *m_preparser = nullptr;
 
     //callbacks
     vlc_player_listener_id* m_player_listener = nullptr;
@@ -169,6 +173,8 @@ public:
     //others
     QString         m_artUrl;
     struct input_stats_t m_stats;
+
+    RendererManager m_rendererManager;
 
     // meta
     QString m_title;

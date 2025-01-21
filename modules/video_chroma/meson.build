@@ -109,6 +109,37 @@ vlc_modules += {
     'sources' : files('orient.c'),
 }
 
+d3d11_common_lib = []
+if host_system == 'windows'
+    d3d11_common_lib = static_library('d3d11_common',
+        files(
+            'd3d11_fmt.cpp',
+            'dxgi_fmt.c',
+            ),
+        include_directories: [vlc_include_dirs],
+        cpp_args : libcom_cppflags,
+        pic: true,
+        install: false,
+        dependencies: [
+            cc.find_library('dxguid'),
+            cc.find_library('wbemuuid'),
+            cc.find_library('uuid'),
+            cc.find_library('d3d11'),
+        ]
+    )
+    if have_win_desktop
+    d3d9_common_lib = static_library('d3d9_common',
+        files(
+            'd3d9_fmt.c',
+            'dxgi_fmt.c',
+            ),
+        include_directories: [vlc_include_dirs],
+        pic: true,
+        install: false,
+    )
+    endif
+endif
+
 # CVPX chroma converter
 # TODO: Set minimum versions for tvOS and iOS
 vlc_modules += {
@@ -129,24 +160,24 @@ vlc_modules += {
 
 ## Tests
 
-if host_system != 'windows' # can't use alarm
 # Chroma copy SSE test
-chroma_copy_sse_test = executable(
-    'chroma_copy_sse_test',
-    chroma_copy_lib_srcs,
-    c_args: ['-DCOPY_TEST'],
-    dependencies: [libvlccore_dep],
-    include_directories: [vlc_include_dirs]
-)
-test('chroma_copy_sse', chroma_copy_sse_test, suite: 'video_chroma')
+vlc_tests += {
+    'name': 'chroma_copy_sse_test',
+    'sources': chroma_copy_lib_srcs,
+    'suite' : ['video_chroma'],
+    'c_args': ['-DCOPY_TEST'],
+    'link_with': [vlc_libcompat],
+    'dependencies': [libvlccore_dep],
+    'include_directories': [vlc_include_dirs]
+}
 
 # Chroma copy test
-chroma_copy_test = executable(
-    'chroma_copy_test',
-    chroma_copy_lib_srcs,
-    c_args: ['-DCOPY_TEST', '-DCOPY_TEST_NOOPTIM'],
-    dependencies: [libvlccore_dep],
-    include_directories: [vlc_include_dirs]
-)
-test('chroma_copy', chroma_copy_test, suite: 'video_chroma')
-endif
+vlc_tests += {
+    'name': 'chroma_copy_test',
+    'sources': chroma_copy_lib_srcs,
+    'suite' : ['video_chroma'],
+    'c_args': ['-DCOPY_TEST', '-DCOPY_TEST_NOOPTIM'],
+    'link_with': [vlc_libcompat],
+    'dependencies': [libvlccore_dep],
+    'include_directories': [vlc_include_dirs]
+}

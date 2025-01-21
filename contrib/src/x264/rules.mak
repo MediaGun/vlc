@@ -1,6 +1,6 @@
 # x264
 
-X264_HASH := e067ab0b530395f90b578f6d05ab0a225e2efdf9
+X264_HASH := 3a21e97bf23676a0bf4616df8bc2207c9fd7b1d3
 X264_VERSION := $(X264_HASH)
 X264_GITURL := https://code.videolan.org/videolan/x264.git
 
@@ -33,10 +33,13 @@ X264CONF += --enable-pic
 endif
 ifdef HAVE_CROSS_COMPILE
 ifndef HAVE_DARWIN_OS
+ifdef HAVE_ANDROID
+X264CONF += --cross-prefix="$(subst ld,,$(LD))"
+else
 X264CONF += --cross-prefix="$(HOST)-"
 endif
+endif
 ifdef HAVE_ANDROID
-X264CONF += --cross-prefix="$(subst ar,,$(AR))"
 # broken text relocations
 ifeq ($(ANDROID_ABI), x86)
 X264CONF += --disable-asm
@@ -51,13 +54,14 @@ $(TARBALLS)/x264-$(X264_VERSION).tar.xz:
 	touch $@
 
 .sum-x264: x264-$(X264_VERSION).tar.xz
+	$(call check_githash,$(X264_VERSION))
+	touch $@
 
 x264 x26410b: %: x264-$(X264_VERSION).tar.xz .sum-%
 	$(UNPACK)
 	$(call update_autoconfig,.)
 	$(APPLY) $(SRC)/x264/x264-winstore.patch
 	$(APPLY) $(SRC)/x264/0001-osdep-use-direct-path-to-internal-x264.h.patch
-	$(APPLY) $(SRC)/x264/0001-configure-set-_FILE_OFFSET_BITS-to-detect-fseeko.patch
 	$(MOVE)
 
 .x264: x264

@@ -51,6 +51,16 @@
     return 5;
 }
 
++ (const CGFloat)cornerRadius
+{
+    return 5.;
+}
+
++ (const CGFloat)borderThickness
+{
+    return 1.;
+}
+
 + (const CGFloat)scrollBarSmallSideSize
 {
     return 16;
@@ -221,14 +231,34 @@
     return 48.;
 }
 
++ (const CGFloat)libraryWindowNavSidebarMinWidth
+{
+    return 180.;
+}
+
 + (const CGFloat)libraryWindowNavSidebarMaxWidth
 {
     return 300.;
 }
 
-+ (const CGFloat)libraryWindowPlaylistSidebarMaxWidth
++ (const CGFloat)libraryWindowPlayQueueSidebarMaxWidth
 {
     return 400.;
+}
+
++ (const CGFloat)largePlaybackControlButtonSize
+{
+    return 64.;
+}
+
++ (const CGFloat)mediumPlaybackControlButtonSize
+{
+    return 48.;
+}
+
++ (const CGFloat)smallPlaybackControlButtonSize
+{
+    return 32.;
 }
 
 + (const CGFloat)sliderTickThickness

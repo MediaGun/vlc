@@ -29,8 +29,8 @@
 #import "library/VLCLibraryDataTypes.h"
 #import "library/VLCLibraryImageCache.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 @implementation VLCMainVideoViewAudioMediaDecorativeView
 
@@ -59,10 +59,14 @@
 - (void)updateCoverArt
 {
     VLCPlayerController * const controller =
-        VLCMain.sharedInstance.playlistController.playerController;
+        VLCMain.sharedInstance.playQueueController.playerController;
+    VLCInputItem * const currentInputItem = controller.currentMedia;
     if (controller.currentMedia) {
-        [VLCLibraryImageCache thumbnailForInputItem:controller.currentMedia 
+        [VLCLibraryImageCache thumbnailForInputItem:currentInputItem
                                      withCompletion:^(NSImage * const thumbnail) {
+            if (currentInputItem != controller.currentMedia) {
+                return;
+            }
             [self setCoverArt:thumbnail];
         }];
     }

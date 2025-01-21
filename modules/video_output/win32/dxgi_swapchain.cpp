@@ -30,16 +30,12 @@
 #include <vlc_es.h>
 
 #include <windows.h>
-#if defined(HAVE_DCOMP_H)
-# include <dcomp.h>
-#endif
+#include <dcomp.h>
 
 #include <initguid.h>
 #include "dxgi_swapchain.h"
 
-#ifdef HAVE_DXGI1_6_H
-# include <dxgi1_6.h>
-#endif
+#include <dxgi1_6.h>
 
 #include "../../video_chroma/dxgi_fmt.h"
 
@@ -79,12 +75,10 @@ struct dxgi_swapchain
     swapchain_surface_type  swapchainSurfaceType;
     union {
         HWND                hwnd;
-#if defined(HAVE_DCOMP_H)
         struct {
             IDCompositionDevice  *device;
             IDCompositionVisual  *visual;
         } dcomp;
-#endif // HAVE_DCOMP_H
     } swapchainSurface;
 
     ComPtr<IDXGISwapChain1> dxgiswapChain;   /* DXGI 1.2 swap chain */
@@ -134,7 +128,6 @@ static const dxgi_color_space color_spaces[] = {
 #undef DXGIMAP
 };
 
-#ifdef HAVE_DXGI1_6_H
 static bool canHandleConversion(const dxgi_color_space *src, const dxgi_color_space *dst)
 {
     if (src == dst)
@@ -145,7 +138,6 @@ static bool canHandleConversion(const dxgi_color_space *src, const dxgi_color_sp
         return true; /* we can handle anything to 709 */
     return false; /* let Windows do the rest */
 }
-#endif
 
 void DXGI_SelectSwapchainColorspace(dxgi_swapchain *display, const libvlc_video_render_cfg_t *cfg, bool match_display)
 {
@@ -198,7 +190,6 @@ void DXGI_SelectSwapchainColorspace(dxgi_swapchain *display, const libvlc_video_
 
     display->dxgiswapChain.As(&display->dxgiswapChain4);
 
-#ifdef HAVE_DXGI1_6_H
     if (match_display)
     if (SUCCEEDED(display->dxgiswapChain->GetContainingOutput(&dxgiOutput)))
     {
@@ -229,7 +220,6 @@ void DXGI_SelectSwapchainColorspace(dxgi_swapchain *display, const libvlc_video_
             }
         }
     }
-#endif
 
     hr = dxgiswapChain3->SetColorSpace1(color_spaces[best].dxgi);
     if (SUCCEEDED(hr))
@@ -314,7 +304,6 @@ static void DXGI_CreateSwapchainHwnd(dxgi_swapchain *display,
     }
 }
 
-#if defined(HAVE_DCOMP_H)
 static void DXGI_CreateSwapchainDComp(dxgi_swapchain *display,
                                IDXGIAdapter *dxgiadapter, IUnknown *pFactoryDevice,
                                UINT width, UINT height)
@@ -355,7 +344,6 @@ static void DXGI_CreateSwapchainDComp(dxgi_swapchain *display,
         msg_Err(display->obj, "Could not create the SwapChain. (hr=0x%lX)", hr);
     }
 }
-#endif /* HAVE_DCOMP_H */
 
 void DXGI_LocalSwapchainSwap( dxgi_swapchain *display )
 {
@@ -411,7 +399,6 @@ dxgi_swapchain *DXGI_CreateLocalSwapchainHandleHwnd(vlc_object_t *o, HWND hwnd)
     return display;
 }
 
-#if defined(HAVE_DCOMP_H)
 dxgi_swapchain *DXGI_CreateLocalSwapchainHandleDComp(vlc_object_t *o, void* dcompDevice, void* dcompVisual)
 {
     dxgi_swapchain *display = new (std::nothrow) dxgi_swapchain();
@@ -425,7 +412,6 @@ dxgi_swapchain *DXGI_CreateLocalSwapchainHandleDComp(vlc_object_t *o, void* dcom
 
     return display;
 }
-#endif
 
 void DXGI_LocalSwapchainCleanupDevice( dxgi_swapchain *display )
 {
@@ -462,12 +448,10 @@ bool DXGI_UpdateSwapChain( dxgi_swapchain *display, IDXGIAdapter *dxgiadapter,
     {
         display->pixelFormat = newPixelFormat;
 
-#if defined(HAVE_DCOMP_H)
         if (display->swapchainSurfaceType == SWAPCHAIN_SURFACE_DCOMP)
             DXGI_CreateSwapchainDComp(display, dxgiadapter, pFactoryDevice,
                                       width, height);
         else // SWAPCHAIN_TARGET_HWND
-#endif // HAVE_DCOMP_H
             DXGI_CreateSwapchainHwnd(display, dxgiadapter, pFactoryDevice,
                                      width, height);
 

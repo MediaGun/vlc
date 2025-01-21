@@ -24,8 +24,8 @@
 
 #import "main/VLCMain.h"
 
-#import "playlist/VLCPlaylistController.h"
-#import "playlist/VLCPlayerController.h"
+#import "playqueue/VLCPlayQueueController.h"
+#import "playqueue/VLCPlayerController.h"
 
 #import "library/VLCInputItem.h"
 #import "library/VLCLibraryModel.h"
@@ -87,7 +87,7 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
     }
 }
 
-- (int)appendItemToPlaylist:(VLCMediaLibraryMediaItem *)mediaItem playImmediately:(BOOL)playImmediately
+- (int)appendItemToPlayQueue:(VLCMediaLibraryMediaItem *)mediaItem playImmediately:(BOOL)playImmediately
 {
     if (!_p_libraryInstance) {
         return VLC_EACCES;
@@ -97,12 +97,12 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
         msg_Err(getIntf(), "No input item found for media id %lli", mediaItem.libraryID);
         return VLC_ENOENT;
     }
-    int ret = [VLCMain.sharedInstance.playlistController addInputItem:p_inputItem atPosition:-1 startPlayback:playImmediately];
+    int ret = [VLCMain.sharedInstance.playQueueController addInputItem:p_inputItem atPosition:-1 startPlayback:playImmediately];
     input_item_Release(p_inputItem);
     return ret;
 }
 
-- (int)appendItemsToPlaylist:(NSArray <VLCMediaLibraryMediaItem *> *)mediaItemArray playFirstItemImmediately:(BOOL)playFirstItemImmediately
+- (int)appendItemsToPlayQueue:(NSArray <VLCMediaLibraryMediaItem *> *)mediaItemArray playFirstItemImmediately:(BOOL)playFirstItemImmediately
 {
     if (!_p_libraryInstance) {
         return VLC_EACCES;
@@ -112,9 +112,9 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
     int ret = VLC_SUCCESS;
     for (NSUInteger x = 0; x < itemCount; x++) {
         if (unlikely(x == 0 && playFirstItemImmediately)) {
-            ret = [self appendItemToPlaylist:mediaItemArray[x] playImmediately:YES];
+            ret = [self appendItemToPlayQueue:mediaItemArray[x] playImmediately:YES];
         } else {
-            ret = [self appendItemToPlaylist:mediaItemArray[x] playImmediately:NO];
+            ret = [self appendItemToPlayQueue:mediaItemArray[x] playImmediately:NO];
         }
         if (unlikely(ret != VLC_SUCCESS)) {
             break;

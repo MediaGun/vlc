@@ -18,8 +18,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
-
 
 import VLC.Style
 import VLC.MainInterface
@@ -249,8 +247,6 @@ FocusScope {
                                 colorSet: ColorContext.Window
                             }
 
-                            blending: stackViewParentLayerEffect.blending
-
                             tint: frostedTheme.bg.secondary
                         }
                     }
@@ -332,7 +328,7 @@ FocusScope {
                     name: "expanded"
                     PropertyChanges {
                         target: playlistLoader
-                        width: Math.round(playlistLoader.implicitWidth)
+                        width: playlistLoader.implicitWidth
                         visible: true
                     }
                 }
@@ -358,11 +354,11 @@ FocusScope {
                 sourceComponent: PlaylistListView {
                     id: playlist
 
-                    implicitWidth: VLCStyle.isScreenSmall
+                    implicitWidth: Math.round(VLCStyle.isScreenSmall
                                    ? g_mainDisplay.width * 0.8
                                    : Helpers.clamp(g_mainDisplay.width / resizeHandle.widthFactor,
                                                    minimumWidth,
-                                                   g_mainDisplay.width / 2 + playlistLeftBorder.width / 2)
+                                                   g_mainDisplay.width / 2 + playlistLeftBorder.width / 2))
 
                     focus: true
 

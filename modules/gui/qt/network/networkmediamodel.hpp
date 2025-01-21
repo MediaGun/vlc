@@ -19,17 +19,13 @@
 #ifndef MLNETWORKMEDIAMODEL_HPP
 #define MLNETWORKMEDIAMODEL_HPP
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include <QAbstractListModel>
 #include <QUrl>
 
-#include <vlc_media_source.h>
-#include <vlc_cxx_helpers.hpp>
-
+#include "vlcmediasourcewrapper.hpp"
 #include "util/shared_input_item.hpp"
+#include "devicesourceprovider.hpp"
+
 #include "networkbasemodel.hpp"
 
 #include <memory>
@@ -38,21 +34,31 @@ Q_MOC_INCLUDE( "maininterface/mainctx.hpp" )
 
 class MainCtx;
 
-using MediaSourcePtr = vlc_shared_data_ptr_type(vlc_media_source_t,
-                                vlc_media_source_Hold, vlc_media_source_Release);
-
-using MediaTreePtr = vlc_shared_data_ptr_type(vlc_media_tree_t,
-                                              vlc_media_tree_Hold,
-                                              vlc_media_tree_Release);
-
 class NetworkTreeItem
 {
     Q_GADGET
 public:
-    NetworkTreeItem() : tree(nullptr), media(nullptr) {}
-    NetworkTreeItem( MediaTreePtr tree, input_item_t* m )
-        : tree( std::move( tree ) )
-        , media( m )
+    NetworkTreeItem() : source(nullptr), tree(nullptr), media(nullptr) {}
+
+    NetworkTreeItem( SharedMediaSourceModel source, const SharedInputItem& item )
+        : source(source)
+        , tree(source->getTree())
+        , media(item)
+    {
+    }
+
+    NetworkTreeItem( MediaTreePtr tree, const SharedInputItem& item )
+        : source(nullptr)
+        , tree(tree)
+        , media(item)
+    {
+    }
+
+    //build a NetworkTreeItem with the same source/tree as parent
+    NetworkTreeItem(NetworkTreeItem& parent, const SharedInputItem& item)
+        : source(parent.source)
+        , tree(parent.tree)
+        , media(item)
     {
     }
 
@@ -67,13 +73,12 @@ public:
     }
 
     bool isValid() {
-        vlc_media_tree_Lock(tree.get());
+        MediaTreeLocker lock{ tree };
         input_item_node_t* node;
-        bool ret = vlc_media_tree_Find( tree.get(), media.get(), &node, nullptr);
-        vlc_media_tree_Unlock(tree.get());
-        return ret;
+        return vlc_media_tree_Find( tree.get(), media.get(), &node, nullptr);
     }
 
+    SharedMediaSourceModel source;
     MediaTreePtr tree;
     SharedInputItem media;
 };
@@ -141,15 +146,15 @@ public:
     void setCtx(MainCtx* ctx);
     void setTree(QVariant tree);
 
-    inline MainCtx* getCtx() const { return m_ctx; }
-    inline QVariant getTree() const { return QVariant::fromValue( m_treeItem); }
-    inline QVariantList getPath() const { return m_path; }
+    MainCtx* getCtx() const;
+    QVariant getTree() const;
+    QVariantList getPath() const;
 
-    inline QString getName() const { return m_name; }
-    inline QUrl getUrl() const { return m_url; }
-    inline ItemType getType() const { return m_type; }
-    inline bool isIndexed() const { return m_indexed; }
-    inline bool canBeIndexed() const { return m_canBeIndexed; }
+    QString getName() const;
+    QUrl getUrl() const;
+    ItemType getType() const;
+    bool isIndexed() const;
+    bool canBeIndexed() const;
 
     Q_INVOKABLE bool insertIntoPlaylist( const QModelIndexList& itemIdList, ssize_t playlistIndex );
     Q_INVOKABLE bool addToPlaylist( int index );
@@ -175,18 +180,6 @@ signals:
     void pathChanged();
 
 private:
-    //properties of the current node
-    QString m_name;
-    QUrl m_url;
-    ItemType m_type = ItemType::TYPE_UNKNOWN;
-    bool m_indexed = false;
-    bool m_canBeIndexed  = false;
-
-    MainCtx* m_ctx = nullptr;
-    NetworkTreeItem m_treeItem;
-    QVariantList m_path;
-
-    struct ListenerCb;
     Q_DECLARE_PRIVATE(NetworkMediaModel);
 };
 

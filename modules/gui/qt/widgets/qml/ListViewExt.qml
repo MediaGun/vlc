@@ -19,8 +19,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
-
 
 import VLC.MainInterface
 import VLC.Style
@@ -121,6 +119,8 @@ ListView {
         property var isDropAcceptable
         property var acceptDrop
 
+        property Item view
+
         readonly property point dragPosition: {
             let area = null
 
@@ -134,6 +134,21 @@ ListView {
             const drag = area.drag
             return Qt.point(drag.x, drag.y)
         }
+
+        function commonDrop(targetIndex, drop) {
+            const promise = acceptDrop(targetIndex, drop)
+            if (view) {
+                MainCtx.setCursor(view, Qt.BusyCursor)
+                promise.then(() => {
+                    // NOTE: check view again for the unlikely case it is
+                    //       gone by the time the promise is resolved:
+                    if (view)
+                        MainCtx.unsetCursor(view)
+                })
+            }
+        }
+
+        // NOTE: Nested inline components are not supported in QML as of Qt 6.8
 
         DropArea {
             id: higherDropArea
@@ -155,7 +170,7 @@ ListView {
 
             onDropped: (drop) => {
                 console.assert(acceptDrop)
-                acceptDrop(index, drop)
+                commonDrop(index, drop)
             }
         }
 
@@ -179,7 +194,7 @@ ListView {
 
             onDropped: (drop) => {
                 console.assert(acceptDrop)
-                acceptDrop(index + 1, drop)
+                commonDrop(index + 1, drop)
             }
         }
     }
@@ -247,6 +262,13 @@ ListView {
                 anchors.fill: parent
 
                 property bool dropOperationOngoing: false
+
+                onDropOperationOngoingChanged: {
+                    if (dropOperationOngoing)
+                        MainCtx.setCursor(root, Qt.BusyCursor)
+                    else
+                        MainCtx.unsetCursor(root)
+                }
 
                 onEntered: function(drag) {
                     if (!root.isDropAcceptableFunc || !root.isDropAcceptableFunc(drag, root.model.rowCount())
@@ -536,8 +558,6 @@ ListView {
     }
 
     TapHandler {
-        acceptedDevices: PointerDevice.Mouse
-
         acceptedButtons: Qt.LeftButton | Qt.RightButton
 
         grabPermissions: PointerHandler.TakeOverForbidden

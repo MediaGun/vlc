@@ -61,11 +61,12 @@
     }
 
     _navSidebarItem.preferredThicknessFraction = 0.2;
+    _navSidebarItem.minimumThickness = VLCLibraryUIUnits.libraryWindowNavSidebarMinWidth;
     _navSidebarItem.maximumThickness = VLCLibraryUIUnits.libraryWindowNavSidebarMaxWidth;
 
     self.multifunctionSidebarItem.preferredThicknessFraction = 0.2;
     self.multifunctionSidebarItem.maximumThickness =
-        VLCLibraryUIUnits.libraryWindowPlaylistSidebarMaxWidth;
+        VLCLibraryUIUnits.libraryWindowPlayQueueSidebarMaxWidth;
     self.multifunctionSidebarItem.canCollapse = YES;
     self.multifunctionSidebarItem.collapseBehavior =
         NSSplitViewItemCollapseBehaviorPreferResizingSiblingsWithFixedSplitView;
@@ -100,7 +101,7 @@
     const NSControlStateValue controlState =
         self.multifunctionSidebarItem.isCollapsed ? NSControlStateValueOff : NSControlStateValueOn;
     self.libraryWindow.playQueueToggle.state = controlState;
-    self.libraryWindow.videoViewController.playlistButton.state = controlState;
+    self.libraryWindow.videoViewController.playQueueButton.state = controlState;
 }
 
 @end

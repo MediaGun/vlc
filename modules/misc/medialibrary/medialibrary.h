@@ -40,8 +40,7 @@
 
 struct vlc_event_t;
 struct vlc_object_t;
-struct vlc_thumbnailer_t;
-struct vlc_thumbnailer_request_t;
+struct vlc_preparser_t;
 
 class Logger;
 
@@ -129,7 +128,6 @@ class Thumbnailer : public medialibrary::IThumbnailer
         Thumbnailer* thumbnailer;
         bool done;
         picture_t* thumbnail;
-        vlc_thumbnailer_request_t* request;
     };
 public:
     Thumbnailer(vlc_medialibrary_module_t* ml);
@@ -139,14 +137,14 @@ public:
     void stop() override;
 
 private:
-    static void onThumbnailComplete( void* data, picture_t* thumbnail );
+    static void onThumbnailComplete( input_item_t *, int, picture_t* thumbnail, void *data );
 
 private:
     vlc_medialibrary_module_t* m_ml;
     vlc::threads::mutex m_mutex;
     vlc::threads::condition_variable m_cond;
     ThumbnailerCtx* m_currentContext;
-    std::unique_ptr<vlc_thumbnailer_t, void(*)(vlc_thumbnailer_t*)> m_thumbnailer;
+    std::unique_ptr<vlc_preparser_t, void(*)(vlc_preparser_t*)> m_thumbnailer;
 };
 
 class MediaLibrary : public medialibrary::IMediaLibraryCb

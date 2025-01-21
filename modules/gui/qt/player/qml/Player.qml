@@ -19,7 +19,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQml.Models
-import Qt5Compat.GraphicalEffects
 import QtQuick.Window
 
 import VLC.MainInterface
@@ -169,13 +168,17 @@ FocusScope {
         anchors {
             left: parent.left
             right: parent.right
-            top: (MainCtx.hasEmbededVideo && !rootPlayer._controlsUnderVideo) ? parent.top : topBar.bottom
-            bottom: (MainCtx.hasEmbededVideo && !rootPlayer._controlsUnderVideo) ? parent.bottom : controlBar.top
+            top: (MainCtx.hasEmbededVideo && rootPlayer._controlsUnderVideo) ? topBar.bottom : parent.top
+            bottom: (MainCtx.hasEmbededVideo && rootPlayer._controlsUnderVideo) ? controlBar.top : parent.bottom
         }
 
         sourceComponent: MainCtx.hasEmbededVideo ? videoComponent : audioComponent
 
         property int cursorShape
+
+        // Have padding here, so that the content (unlike background) does not go behind the top bar or the control bar:
+        property real topPadding: (anchors.top === parent.top) ? topBar.height : 0
+        property real bottomPadding: (anchors.bottom === parent.bottom) ? controlBar.height : 0
 
         Component {
             id: videoComponent
@@ -207,9 +210,9 @@ FocusScope {
                     }
 
                     Binding on cursorShape {
-                        when: topBar.state === "hidden"
-                              && controlBar.state === "hidden"
-                              && !interactiveAutoHideTimer.running
+                        when: playerToolbarVisibilityFSM.started
+                            && !playerToolbarVisibilityFSM.isVisible
+                            && !interactiveAutoHideTimer.running
                         value: Qt.BlankCursor
                     }
                 }
@@ -254,9 +257,13 @@ FocusScope {
             id: audioComponent
 
             FocusScope {
+                id: audioFocusScope
                 // Audio
 
                 focus: true
+
+                property real topPadding: playerSpecializationLoader.topPadding
+                property real bottomPadding: playerSpecializationLoader.bottomPadding
 
                 // background image
                 Rectangle {
@@ -295,8 +302,8 @@ FocusScope {
                     }
 
                     anchors.fill: parent
-                    anchors.topMargin: VLCStyle.margin_xsmall
-                    anchors.bottomMargin: VLCStyle.margin_xsmall
+                    anchors.topMargin: VLCStyle.margin_xsmall + audioFocusScope.topPadding
+                    anchors.bottomMargin: VLCStyle.margin_xsmall + audioFocusScope.bottomPadding
 
                     onWheel: (wheel) => {
                         wheel.accepted = true
@@ -321,6 +328,24 @@ FocusScope {
                             Layout.alignment: Qt.AlignHCenter
 
                             readonly property real sizeConstant: 2.7182
+
+                            Widgets.DynamicShadow {
+                                anchors.centerIn: cover
+                                sourceItem: cover
+
+                                color: Qt.rgba(0, 0, 0, .18)
+                                yOffset: VLCStyle.dp(24)
+                                blurRadius: VLCStyle.dp(54)
+                            }
+
+                            Widgets.DynamicShadow {
+                                anchors.centerIn: cover
+                                sourceItem: cover
+
+                                color: Qt.rgba(0, 0, 0, .22)
+                                yOffset: VLCStyle.dp(5)
+                                blurRadius: VLCStyle.dp(14)
+                            }
 
                             Image {
                                 id: cover
@@ -349,19 +374,6 @@ FocusScope {
                                 onStatusChanged: {
                                     if (status === Image.Ready)
                                         backgroundImage.scheduleUpdate()
-                                }
-
-                                // TODO: Qt >= 6.4 Investigate using MultiEffect.
-                                Widgets.DoubleShadow {
-                                    anchors.centerIn: parent
-                                    sourceItem: parent
-
-                                    cache: false
-
-                                    primaryVerticalOffset: VLCStyle.dp(24)
-                                    primaryBlurRadius: VLCStyle.dp(54)
-                                    secondaryVerticalOffset: VLCStyle.dp(5)
-                                    secondaryBlurRadius: VLCStyle.dp(14)
                                 }
                             }
                         }
@@ -536,6 +548,7 @@ FocusScope {
 
         showCSD: MainCtx.clientSideDecoration && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
         showToolbar: MainCtx.hasToolbarMenu && (MainCtx.intfMainWindow.visibility !== Window.FullScreen)
+        playlistVisible: playlistVisibility.isPlaylistVisible
 
         Navigation.parentItem: rootPlayer
         Navigation.downItem: {
@@ -551,7 +564,7 @@ FocusScope {
         //initial state value is "", using a binding avoid animation on startup
         Binding on state {
             when: playerToolbarVisibilityFSM.started
-            value: playerToolbarVisibilityFSM.isVisible ? "visible" : "hidden"
+            value: (playerToolbarVisibilityFSM.isVisible || rootPlayer._controlsUnderVideo) ? "visible" : "hidden"
         }
 
         onTogglePlaylistVisibility: playlistVisibility.togglePlaylistVisibility()
@@ -579,8 +592,8 @@ FocusScope {
 
             anchors.fill: parent
 
-            opacity: (MainCtx.intfMainWindow.visibility === Window.FullScreen) ? MainCtx.pinOpacity
-                                                                               : 1.0
+            opacity: (MainCtx.intfMainWindow.visibility === Window.FullScreen && MainCtx.hasEmbededVideo) ? MainCtx.pinOpacity
+                                                                                                          : 1.0
 
             tintColor: windowTheme.bg.primary
 
@@ -823,7 +836,7 @@ FocusScope {
         //initial state value is "", using a binding avoid animation on startup
         Binding on state {
             when: playerToolbarVisibilityFSM.started
-            value: playerToolbarVisibilityFSM.isVisible ? "visible" : "hidden"
+            value: (playerToolbarVisibilityFSM.isVisible || rootPlayer._controlsUnderVideo) ? "visible" : "hidden"
         }
 
         onRequestLockUnlockAutoHide: (lock) => rootPlayer.lockUnlockAutoHide(lock)
@@ -838,7 +851,8 @@ FocusScope {
 
             visible: !MainCtx.hasEmbededVideo || MainCtx.pinVideoControls
 
-            opacity: MainCtx.pinVideoControls ? MainCtx.pinOpacity : 0.7
+            opacity: (Window.visibility === Window.FullScreen && MainCtx.hasEmbededVideo) ? MainCtx.pinOpacity
+                                                                                          : ((AcrylicController.enabled || !MainCtx.hasEmbededVideo) ? 0.7 : 1.0)
 
             color: windowTheme.bg.primary
         }

@@ -89,10 +89,10 @@ QtObject {
 
     readonly property int listAlbumCover_height: MainCtx.dp(32, scale)
     readonly property int listAlbumCover_width: listAlbumCover_height * 16.0/9
-    readonly property int listAlbumCover_radius: MainCtx.dp(3, scale)
+    readonly property int listAlbumCover_radius: 0
     readonly property int trackListAlbumCover_width: MainCtx.dp(32, scale)
     readonly property int trackListAlbumCover_heigth: MainCtx.dp(32, scale)
-    readonly property int trackListAlbumCover_radius: MainCtx.dp(2, scale)
+    readonly property int trackListAlbumCover_radius: 0
 
     readonly property int tableCoverRow_height: Math.max(listAlbumCover_height, fontHeight_normal) + margin_xsmall * 2
     readonly property int tableRow_height: fontHeight_normal + margin_small * 2
@@ -226,13 +226,14 @@ QtObject {
     readonly property int layoutTitle_top_padding: margin_large + margin_xxsmall
     readonly property int layoutTitle_bottom_padding: margin_normal + margin_xxxsmall
 
+    readonly property int layout_left_margin: margin_normal
+    readonly property int layout_right_margin: layout_left_margin
+
     readonly property int table_cover_border: MainCtx.dp(2, scale)
 
     readonly property int tableHeaderText_height: fontHeight_normal
 
     readonly property int artistBanner_height: MainCtx.dp(200, scale)
-
-    readonly property int playlistDelegate_verticalPadding: MainCtx.dp(6, scale)
 
     //global application size, updated by the root widget
     property int appWidth: 0

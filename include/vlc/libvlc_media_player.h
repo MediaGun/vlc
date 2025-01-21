@@ -172,6 +172,15 @@ typedef enum libvlc_teletext_key_t {
 } libvlc_teletext_key_t;
 
 /**
+ * A to B loop state
+ */
+typedef enum libvlc_abloop_t {
+    libvlc_abloop_none,
+    libvlc_abloop_a,
+    libvlc_abloop_b,
+} libvlc_abloop_t;
+
+/**
  * Opaque equalizer handle.
  *
  * Equalizer settings can be applied to a media player.
@@ -919,9 +928,10 @@ bool libvlc_video_set_output_callbacks( libvlc_media_player_t *mp,
  * @protocol VLCPictureInPictureMediaControlling <NSObject>
  * - (void)play;
  * - (void)pause;
- * - (void)seekBy:(int64_t)offset;
+ * - (void)seekBy:(int64_t)offset completion:(dispatch_block_t)completion;;
  * - (int64_t)mediaLength;
  * - (int64_t)mediaTime;
+ * - (BOOL)isMediaSeekable;
  * - (BOOL)isMediaPlaying;
  * @end
  * 
@@ -1307,6 +1317,45 @@ LIBVLC_API double libvlc_media_player_get_position( libvlc_media_player_t *p_mi 
 LIBVLC_API int libvlc_media_player_set_position( libvlc_media_player_t *p_mi,
                                                  double f_pos, bool b_fast );
 
+/**
+ * Enable A to B loop for the current media
+ *
+ * This function need to be called 2 times with libvlc_abloop_a and
+ * libvlc_abloop_b to setup an A to B loop. It uses and stores the
+ * current time/position when called. The B time must be higher than the
+ * A time.
+ *
+ * \param p_mi the Media Player
+ * \param abloop select which A/B cursor to set
+ * \return 0 on success, -1 on error
+ * \version LibVLC 4.0.0 and later.
+ */
+LIBVLC_API int
+libvlc_media_player_set_abloop( libvlc_media_player_t *p_mi,
+                                libvlc_abloop_t abloop );
+
+/**
+ * Get the A to B loop status
+ *
+ * @note If the returned status is VLC_PLAYER_ABLOOP_A, then a_time and a_pos
+ * will be valid. If the returned status is VLC_PLAYER_ABLOOP_B, then all
+ * output parameters are valid. If the returned status is
+ * VLC_PLAYER_ABLOOP_NONE, then all output parameters are invalid.
+ *
+ * @see vlc_player_cbs.on_atobloop_changed
+ *
+ * \param p_mi the Media Player
+ * \param a_time A time (in ms) or -1 (if the media doesn't have valid times)
+ * \param a_pos A position
+ * \param b_time B time (in ms) or -1 (if the media doesn't have valid times)
+ * \param b_pos B position
+ * \return A to B loop status
+ * \version LibVLC 4.0.0 and later.
+ */
+LIBVLC_API libvlc_abloop_t
+libvlc_media_player_get_abloop( libvlc_media_player_t *p_mi,
+                                libvlc_time_t *a_time, double *a_pos,
+                                libvlc_time_t *b_time, double *b_pos );
 /**
  * Set movie chapter (if applicable).
  *
@@ -2995,6 +3044,7 @@ typedef void (*libvlc_media_player_watch_time_on_seek)(
  * receive all updates.
  * \param on_update callback to listen to update events (must not be NULL)
  * \param on_paused callback to listen to paused events (can be NULL)
+ * \param on_seek callback to listen to seek events (can be NULL)
  * \param cbs_data opaque pointer used by the callbacks
  * \return 0 on success, -1 on error (allocation error, or if already watching)
  * \version LibVLC 4.0.0 or later

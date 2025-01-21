@@ -19,6 +19,7 @@
  *****************************************************************************/
 
 import QtQuick
+import QtQuick.Window
 import QtQuick.Templates as T
 import QtQuick.Layouts
 import QtQml.Models
@@ -112,6 +113,8 @@ T.ItemDelegate {
         }
 
         DragHandler {
+            acceptedDevices: PointerDevice.AllDevices & ~(PointerDevice.TouchScreen)
+
             target: null
 
             grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType | PointerHandler.ApprovesTakeOverByAnything
@@ -156,8 +159,9 @@ T.ItemDelegate {
         spacing: VLCStyle.margin_xsmall
 
         Widgets.RoundImage {
-            implicitWidth: VLCStyle.play_cover_small
-            implicitHeight: VLCStyle.play_cover_small
+            id: roundImage
+
+            Layout.preferredHeight: VLCStyle.play_cover_small
             Layout.fillHeight: true
             Layout.preferredWidth: height
 
@@ -165,15 +169,18 @@ T.ItemDelegate {
 
             source: (model.cover) ? model.cover
                                   : VLCStyle.noArtArtistSmall
-            sourceSize.width: width
-            sourceSize.height: height
+            sourceSize.width: width * Screen.devicePixelRatio
+            sourceSize.height: height * Screen.devicePixelRatio
 
             Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
 
             Rectangle {
                 anchors.fill: parent
 
-                radius: VLCStyle.play_cover_small
+                anchors.margins: -border.width
+                z: -1
+
+                radius: roundImage.effectiveRadius
 
                 color: "transparent"
 

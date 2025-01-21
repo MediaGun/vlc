@@ -209,13 +209,22 @@ static void test_media_tracks(libvlc_instance_t *vlc)
 }
 
 static void input_item_preparse_timeout( input_item_t *item,
-                                         enum input_item_preparse_status status,
-                                         void *user_data )
+                                         int status, void *user_data )
 {
     VLC_UNUSED(item);
     vlc_sem_t *p_sem = user_data;
 
-    assert( status == ITEM_PREPARSE_TIMEOUT );
+    assert( status == VLC_ETIMEOUT );
+    vlc_sem_post(p_sem);
+}
+
+static void input_item_preparse_cancel( input_item_t *item,
+                                        int status, void *user_data )
+{
+    VLC_UNUSED(item);
+    vlc_sem_t *p_sem = user_data;
+
+    assert( status == -EINTR );
     vlc_sem_post(p_sem);
 }
 
@@ -237,26 +246,34 @@ static void test_input_metadata_timeout(libvlc_instance_t *vlc, int timeout,
 
     vlc_sem_t sem;
     vlc_sem_init (&sem, 0);
-    const struct vlc_metadata_cbs cbs = {
-        .on_preparse_ended = input_item_preparse_timeout,
+    const input_item_parser_cbs_t cbs = {
+        .on_ended = wait_and_cancel > 0 ? input_item_preparse_cancel
+                                        : input_item_preparse_timeout,
     };
-    vlc_preparser_t *parser = libvlc_GetMainPreparser(vlc->p_libvlc_int);
+
+    int options = VLC_PREPARSER_TYPE_PARSE | VLC_PREPARSER_TYPE_FETCHMETA_LOCAL;
+
+    const struct vlc_preparser_cfg cfg = {
+        .types = options,
+        .max_parser_threads = 1,
+        .timeout = VLC_TICK_FROM_MS(timeout),
+    };
+    vlc_preparser_t *parser = vlc_preparser_New(VLC_OBJECT(vlc->p_libvlc_int),
+                                                &cfg);
     assert(parser != NULL);
-    i_ret = vlc_preparser_Push(parser, p_item,
-                               META_REQUEST_OPTION_SCOPE_LOCAL |
-                               META_REQUEST_OPTION_FETCH_LOCAL,
-                               &cbs, &sem, timeout, vlc);
-    assert(i_ret == 0);
+    vlc_preparser_req_id id = vlc_preparser_Push(parser, p_item, options, &cbs, &sem);
+    assert(id != VLC_PREPARSER_REQ_ID_INVALID);
 
     if (wait_and_cancel > 0)
     {
         vlc_tick_sleep( VLC_TICK_FROM_MS(wait_and_cancel) );
-        vlc_preparser_Cancel(parser, vlc);
-
+        size_t count = vlc_preparser_Cancel(parser, id);
+        assert(count == 1);
     }
     vlc_sem_wait(&sem);
 
     input_item_Release(p_item);
+    vlc_preparser_Delete(parser);
     vlc_close(p_pipe[0]);
     vlc_close(p_pipe[1]);
 }
