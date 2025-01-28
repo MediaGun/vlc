@@ -23,6 +23,7 @@ endif
 	$(MOVE)
 
 .jack: jack
+	$(RECONF)
 	$(MAKEBUILDDIR)
 	$(MAKECONFIGURE)
 	+$(MAKEBUILD)
