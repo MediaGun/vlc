@@ -31,6 +31,7 @@ DVDREAD_CONF := --with-libdvdcss
 
 .dvdread: dvdread
 	$(REQUIRE_GPL)
+	$(RECONF) -I m4
 	$(MAKEBUILDDIR)
 	$(MAKECONFIGURE) $(DVDREAD_CONF)
 	+$(MAKEBUILD)

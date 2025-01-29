@@ -20,6 +20,7 @@ dvdcss: libdvdcss-$(DVDCSS_VERSION).tar.bz2 .sum-dvdcss
 DVDCSS_CONF := --disable-doc
 
 .dvdcss: dvdcss
+	$(RECONF)
 	$(MAKEBUILDDIR)
 	$(MAKECONFIGURE) $(DVDCSS_CONF)
 	+$(MAKEBUILD)

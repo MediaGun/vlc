@@ -68,7 +68,7 @@ jobs:
     name: Build for Windows
     runs-on: [ ubuntu-24.04 ]
     container:
-      image: 'registry.videolan.org/vlc-debian-llvm-msvcrt:20221214101739'
+      image: 'registry.videolan.org/vlc-debian-llvm-msvcrt:20241118101328'
       options: '--user root'
 
     env:
@@ -82,7 +82,9 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Build
-        run: ./extras/package/win32/build.sh -a x86_64 -z -x -i u
+        run: |
+          git config --global --add safe.directory '*'
+          ./extras/package/win32/build.sh -a x86_64 -z -x -i u
 
       - name: Publish
         uses: actions/upload-artifact@v4
