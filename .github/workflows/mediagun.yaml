@@ -24,9 +24,22 @@ jobs:
   build_linux:
     name: Build for Linux
     runs-on: [ ubuntu-22.04 ]
+
+    strategy:
+      matrix:
+        cfg:
+          - { id: ubuntu2204,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2204:master" }
+          - { id: ubuntu2404,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2404:master" }
+
     container:
-      image: 'registry.videolan.org/vlc-debian-unstable:20221213103803'
+      image: ${{ matrix.cfg.docker }}
       options: '--user root'
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      packages: read
 
     env:
       install_prefix: '/vlc/install_dir_linux'
@@ -61,7 +74,7 @@ jobs:
       - name: Publish
         uses: actions/upload-artifact@v4
         with:
-          name: libvlc4-linux
+          name: libvlc4-linux-${{ matrix.cfg.id }}
           path: vlc.tar
 
   build_windows:
