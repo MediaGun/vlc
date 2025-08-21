@@ -171,10 +171,6 @@ jobs:
           name: libvlc4-macos-x86_64
           path: ./artifacts/x86_64
 
-      - name: Debug
-        shell: bash
-        run: find .
-
       - name: Build
         run: .github/workflows/osx_package.sh
 
