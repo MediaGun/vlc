@@ -6,6 +6,8 @@ on:
     branches:
       - master
       - mg-ci
+    tags:
+      - "mg-*"
   pull_request:
     types: [opened, reopened, synchronize]
     branches:
@@ -17,7 +19,7 @@ concurrency:
   group: ${{ github.workflow }}
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -179,3 +181,44 @@ jobs:
         with:
           name: libvlc4-macos-universal
           path: ./vlc-macos-sdk-4.0.0-universal-dev.tar.gz
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [ build_linux, build_windows, build_macos_universal ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Ubuntu 2204 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-linux-ubuntu2204
+          path: ./artifacts/libvlc4-ubuntu2204
+
+      - name: Download Ubuntu 2404 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-linux-ubuntu2404
+          path: ./artifacts/libvlc4-ubuntu2404
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-windows
+          path: ./artifacts/libvlc4-windows
+
+      - name: Download MacOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libvlc4-macos-universal
+          path: ./artifacts/libvlc4-macos
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./artifacts/libvlc4-ubuntu2204/**
+            ./artifacts/libvlc4-ubuntu2404/**
+            ./artifacts/libvlc4-windows/**
+            ./artifacts/libvlc4-macos/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
