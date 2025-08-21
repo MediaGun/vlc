@@ -71,13 +71,13 @@ jobs:
         run: make install
 
       - name: 'Tar files (to preserve symlinks)'
-        run: tar -cvf vlc.tar -C ${{ env.install_prefix }} .
+        run: tar -cvzf libvlc4-linux-${{ matrix.cfg.id }}.tar.gz -C ${{ env.install_prefix }} .
 
       - name: Publish
         uses: actions/upload-artifact@v4
         with:
           name: libvlc4-linux-${{ matrix.cfg.id }}
-          path: vlc.tar
+          path: libvlc4-linux-${{ matrix.cfg.id }}.tar.gz
 
   build_windows:
     name: Build for Windows
@@ -101,11 +101,14 @@ jobs:
           git config --global --add safe.directory '*'
           ./extras/package/win32/build.sh -a x86_64 -z -x -i u
 
+      - name: Compress
+        run: cd ./win64/vlc-4.0.0-dev && zip -r ../../libvlc4-windows.zip .
+
       - name: Publish
         uses: actions/upload-artifact@v4
         with:
           name: libvlc4-windows
-          path: ./win64/vlc-4.0.0-dev
+          path: libvlc4-windows.zip
 
   build_macos:
     name: Build for MacOS
@@ -212,13 +215,17 @@ jobs:
           name: libvlc4-macos-universal
           path: ./artifacts/libvlc4-macos
 
+      - name: Debug
+        shell: bash
+        run: find ./artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./artifacts/libvlc4-ubuntu2204/**
-            ./artifacts/libvlc4-ubuntu2404/**
-            ./artifacts/libvlc4-windows/**
-            ./artifacts/libvlc4-macos/**
+            ./artifacts/libvlc4-ubuntu2204/*
+            ./artifacts/libvlc4-ubuntu2404/*
+            ./artifacts/libvlc4-windows/*
+            ./artifacts/libvlc4-macos/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
