@@ -30,8 +30,8 @@ jobs:
     strategy:
       matrix:
         cfg:
-          - { id: ubuntu2204,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2204:master" }
-          - { id: ubuntu2404,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2404:master" }
+          - { id: ubuntu2204,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2204@sha256:22214bf4ad57364c5f73f556fcdcc2cf97f53a2c30f6d6784f1bc30dcf91d709" }
+          - { id: ubuntu2404,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2404@sha256:2ea864cd8f3f750a278831b87edb45216435094f6cb642b953c808380aa3761c" }
 
     container:
       image: ${{ matrix.cfg.docker }}
@@ -58,14 +58,29 @@ jobs:
       - name: Bootstrap
         run: ./bootstrap
 
+      - name: Build contribs
+        run: |
+          mkdir -p contrib/build-native
+          cd contrib/build-native
+          ../bootstrap \
+              --disable-gnuv3 \
+              --disable-basu --disable-protobuf --disable-medialibrary \
+              --disable-jinja --disable-microdns --disable-chromaprint --disable-nfs \
+              --disable-protoc --disable-shout --disable-smb2 --disable-sqlite \
+              --disable-vncclient --disable-upnp --disable-libplacebo --disable-cddb \
+              --disable-librist --disable-live555 --disable-lua --disable-luac \
+              --disable-xcb
+          make -j$(nproc)
+
       - name: Configuration
         run: |
           ./configure --prefix=${{ env.install_prefix }} \
           --disable-srt --disable-lua --enable-merge-ffmpeg \
-          --disable-shout --disable-qt --disable-nls --enable-pdb --disable-skins2
+          --disable-shout --disable-qt --disable-nls --enable-pdb --disable-skins2 \
+          --disable-xcb
 
       - name: Build
-        run: make -j2
+        run: make -j$(nproc)
 
       - name: Install
         run: make install
