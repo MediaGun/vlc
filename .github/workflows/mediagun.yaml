@@ -30,8 +30,8 @@ jobs:
     strategy:
       matrix:
         cfg:
-          - { id: ubuntu2204,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2204@sha256:22214bf4ad57364c5f73f556fcdcc2cf97f53a2c30f6d6784f1bc30dcf91d709" }
-          - { id: ubuntu2404,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2404@sha256:2ea864cd8f3f750a278831b87edb45216435094f6cb642b953c808380aa3761c" }
+          - { id: ubuntu2204,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2204@sha256:ff96def665c9779e6718abc3f4bc0c00b745340ff89d57f28917838efb44cf45" }
+          - { id: ubuntu2404,  docker: "ghcr.io/mediagun/dockerimages/vlc-ubuntu2404@sha256:a2b5fab822715265dcd8855554db76c155f89ac46c4483a5e659859ba431eb9d" }
 
     container:
       image: ${{ matrix.cfg.docker }}
@@ -63,21 +63,23 @@ jobs:
           mkdir -p contrib/build-native
           cd contrib/build-native
           ../bootstrap \
-              --disable-gnuv3 \
+              --disable-gnuv3 --disable-sout \
               --disable-basu --disable-protobuf --disable-medialibrary \
               --disable-jinja --disable-microdns --disable-chromaprint --disable-nfs \
               --disable-protoc --disable-shout --disable-smb2 --disable-sqlite \
               --disable-vncclient --disable-upnp --disable-libplacebo --disable-cddb \
               --disable-librist --disable-live555 --disable-lua --disable-luac \
-              --disable-xcb
+              --disable-xcb --disable-x264 --disable-x265 --disable-vpx --disable-srt
           make -j$(nproc)
 
       - name: Configuration
+        # libva (va-api) backend is disabled for now
         run: |
           ./configure --prefix=${{ env.install_prefix }} \
-          --disable-srt --disable-lua --enable-merge-ffmpeg \
-          --disable-shout --disable-qt --disable-nls --enable-pdb --disable-skins2 \
-          --disable-xcb
+          --disable-lua --enable-merge-ffmpeg \
+          --disable-qt --disable-nls --enable-pdb \
+          --disable-xcb --disable-sout --disable-goom \
+          --disable-libva
 
       - name: Build
         run: make -j$(nproc)
